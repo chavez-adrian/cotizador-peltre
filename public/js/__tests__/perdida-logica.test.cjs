@@ -2,8 +2,9 @@
 // #482 (CONTEXT.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
 // una Oportunidad que ya tiene pedido en Operam ya se cerro y no se puede
 // perder. "Tiene pedido" es UNA regla: etapa post-venta (Anticipo pagado o
-// posterior) O el espejo de Operam de la cotizacion ya trae pedido -- el caso de
-// la decorada que el candado de calca retiene en Seguimiento.
+// posterior) O el espejo de Operam de la cotizacion ya trae pedido -- aunque la
+// etapa no se haya movido (hasta #535, la decorada que el candado de calca
+// retenia en Seguimiento).
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 

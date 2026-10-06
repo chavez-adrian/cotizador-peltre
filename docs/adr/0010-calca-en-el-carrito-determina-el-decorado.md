@@ -4,6 +4,8 @@ Hasta ahora la marca de producto decorado era un checkbox manual en el resumen (
 
 La asimetría es deliberada. La marca no es cosmética: activa el gate de #61, que impide llegar a *Pedido liberado* sin las 6 autorizaciones del proveedor de calca. Dejarla editable con calca presente permitiría esquivar el gate justo en el caso donde más importa; volverla puramente derivada dejaría sin forma de marcar el decorado a mano y las texturas decoradas, que son decorado real y no producen partida en el carrito. De ahí la regla: la calca es piso, no techo.
 
+> Nota (2026-10-05, #535): el gate ya no frena al sync post-venta; el tablero sigue a Operam y el checklist incompleto desde Pedido liberado es el aviso "Calca incompleta". La marca sigue fijada por la calca: alimenta ese aviso y el gate de la futura liberación desde el cotizador (#538).
+
 ## Consecuencias
 
 Quitar la calca de una cotización no revierte la marca ni descarta el checklist — la marca vuelve a ser editable conservando su valor, y apagarla es un acto explícito del vendedor. El motivo es que los pasos completados representan gestiones reales con un proveedor externo (arte final enviado, dummy autorizado); un cambio en el carrito no puede borrar ese registro. Es el mismo criterio de no-retroceso que ya rige el avance de etapa en el sync post-venta.

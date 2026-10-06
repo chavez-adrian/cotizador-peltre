@@ -2308,8 +2308,8 @@ window.cotizarEnvia = cotizarEnvia;
 
 // === MARCA DE PRODUCTO DECORADO (issue #91, ADR-0010) ===
 // La calca del carrito enciende la marca y la FIJA: dejarla editable con calca
-// dentro permitiria esquivar el gate de #61 (las 6 autorizaciones del proveedor)
-// justo en el caso donde mas importa. Sin calca la marca sigue siendo del
+// dentro permitiria apagar el aviso "Calca incompleta" (#535) y el gate de la
+// futura liberacion (#538) justo en el caso donde mas importa. Sin calca la marca sigue siendo del
 // vendedor -- el decorado a mano y las texturas decoradas son decorado real y no
 // producen partida. La calca es piso, no techo.
 let decoradoManual = false;

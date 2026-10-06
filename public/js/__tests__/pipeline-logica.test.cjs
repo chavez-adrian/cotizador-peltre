@@ -1919,8 +1919,8 @@ test('#428-P4: la cola Hoy pinta el ISO a medianoche UTC en su dia (1128, 1155, 
 });
 
 // === Issue #482: Perdida no se ofrece a una Oportunidad que ya tiene pedido ===
-// "Tiene pedido" = etapa post-venta O espejo de Operam con pedido (la decorada
-// que el candado de calca retiene en Seguimiento).
+// "Tiene pedido" = etapa post-venta O espejo de Operam con pedido (aunque la
+// etapa no se haya movido).
 const ESPEJO_CON_PEDIDO = { cotizacion: '1240', pedido: '873', remisiones: [] };
 
 test('#482: la tarjeta del tablero no ofrece Perdida a una cotizacion en Anticipo pagado o posterior', () => {

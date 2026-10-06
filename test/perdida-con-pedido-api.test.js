@@ -1,10 +1,10 @@
 // #482 (CONTEXT.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
 // una Oportunidad que ya tiene pedido en Operam ya se cerro y no se puede perder.
 // "Tiene pedido" = etapa post-venta (Anticipo pagado o posterior) O el espejo de
-// Operam de la cotizacion ya trae pedido (la decorada que el candado de calca
-// retiene en Seguimiento). El servidor la rechaza aunque llegue a mano, por las
-// dos rutas que cierran una cotizacion como Perdida, y no cambia nada: ni la
-// cotizacion ni la Oportunidad de la que nacio (#481).
+// Operam de la cotizacion ya trae pedido (aunque la etapa no se haya movido).
+// El servidor la rechaza aunque llegue a mano, por las dos rutas que cierran
+// una cotizacion como Perdida, y no cambia nada: ni la cotizacion ni la
+// Oportunidad de la que nacio (#481).
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'fs';
@@ -86,8 +86,8 @@ for (const etapa of ['anticipo_pagado', 'pedido_liberado', 'saldo_pagado', 'prod
   });
 }
 
-// La decorada con pedido, sin pago y con el checklist de calca incompleto: el
-// candado de calca (#61) la retiene en Seguimiento, pero el espejo ya trae pedido.
+// En Seguimiento, sin pago, pero el espejo ya trae pedido (hasta #535, la
+// decorada que el candado de calca retenia ahi).
 test('#482: en Seguimiento con pedido en el espejo de Operam tambien responde 409 y no cambia nada', async () => {
   const cot = {
     ...COT_JORGE,

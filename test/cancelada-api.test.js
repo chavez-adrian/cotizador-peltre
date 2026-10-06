@@ -139,7 +139,7 @@ test('#484: sobre una Oportunidad SIN pedido Cancelada se rechaza (esa es Perdid
   assertNadaCambio(sinPedido);
 });
 
-// La decorada con pedido que el candado de calca retiene en Seguimiento tambien
+// La cotizacion en Seguimiento con pedido en el espejo de Operam tambien
 // "tiene pedido" (#482): se puede cancelar.
 test('#484: en Seguimiento con pedido en el espejo de Operam el admin si puede cancelar', async () => {
   fijar({ ...COT_CON_PEDIDO, etapa: 'seguimiento', data: { ...COT_CON_PEDIDO.data, decorado: true } });
