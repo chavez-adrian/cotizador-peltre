@@ -17,11 +17,12 @@ const POST_VENTA = new Set(ETAPAS_POST_VENTA);
 export const MENSAJE_PERDIDA_CON_PEDIDO = 'Esta oportunidad ya tiene pedido en Operam: ya no se puede cerrar como Perdida. Si la venta se cay\u00f3, avisa al administrador para que la cierre como Cancelada.';
 
 // "Tiene pedido": la etapa es post-venta O el espejo de Operam que persiste el
-// sync (data.espejoOperam, #67) ya trae pedido. El segundo caso es la decorada
-// con pedido, sin pago y con el checklist de calca incompleto: el candado de
-// calca (#61) la retiene en Seguimiento aunque Operam ya tenga el pedido. El
-// espejo llega a dos alturas -- la entrada completa (server) y la fila aplanada
-// de las listas (navegador) --, como motivoPre.
+// sync (data.espejoOperam, #67) ya trae pedido aunque la etapa no se haya
+// movido. Hasta #535 era la decorada con el checklist de calca incompleto, que
+// el candado de calca retenia en Seguimiento; el sync ya no la frena, pero la
+// regla se queda: el pedido manda sobre la etapa. El espejo llega a dos
+// alturas -- la entrada completa (server) y la fila aplanada de las listas
+// (navegador) --, como motivoPre.
 // #484: una Cancelada (CONTEXT.md "Cancelada") llego a pedido por definicion,
 // aunque su espejo no exista: tampoco se puede perder.
 export function tienePedido(o) {

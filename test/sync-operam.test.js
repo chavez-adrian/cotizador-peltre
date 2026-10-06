@@ -197,71 +197,63 @@ test('etapaPostVenta: liquidado + remision gana producto_entregado sobre saldo_p
   assert.equal(etapaPostVenta(hechos), 'producto_entregado');
 });
 
-// --- Gate de decorados (#61): no libera con checklist incompleto ---
+// --- #535: el checklist de calca ya no frena al sync (el tablero sigue a Operam) ---
 
-test('etapaPostVenta topa a anticipo_pagado una oportunidad decorada con checklist incompleto', () => {
-  const hechos = {
-    pago: { allocated: 300, outstanding: 700, total: 1000 },
-    tienePedido: true,
-    tieneRemision: false,
-  };
-  const oportunidad = { decorado: true, data: { calcaChecklist: [] } };
-  // Operam dice pedido_liberado, pero el gate la topa: gana el anticipo parcial.
-  assert.equal(etapaPostVenta(hechos, oportunidad), 'anticipo_pagado');
-});
+const CHECKLIST_COMPLETO = [
+  { clave: 'cotizacion_proveedor', completo: true },
+  { clave: 'posicion_cliente', completo: true },
+  { clave: 'arte_final', completo: true },
+  { clave: 'dummy_autorizado', completo: true },
+  { clave: 'liberacion_produccion', completo: true },
+  { clave: 'archivos_dropbox', completo: true },
+];
 
-test('etapaPostVenta deja en null una oportunidad decorada incompleta con pedido pero sin anticipo', () => {
-  const hechos = {
-    pago: { allocated: 0, outstanding: 0, total: 0 },
-    tienePedido: true,
-    tieneRemision: false,
-  };
-  const oportunidad = { decorado: true, data: { calcaChecklist: [] } };
-  // Sin pago parcial, el gate impide pedido_liberado y no hay etapa anterior: null.
-  assert.equal(etapaPostVenta(hechos, oportunidad), null);
-});
-
-test('etapaPostVenta libera una oportunidad decorada con checklist COMPLETO', () => {
-  const checklistCompleto = [
-    { clave: 'cotizacion_proveedor', completo: true },
-    { clave: 'posicion_cliente', completo: true },
-    { clave: 'arte_final', completo: true },
-    { clave: 'dummy_autorizado', completo: true },
-    { clave: 'liberacion_produccion', completo: true },
-    { clave: 'archivos_dropbox', completo: true },
-  ];
-  const hechos = {
-    pago: { allocated: 0, outstanding: 0, total: 0 },
-    tienePedido: true,
-    tieneRemision: false,
-  };
-  const oportunidad = { decorado: true, data: { calcaChecklist: checklistCompleto } };
-  assert.equal(etapaPostVenta(hechos, oportunidad), 'pedido_liberado');
-});
-
-test('etapaPostVenta: el gate NO afecta una oportunidad NO decorada', () => {
-  const hechos = {
-    pago: { allocated: 0, outstanding: 0, total: 0 },
-    tienePedido: true,
-    tieneRemision: false,
-  };
-  const oportunidad = { decorado: false };
-  assert.equal(etapaPostVenta(hechos, oportunidad), 'pedido_liberado');
-});
-
-test('etapaPostVenta: el gate NO topa producto_entregado/saldo_pagado por debajo de pedido_liberado', () => {
-  // El gate solo impide pedido_liberado y mas alla; pero saldo_pagado y
-  // producto_entregado son MAS avanzadas que pedido_liberado, asi que un
-  // decorado incompleto que ya entrego tampoco debe saltarse el gate: se topa
-  // en la mayor etapa NO bloqueada por el gate (anticipo, o null).
+test('#535: la decorada con checklist vacio en anticipo_pagado, con remision y pago completo, llega a producto_entregado (la 1222)', () => {
   const hechos = {
     pago: { allocated: 1000, outstanding: 0, total: 1000 },
     tienePedido: true,
     tieneRemision: true,
   };
-  const oportunidad = { decorado: true, data: { calcaChecklist: [] } };
-  // saldo liquidado pero sin anticipo parcial (outstanding 0): gate topa en null.
-  assert.equal(etapaPostVenta(hechos, oportunidad), null);
+  const oportunidad = { etapa: 'anticipo_pagado', decorado: true, data: { calcaChecklist: [] } };
+  assert.equal(etapaPostVenta(hechos, oportunidad), 'producto_entregado');
+});
+
+test('#535: la decorada incompleta en Seguimiento con solo pedido llega a pedido_liberado', () => {
+  const hechos = {
+    pago: { allocated: 0, outstanding: 0, total: 0 },
+    tienePedido: true,
+    tieneRemision: false,
+  };
+  const oportunidad = { etapa: 'seguimiento', decorado: true, data: { calcaChecklist: [{ clave: 'arte_final', completo: true }] } };
+  assert.equal(etapaPostVenta(hechos, oportunidad), 'pedido_liberado');
+});
+
+test('#535: para los mismos hechos la decorada incompleta, la completa y la no decorada dan la misma etapa', () => {
+  const casos = [
+    { pago: { allocated: 300, outstanding: 700, total: 1000 }, tienePedido: false, tieneRemision: false },
+    { pago: { allocated: 300, outstanding: 700, total: 1000 }, tienePedido: true, tieneRemision: false },
+    { pago: { allocated: 1000, outstanding: 0, total: 1000 }, tienePedido: true, tieneRemision: false },
+    { pago: { allocated: 1000, outstanding: 0, total: 1000 }, tienePedido: true, tieneRemision: true },
+    { pago: { allocated: 0, outstanding: 0, total: 0 }, tienePedido: true, tieneRemision: true },
+  ];
+  for (const hechos of casos) {
+    for (const etapa of ['seguimiento', 'anticipo_pagado', 'pedido_liberado', 'saldo_pagado', 'producto_entregado']) {
+      const noDecorada = etapaPostVenta(hechos, { etapa, decorado: false });
+      assert.equal(etapaPostVenta(hechos, { etapa, decorado: true, data: { calcaChecklist: [] } }), noDecorada, `${etapa} ${JSON.stringify(hechos)}`);
+      assert.equal(etapaPostVenta(hechos, { etapa, decorado: true, data: { calcaChecklist: CHECKLIST_COMPLETO } }), noDecorada, `${etapa} ${JSON.stringify(hechos)}`);
+    }
+  }
+});
+
+test('#535: la decorada incompleta conserva la monotonia: etapa actual igual o mas avanzada -> null', () => {
+  const hechos = {
+    pago: { allocated: 0, outstanding: 0, total: 0 },
+    tienePedido: true,
+    tieneRemision: false,
+  };
+  const decorada = (etapa) => ({ etapa, decorado: true, data: { calcaChecklist: [] } });
+  assert.equal(etapaPostVenta(hechos, decorada('pedido_liberado')), null);
+  assert.equal(etapaPostVenta(hechos, decorada('producto_entregado')), null);
 });
 
 // --- Idempotencia / monotonia respecto a la etapa actual ---

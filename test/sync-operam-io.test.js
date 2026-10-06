@@ -561,9 +561,8 @@ test('#507: con pedido propio y la etapa ya al dia el motivo es "sin cambios", n
   assert.equal(ajena.motivo, 'sin-pedido-propio');
 });
 
-test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera con checklist incompleto', async () => {
-  // Operam dice pedido + anticipo parcial; pero la oportunidad es decorada con
-  // checklist vacio: el gate la topa en anticipo_pagado (no pedido_liberado).
+test('#535: reconciliarOportunidad mueve a la decorada con checklist incompleto como a cualquier otra', async () => {
+  // Operam dice pedido + anticipo parcial: el checklist vacio ya no la topa.
   const deps = depsMock({
     transacciones: [
       { type: '10', order_: '7400', total_amount: '2000', allocated: '500', outstanding: '1500', debtor_no: '345' },
@@ -572,7 +571,7 @@ test('reconciliarOportunidad: respeta el gate de decorados (#61) -- no libera co
   });
   const op = { id: 11, etapa: 'seguimiento', decorado: true, data: { cliente: { rfc: 'ABC010101AAA' }, orderOperam: '7400', calcaChecklist: [] } };
   const res = await reconciliarOportunidad(op, deps);
-  assert.equal(res.etapa, 'anticipo_pagado');
+  assert.equal(res.etapa, 'pedido_liberado');
 });
 
 test('reconciliarOportunidad: sin RFC ni Cliente Operam y sin el pedido en el listado no mueve ni truena', async () => {

@@ -69,7 +69,7 @@ import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
-import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado, puedeLiberar } from './public/js/decorados-logica.js';
+import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado } from './public/js/decorados-logica.js';
 // Origen heredado (#287): el MISMO nucleo puro que usa el navegador. El
 // Historial y la cola Hoy no cargan prospectos, asi que la herencia se resuelve
 // en su propio GET; nunca se persiste en la cotizacion.
@@ -1308,28 +1308,6 @@ app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (re
     return res.json({ ok: true, comprobante, mensaje: mensajeSubidaCompleta(confirmados.length, { sandbox }) });
   }
   res.status(502).json({ ok: false, comprobante, confirmados, fallidos, error: mensajeSubidaIncompleta(confirmados, fallidos) });
-});
-
-// Gate a Pedido liberado (issue #61, AC3). Punto de enforcement MINIMO: una
-// cotizacion decorada con el checklist incompleto NO avanza (409); no decorada o
-// checklist completo procede (marca data.pedidoLiberado). El gate vive en el
-// dominio puro (puedeLiberar); esta ruta solo lo aplica.
-//
-// IMPORTANTE: #62 (sync post-venta con Operam, AUN NO EXISTE) dirigira el disparo
-// REAL de Pedido liberado leyendo Operam y DEBE pasar por este mismo gate
-// (puedeLiberar) antes de mover una oportunidad decorada a pedido_liberado. NO se
-// modela aqui el mapeo completo estado->etapa post-venta: eso es #62.
-app.post('/api/cotizacion/:id/liberar', authMiddleware, async (req, res) => {
-  const entry = await cotizacionOperable(req, res);
-  if (!entry) return;
-  if (!puedeLiberar(entry)) {
-    return res.status(409).json({
-      error: 'No se puede liberar: el checklist de calca esta incompleto',
-      progreso: progresoDecorado(entry.data && entry.data.calcaChecklist),
-    });
-  }
-  await cotStore.actualizarDatos(entry.id, { pedidoLiberado: true });
-  res.json({ ok: true, pedidoLiberado: true });
 });
 
 // --- Prospectos (issue #41, ADR-0004) ---

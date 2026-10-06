@@ -11,7 +11,7 @@
 // frontend, alineado a ese glosario.
 
 import { escapeHtml, CANALES, buildColaProspectosHtml, MOTIVOS_NO_UTIL, buildEdicionProspectoFormHtml, chipOrigenHtml, celularParaAccion, ETAPA_LABELS, buildWaLink } from './prospectos-logica.js';
-import { PASOS_DECORADO, esDecorada, progresoDecorado } from './decorados-logica.js';
+import { PASOS_DECORADO, esDecorada, progresoDecorado, calcaIncompletaAvanzada } from './decorados-logica.js';
 import { chipsCompletitud, customerIdFiscal, mostrarBotonCsf, esRfcGenerico, nombreConCorto, SALIDAS_DEDUP, PASOS_OK_QUE_SE_LEEN } from './alta-logica.js';
 import { filtrarPorCriterio, fechaLocal } from './busqueda-logica.js';
 import { tienePedido, textoMotivoPerdida } from './perdida-logica.js';
@@ -869,9 +869,8 @@ export function cadenaOperamHtml(espejo) {
 // producto_entregado) cuyo pago aun no aparece registrado en Operam. En el pipeline
 // manda el cumplimiento (entrega), no la cobranza: la tarjeta llega a entregado con
 // la remision y este sello marca la cobranza pendiente hasta que el pago se registre
-// (el sync apaga el flag pagoSinRegistrar al liquidarse). Se ata a la etapa entregada
-// para no contradecir una tarjeta topada por el gate de calca (#61): sin entrega no
-// hay sello de entrega. Vacio en cualquier otro caso.
+// (el sync apaga el flag pagoSinRegistrar al liquidarse). Se ata a la etapa
+// entregada: sin entrega no hay sello de entrega. Vacio en cualquier otro caso.
 export function badgePagoSinRegistrarHtml(o) {
   if (!o || o.etapa !== 'producto_entregado' || !o.pagoSinRegistrar) return '';
   return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
@@ -885,6 +884,19 @@ export function badgeFaltaComprobanteHtml(o) {
   const primer = faltaComprobante(o) ? '<span class="cot-badge badge-falta-comprobante">Falta comprobante</span>' : '';
   const saldo = faltaComprobante(o, 'saldo') ? '<span class="cot-badge badge-falta-comprobante">Falta comprobante del saldo</span>' : '';
   return primer + saldo;
+}
+
+// Badge "Calca incompleta" (#535): la decorada llego a Pedido liberado o despues
+// sin los 6 pasos del checklist. Aviso, no candado, como "Falta comprobante": la
+// etapa la mueve Operam. La regla es calcaIncompletaAvanzada (decorados-logica.js).
+export function badgeCalcaIncompletaHtml(o) {
+  return calcaIncompletaAvanzada(o) ? '<span class="cot-badge badge-calca-incompleta">Calca incompleta</span>' : '';
+}
+
+// El tono del resumen de la calca (#535): alerta con el aviso, si no ok/pendiente.
+function tonoCalca(o, completos, total) {
+  if (calcaIncompletaAvanzada(o)) return 'alerta';
+  return completos === total ? 'ok' : 'pend';
 }
 
 function diaDelComprobante(fecha) {
@@ -1119,7 +1131,7 @@ export function buildDecoradoControlHtml(o, plegables) {
   const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
   const llave = `${o.id}:calca`;
   const abierto = !!(plegables && plegables[llave]);
-  return `<details class="decorado-control calca-pleg" data-lista-plegable="${escapeHtml(llave)}"${abierto ? ' open' : ''}><summary>Calca <span class="pl-estado pl-estado-${completos === total ? 'ok' : 'pend'}">${completos}/${total}</span>${CHEVRON_LISTA}</summary>
+  return `<details class="decorado-control calca-pleg" data-lista-plegable="${escapeHtml(llave)}"${abierto ? ' open' : ''}><summary>Calca <span class="pl-estado pl-estado-${tonoCalca(o, completos, total)}">${completos}/${total}</span>${CHEVRON_LISTA}</summary>
     ${buildCalcaPasosHtml(o)}
   </details>`;
 }
@@ -1295,7 +1307,7 @@ function buildOportunidadCardHtml(o, vendedores, tienePermiso, esAdmin, ahora, p
     <div class="cot-card">
       <div class="cot-card-header">
         <div>
-          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}${badgeClienteOperamHtml(o)}</div>
+          <div class="cot-card-cliente">${escapeHtml(nombreOportunidad(o))}${badge}${badgePagoSinRegistrarHtml(o)}${badgeFaltaComprobanteHtml(o)}${badgeCalcaIncompletaHtml(o)}${badgeClienteOperamHtml(o)}</div>
           ${meta ? `<div class="cot-card-meta">${meta}</div>` : ''}
           <div style="margin-top:4px">${chipOrigenHtml(o)}</div>
         </div>
@@ -1372,13 +1384,13 @@ function plegableListaHtml(o, bloque, titulo, estado, tono, contenido, abiertoAl
 // El detalle de la fila abierta: informacion, acciones, Calca y Comprobante
 // plegables con su estado, y al final las salidas. El estado de cada plegable
 // sale de los predicados de siempre (esDecorada, progresoDecorado,
-// faltaComprobante, comprobanteDe), nunca de una regla nueva.
+// calcaIncompletaAvanzada, faltaComprobante, comprobanteDe), nunca de una regla nueva.
 export function buildDetalleListaPipelineHtml(o, { vendedores, puedeAsignar: tienePermiso, esAdmin = false, plegables } = {}) {
   const decorada = esDecorada(o);
   let calca = '';
   if (decorada) {
     const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
-    calca = plegableListaHtml(o, 'calca', 'Calca', `${completos} de ${total}`, completos === total ? 'ok' : 'pend', buildCalcaPasosHtml(o), false, plegables);
+    calca = plegableListaHtml(o, 'calca', 'Calca', `${completos} de ${total}`, tonoCalca(o, completos, total), buildCalcaPasosHtml(o), false, plegables);
   }
   const falta = faltaComprobante(o) || faltaComprobante(o, 'saldo');
   const subido = comprobanteDe(o) || comprobanteDe(o, 'saldo');
@@ -1413,7 +1425,7 @@ export function buildFilaListaPipelineHtml(o, contexto = {}) {
     : '<span class="pl-total pl-sin-total">Sin cotizar</span>';
   const sinContacto = oportunidadSinContacto(o)
     ?'<span class="cot-badge badge-sin-contacto">Sin Contacto</span>' : '';
-  const chips = badgeFolioOperam(o) + badgePagoSinRegistrarHtml(o) + badgeFaltaComprobanteHtml(o) + sinContacto;
+  const chips = badgeFolioOperam(o) + badgePagoSinRegistrarHtml(o) + badgeFaltaComprobanteHtml(o) + badgeCalcaIncompletaHtml(o) + sinContacto;
   const meta = [o.vendedor, o.ciudad, antiguedadOportunidad(o.fecha, ahora)].filter(Boolean).map(escapeHtml).join(' \u00b7 ');
   return `<div class="pl-fila${abierta ? ' pl-abierta' : ''}" id="pl-fila-${escapeHtml(o.id)}">
       <button type="button" class="pl-fila-cab" data-lista-fila="${escapeHtml(o.id)}" aria-expanded="${abierta}">

@@ -26,6 +26,8 @@ Cambios estructurales:
 - **Tablero único de pipeline** reemplaza los dos tableros separados.
 - **Pre-cotización** como concepto canónico: cotización con Prospecto Mínimo, sin registro en Operam ni Cliente Genérico, modelada con folio de Operam nullable; distinción visible PRE / "#Operam N"; formalización "completar después" desde la tarjeta.
 - **Checklist de decorados** (6 pasos de calca) en la tarjeta, con gate a Pedido liberado.
+
+> Nota (2026-10-05, #535): el gate a Pedido liberado deja de aplicarse en el sync post-venta. El sync no libera nada, solo refleja lo que Operam ya registro, y el candado escondia la etapa real (la 1222, entregada y pagada, seguia en Anticipo pagado). El tablero sigue a Operam; el checklist incompleto desde Pedido liberado es un aviso, "Calca incompleta". La regla de los 6 pasos (`puedeLiberar`) queda para una futura accion del cotizador que convierta la cotizacion en pedido (#538).
 - **Sincronización post-venta con Operam**: las 4 etapas post-venta se mueven leyendo Operam (API v3 / webhooks). Dependencia técnica abierta: confirmar la cadena cotización → pedido → pagos; lo no expuesto arranca manual con sugerencia.
 
 Documentado en el PRD #52 y descompuesto en los issues #53–#66.

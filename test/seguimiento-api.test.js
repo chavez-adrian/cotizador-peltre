@@ -369,46 +369,16 @@ test('DEC7: el paso de archivos (paso 6) acepta contenido y marca el paso aunque
   }
 });
 
-// --- AC3: gate server-side a Pedido liberado (#61). El sync Operam (#62) NO
-// existe aun; este es el punto de enforcement minimo que #62 reusara. ---
+// --- #535: la ruta de liberar se retiro (nadie la llamaba y nadie leia la
+// marca). El gate puedeLiberar queda para "Liberar a produccion" (#538). ---
 
-test('DEC8: liberar una cotizacion decorada con checklist incompleto responde 409 (no avanza)', async () => {
-  const cots = fixture();
-  cots[0].data.decorado = true;
-  cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map((c, i) => ({ clave: c, completo: i < 3 }));
-  writeCots(cots);
-  const res = await supertest(app).post('/api/cotizacion/1/liberar')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
-  assert.equal(res.status, 409);
-  // no marca pedidoLiberado
-  assert.notEqual(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
-});
-
-test('DEC9: liberar una cotizacion decorada con los 6 pasos completos responde 200 y marca el avance', async () => {
+test('#535: POST /api/cotizacion/:id/liberar ya no existe (404) y no escribe pedidoLiberado', async () => {
   const cots = fixture();
   cots[0].data.decorado = true;
   cots[0].data.calcaChecklist = TODOS_LOS_PASOS.map(c => ({ clave: c, completo: true }));
   writeCots(cots);
   const res = await supertest(app).post('/api/cotizacion/1/liberar')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
-  assert.equal(res.status, 200);
-  assert.equal(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
-});
-
-test('DEC10: liberar una cotizacion NO decorada responde 200 (el gate no aplica)', async () => {
-  writeCots(fixture());
-  const res = await supertest(app).post('/api/cotizacion/1/liberar')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
-  assert.equal(res.status, 200);
-  assert.equal(readCots().find(c => c.id === 1).data.pedidoLiberado, true);
-});
-
-test('DEC11: liberar sobre cotizacion ajena responde 403, inexistente 404', async () => {
-  writeCots(fixture());
-  const ajena = await supertest(app).post('/api/cotizacion/2/liberar')
-    .set('Authorization', `Bearer ${MEMO_TOKEN}`).send({});
-  assert.equal(ajena.status, 403);
-  const noExiste = await supertest(app).post('/api/cotizacion/999/liberar')
     .set('Authorization', `Bearer ${ADMIN_TOKEN}`).send({});
-  assert.equal(noExiste.status, 404);
+  assert.equal(res.status, 404);
+  assert.equal('pedidoLiberado' in readCots().find(c => c.id === 1).data, false);
 });
