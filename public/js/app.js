@@ -3253,7 +3253,7 @@ function shareWhatsApp() {
 // Orden: cerrarMenuNuevo() va ANTES del confirm (si el vendedor cancela, el menu
 // igual debe cerrarse); la navegacion va DESPUES, para que cancelar no mueva nada.
 // Para #btn-nueva la navegacion no se ve (ya esta en esa vista), pero NO es
-// inocua: ocultarTodasLasVistas llama devolverPanelACasa (#94), asi que empezar
+// inocua: ocultarTodasLasVistas recoge el panel (alCerrarPanel, #94), asi que empezar
 // de cero tambien descarta un upgrade fiscal a medias. Es lo deseable.
 function nuevaCotizacion() {
   cerrarMenuNuevo();
@@ -3680,7 +3680,7 @@ function pintarAvisoCambioCliente() {
 function pcRenderInicio() {
   // Soltar al cliente recoge el panel del alta/upgrade (#489, regla de #412): el
   // panel es hermano de la raiz del paso y modoAlta apuntaria al anterior.
-  devolverPanelACasa();
+  aplicarModoAlta(alCerrarPanel);
   pcPrepararSeleccion();
   pcProspectosCache = null; // se refrescan al abrir una nueva captura/busqueda
   const root = pcEl();
@@ -4439,7 +4439,7 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // historial). 'clientes' re-parenta el panel a la vista Clientes (no es un
   // tab) y no debe tocar nada; cualquier otro origen necesita #app-view
   // visible y el tab cliente activo para que el panel se vea.
-  // Va ANTES de prender el modo: ocultarTodasLasVistas -> devolverPanelACasa lo
+  // Va ANTES de prender el modo: ocultarTodasLasVistas -> alCerrarPanel lo
   // apaga, y el chip "Fiscal - subir CSF" abria el panel en modo ALTA (confirmar
   // corria la dedup de un cliente nuevo en vez del PUT del upgrade).
   if (origen !== 'clientes') {
@@ -4451,26 +4451,15 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // es confiable (ver emailFacturaParaUpgrade en alta-logica.js).
   // Lo que se cargue en este panel desde aqui es del upgrade (#491): la transicion marca
   // la constancia como suya y deja huerfana la lectura que habia empezado el alta.
-  aplicarModoAlta(alAbrirActualizacion, customerId, origen);
+  // Su pantalla (#541): el banner de contexto (#94) contra quien se actualiza; las
+  // Secciones 3 y 4 candadas -- el acordeon es UN solo nodo (#376) y desde las que dejo
+  // abiertas un alta anterior "Dar de alta" daria de alta, con la CSF de ESTE upgrade,
+  // al cliente que se esta actualizando --, sin las palomas de esa alta (#432) y sin el
+  // boton. Va antes de altaToggleSeccion, que respeta el candado.
+  aplicarModoAlta(alAbrirActualizacion, customerId, origen, banner);
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
-  // Banner de contexto (#94): visible siempre que el modo este en actualizacion. Hace
-  // visible CONTRA QUIEN se actualiza (hoy ese contexto es invisible). Aplica
-  // tanto al upgrade desde el paso Cliente como desde la vista Clientes.
-  const bannerEl = document.getElementById('alta-upgrade-banner');
-  if (bannerEl) {
-    bannerEl.innerHTML = bannerUpgradeHtml({ id: customerId, nombre: banner?.nombre, rfc: banner?.rfc });
-    bannerEl.style.display = '';
-  }
   panel.style.display = 'block';
   altaTabSwitch('csf');
-  // El acordeon es UN solo nodo (#376): las Secciones 3 y 4 que dejo desbloqueadas un
-  // alta anterior de esta misma pestana siguen abiertas aqui, y desde ellas "Dar de
-  // alta" daria de alta -- con la CSF de ESTE upgrade -- al cliente que se esta
-  // actualizando. Candar antes de altaToggleSeccion, que respeta el candado.
-  altaCandarSeccionesAvanzadas();
-  // Y las palomas de ESA alta tambien se quedaban en el lateral (#432).
-  altaLimpiarProgreso();
-  altaBotonDarDeAltaSegunModo();
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
   altaCsfPintarStatus();
@@ -5996,7 +5985,7 @@ function showProspectos() {
 // patron de montaje. Reusa el buscador mixto (pcBuscarMezclado) y los chips del
 // paso Cliente (chipsCompletitud); el render vive en pipeline-logica.js. El panel
 // de alta (#panel-alta-cliente) se re-parenta a #clientes-panel-slot (moverPanelA)
-// y vuelve a su casa al salir (devolverPanelACasa, via ocultarTodasLasVistas).
+// y vuelve a su casa al salir (alCerrarPanel, via ocultarTodasLasVistas).
 const cvState = { seleccion: null, query: '' };
 let cvResultadosCache = [];
 
@@ -6017,7 +6006,7 @@ function cvRenderBusqueda() {
   cvState.seleccion = null;
   // Soltar al cliente recoge el panel del alta/upgrade que la vista tenia prestado
   // (#489): "Buscar otro", "Cancelar" y la tarjeta sin seleccion pasan por aqui.
-  devolverPanelACasa();
+  aplicarModoAlta(alCerrarPanel);
   // El reporte del upgrade se inserta junto al panel, fuera de #clientes-root, y
   // sobrevive a los repintados de la vista (#407): al soltar el cliente hay que
   // quitarlo a mano o se queda hablando del anterior sobre la busqueda del siguiente.
@@ -6169,7 +6158,7 @@ window.cvRenderTarjeta = cvRenderTarjeta;
 // cvRenderTarjeta porque el exito del upgrade la repinta y DESPUES inserta su reporte
 // junto al panel (#407): devolverlo a casa ahi mandaria el reporte al paso Cliente.
 function cvVolverATarjeta() {
-  devolverPanelACasa();
+  aplicarModoAlta(alCerrarPanel);
   cvRenderTarjeta();
 }
 window.cvVolverATarjeta = cvVolverATarjeta;
@@ -6994,7 +6983,7 @@ function ocultarTodasLasVistas() {
   // Cliente y resetea el estado del upgrade (#94): salir de la vista Clientes (o
   // navegar a cualquier otra) nunca puede dejar un modo de actualizacion colgado que dispare
   // un PUT contra el cliente equivocado.
-  devolverPanelACasa();
+  aplicarModoAlta(alCerrarPanel);
   cerrarMenuMas();
   cerrarMenuNuevo();
 }
@@ -7010,31 +6999,6 @@ function moverPanelA(contenedor) {
   if (!panel || !contenedor) return;
   if (!_panelHome) _panelHome = { parent: panel.parentNode, next: panel.nextSibling };
   contenedor.appendChild(panel);
-}
-
-function devolverPanelACasa() {
-  const panel = document.getElementById('panel-alta-cliente');
-  if (!panel) return;
-  panel.style.display = 'none';
-  // Borrador de formulario (#185): cambiar de vista pliega el panel pero no es
-  // un cancelar explicito -- el borrador de la superficie que estuviera abierta
-  // sobrevive (mismo patron que plegar la captura de prospecto). Inofensivo si
-  // ninguna de las dos estaba abierta. La llave de upgrade-fiscal es por
-  // customer_id (DEF_UPGRADE_FISCAL) -- se lee modoAlta.clienteId ANTES
-  // de cerrar el modo dos lineas abajo.
-  cerrarFormularioBorrador('alta-completa', null);
-  if (modoAlta.clienteId != null) {
-    cerrarFormularioBorrador(`upgrade-fiscal-${modoAlta.clienteId}`, null);
-  }
-  aplicarModoAlta(alCerrarPanel);
-  altaBotonDarDeAltaSegunModo(); // el modo se apago: el boton del alta vuelve (#376)
-  const banner = document.getElementById('alta-upgrade-banner');
-  if (banner) { banner.innerHTML = ''; banner.style.display = 'none'; }
-  if (!_panelHome) return;
-  const { parent, next } = _panelHome;
-  if (!parent) return;
-  if (next && next.parentNode === parent) parent.insertBefore(panel, next);
-  else parent.appendChild(panel);
 }
 
 function marcarNavActivo(id) {
@@ -8317,14 +8281,11 @@ function abrirAcordeonAlta() {
   // La constancia que dejo un upgrade de esta pestana no es de este alta (#491): ni su
   // RFC, ni sus regimenes, ni su PDF en el POST; con ella se va la Seccion 1 confirmada.
   // La que cargo el alta se conserva. El descarte se lee ANTES de la transicion.
+  // La transicion prende "Dar de alta" (#376) y oculta el banner. Aqui y no solo en el
+  // reinicio: un alta a medias no pasa por el y se quedaria sin boton.
   const apertura = aperturaDelAlta(modoAlta, altaState.datos);
   aplicarModoAlta(alAbrirAlta);
   altaState.datos = apertura.datosAlta;
-  // Con el modo apagado, "Dar de alta" vuelve (#376). Aqui y no solo en
-  // altaReiniciarPanel: un alta a medias no pasa por el reinicio y se quedaria sin boton.
-  altaBotonDarDeAltaSegunModo();
-  const bannerEl = document.getElementById('alta-upgrade-banner');
-  if (bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   // Rastro del alta ANTERIOR (#192): si la de antes se completo, su cliente
   // destino, sus palomas y su boton deshabilitado siguen aqui -- el panel es un
   // solo nodo y su estado vive en memoria. Un alta a medias NO se toca: es lo
@@ -8358,64 +8319,23 @@ function abrirAcordeonAlta() {
 // recien montado tras un alta que YA se completo. Solo corre cuando el nucleo puro
 // decidio reiniciar -- un alta a medias conserva su avance y sus secciones abiertas.
 // Los campos no se vacian aqui: al terminar con exito ya lo hizo
-// vaciarCamposSuperficie('alta-completa') (#185).
+// vaciarCamposSuperficie('alta-completa') (#185). Las dos constantes las usa el caso
+// candarSecciones del ejecutor del Modo del alta.
 const ALTA_SECCIONES_BLOQUEADAS_AL_INICIO = [3, 4];
 const ALTA_ICO_CANDADO = '\u{1F512}';
 
-// Secciones 3 y 4 de vuelta a su candado de origen. Lo comparten el reinicio del panel
-// tras un alta ya completada (#192) y la apertura del upgrade fiscal (#376): el
-// acordeon es UN solo nodo, asi que el upgrade hereda las secciones que un alta
-// anterior de la misma pestana dejo desbloqueadas.
-function altaCandarSeccionesAvanzadas() {
-  ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
-    const sec = document.getElementById(`alta-sec-${n}`);
-    if (sec) sec.classList.add('alta-seccion-bloqueada');
-    const hdr = document.getElementById(`alta-hd-${n}`);
-    if (hdr) hdr.style.cursor = 'not-allowed';
-    const ico = document.getElementById(`alta-ico-${n}`);
-    if (ico) ico.textContent = ALTA_ICO_CANDADO;
-  });
-  // La Seccion 3 vuelve a su modo de captura (#371): el acordeon es UN solo nodo, asi
-  // que un alta anterior sobre un Cliente Operam reutilizado la dejaria en solo
-  // lectura -- con el domicilio de ESE cliente a la vista -- para el alta o el
-  // upgrade que se abra despues en la misma pestana (#376).
-  altaModoDomicilio(null);
-}
-
-// "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel que
-// el upgrade fiscal. Se deriva del modo cada vez que el modo cambia, nunca se deja
-// pegado -- un boton deshabilitado sin quien lo reponga deja al vendedor sin alta.
-function altaBotonDarDeAltaSegunModo() {
-  const btn = document.getElementById('alta-btn-dar-alta');
-  if (btn) btn.disabled = modoAlta.clienteId != null;
-}
-
-// Palomas del lateral "Progreso del alta": las tres vuelven a vacio. Las comparten el
-// reinicio tras un alta completada (#192) y la apertura del upgrade fiscal (#432): el
-// lateral vive en el mismo nodo que viaja (#376/#412) y el upgrade no marca ninguna,
-// asi que las que se verian al abrirlo son de un alta anterior de la misma pestana.
-function altaLimpiarProgreso() {
-  [1, 2, 3].forEach(i => {
-    const dot = document.getElementById(`chkdot-${i}`);
-    if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
-  });
-}
-
+// El reinicio (#192): su transicion prende "Dar de alta", limpia las palomas y canda las
+// Secciones 3 y 4 -- sin el candado el vendedor saltaria a "Dar de alta" sin pasar por
+// la Seccion 1, que es justo donde se decide sobre que cliente aplica el alta.
 function altaReiniciarPanel() {
   aplicarModoAlta(alReiniciarAlta);
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
   altaCsfPintarStatus();
   altaPasosReset();
-  altaBotonDarDeAltaSegunModo();
   const exitoDiv = document.getElementById('alta-btns-exito');
   if (exitoDiv) exitoDiv.style.display = 'none';
   const reintBtn = document.getElementById('alta-btn-reintentar');
   if (reintBtn) reintBtn.style.display = 'none';
-  altaLimpiarProgreso();
-  // Secciones 3 y 4 vuelven a su candado de origen: sin esto el vendedor puede
-  // saltar a "Dar de alta" sin pasar por la Seccion 1, que es justo donde se
-  // decide sobre que cliente aplica el alta.
-  altaCandarSeccionesAvanzadas();
   altaLimpiarAvisosAlta();
 }
 
@@ -8525,8 +8445,87 @@ window.altaToggleSeccion = altaToggleSeccion;
 // con su origen, la linea base comercial y, desde #540, la constancia en memoria (de
 // quien es y la lectura vigente del PDF). Lo decide modo-alta-logica.js; este es el
 // UNICO punto que lo escribe -- cada camino aplica su transicion, nunca un campo suelto.
+// Desde #541 la transicion devuelve tambien lo que la pantalla hace por ese cambio:
+// primero se asigna el estado y en seguida se ejecutan sus acciones, asi que ningun
+// camino puede cambiar el modo y olvidar recoger el panel, candar o limpiar.
 let modoAlta = MODO_ALTA_INICIAL;
-function aplicarModoAlta(transicion, ...args) { modoAlta = transicion(modoAlta, ...args); }
+function aplicarModoAlta(transicion, ...args) {
+  const { estado, acciones } = transicion(modoAlta, ...args);
+  modoAlta = estado;
+  for (const accion of acciones) ejecutarAccionAlta(accion);
+}
+
+// EL ejecutor de las acciones del Modo del alta (ACCIONES_MODO en modo-alta-logica.js):
+// un case por tipo. Que boton dispara que transicion sigue siendo cableado de app.js;
+// QUE hace la pantalla con cada cambio de modo lo decide el modulo.
+function ejecutarAccionAlta(accion) {
+  switch (accion.tipo) {
+    // El panel es UN nodo que viaja (#376): oculto y de vuelta a su lugar en el paso
+    // Cliente. Dejarlo colgado de #clientes-panel-slot dejaba "Nuevo cliente" sin
+    // abrir nada hasta recargar (#412).
+    case 'recogerPanel': {
+      const panel = document.getElementById('panel-alta-cliente');
+      if (!panel) return;
+      panel.style.display = 'none';
+      if (!_panelHome) return;
+      const { parent, next } = _panelHome;
+      if (!parent) return;
+      if (next && next.parentNode === parent) parent.insertBefore(panel, next);
+      else parent.appendChild(panel);
+      return;
+    }
+    // Recoger el panel no es un cancelar explicito (#185): el borrador sobrevive,
+    // mismo patron que plegar la captura de prospecto.
+    case 'cerrarBorrador':
+      cerrarFormularioBorrador(accion.formId, null);
+      return;
+    // "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel
+    // que el upgrade fiscal.
+    case 'botonDarDeAlta': {
+      const btn = document.getElementById('alta-btn-dar-alta');
+      if (btn) btn.disabled = !accion.habilitado;
+      return;
+    }
+    // Banner de contexto (#94): hace visible CONTRA QUIEN se actualiza.
+    case 'banner': {
+      const bannerEl = document.getElementById('alta-upgrade-banner');
+      if (!bannerEl) return;
+      if (accion.cliente) {
+        bannerEl.innerHTML = bannerUpgradeHtml(accion.cliente);
+        bannerEl.style.display = '';
+      } else {
+        bannerEl.innerHTML = '';
+        bannerEl.style.display = 'none';
+      }
+      return;
+    }
+    // Secciones 3 y 4 de vuelta a su candado de origen, y la 3 a modo captura (#371):
+    // un alta anterior de la misma pestana las dejaria abiertas -- o la 3 en solo
+    // lectura con el domicilio de OTRO Cliente Operam -- para el alta o el upgrade
+    // que se abra despues (#376).
+    case 'candarSecciones':
+      ALTA_SECCIONES_BLOQUEADAS_AL_INICIO.forEach(n => {
+        const sec = document.getElementById(`alta-sec-${n}`);
+        if (sec) sec.classList.add('alta-seccion-bloqueada');
+        const hdr = document.getElementById(`alta-hd-${n}`);
+        if (hdr) hdr.style.cursor = 'not-allowed';
+        const ico = document.getElementById(`alta-ico-${n}`);
+        if (ico) ico.textContent = ALTA_ICO_CANDADO;
+      });
+      altaModoDomicilio(null);
+      return;
+    // Palomas del lateral "Progreso del alta" a vacio: el upgrade no marca ninguna, asi
+    // que las que se verian al abrirlo son de un alta anterior (#432).
+    case 'limpiarProgreso':
+      [1, 2, 3].forEach(i => {
+        const dot = document.getElementById(`chkdot-${i}`);
+        if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
+      });
+      return;
+    default:
+      throw new Error(`Accion del Modo del alta desconocida: ${accion.tipo}`);
+  }
+}
 
 // Pinta el estado de la constancia (modoAlta.status), que escriben las transiciones;
 // aqui solo se lee. `opts` lleva los textos del spinner, del banner y del error.
@@ -9220,8 +9219,8 @@ async function altaCandidatoActualizar(clienteId) {
   // los que el vendedor capturo en el ALTA, y ahi el segmento SI es captura suya y
   // tiene que viajar (#193). La transicion deja la linea base en undefined = "no hay
   // panel comercial que podar" (#197), distinto de null, que significa "la precarga fallo".
+  // La transicion apaga "Dar de alta": mientras el upgrade decide, el alta no corre (#376).
   aplicarModoAlta(alActualizarCandidato, clienteId);
-  altaBotonDarDeAltaSegunModo(); // mientras el upgrade decide, el alta no corre (#376)
   await pcEjecutarUpgradeFiscal(altaState.datos);
 }
 window.altaCandidatoActualizar = altaCandidatoActualizar;
@@ -9240,7 +9239,6 @@ function altaCandidatoCrearNuevo() {
   // candidato es justamente decir que ese cliente no era, asi que el modo se apaga y el
   // alta vuelve a ser posible. Sin esto la guardia de altaDarDeAlta no tendria salida.
   aplicarModoAlta(alCrearNuevoCandidato);
-  altaBotonDarDeAltaSegunModo();
   const sec2 = document.getElementById('alta-sec-2');
   if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
 }
@@ -9729,10 +9727,10 @@ function altaPanelEnVistaClientes() {
 }
 
 // Cierre comun de los dos botones post-exito (#412). El panel SIEMPRE vuelve a su
-// casa -- por ocultarTodasLasVistas, que llama a devolverPanelACasa, o por esa misma
-// funcion cuando no hay cambio de vista --, nunca con un display:none suelto:
+// casa -- por ocultarTodasLasVistas, que aplica alCerrarPanel, o por esa misma
+// transicion cuando no hay cambio de vista --, nunca con un display:none suelto:
 // dejarlo colgado de #clientes-panel-slot es lo que volvia inutilizable el alta en
-// el paso Cliente hasta recargar. devolverPanelACasa ademas apaga el modo de actualizacion y
+// el paso Cliente hasta recargar. alCerrarPanel ademas apaga el modo de actualizacion y
 // cierra el borrador de la superficie, que es la proteccion de #376.
 //
 // La vista Clientes se repinta a su busqueda -- lo mismo que hace su "Cancelar" --
@@ -9746,7 +9744,7 @@ function altaCerrarPanelPostExito(destino) {
     marcarNavActivo('nav-cotizar');
   } else {
     // 'clientes' y 'paso': el vendedor se queda donde esta y solo se recoge el panel.
-    devolverPanelACasa();
+    aplicarModoAlta(alCerrarPanel);
   }
   if (destino.limpiarVistaClientes) cvRenderBusqueda();
 }

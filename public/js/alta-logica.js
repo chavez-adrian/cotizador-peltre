@@ -729,7 +729,7 @@ export function destinoTrasUpgradeLogrado(origen, vista) {
 // "Nuevo cliente" en el paso Cliente ya no abria nada hasta recargar -- y la vista
 // Clientes quedaba con el encabezado del alta y nada debajo.
 //
-// Quien decide es esto; app.js devuelve el panel a su casa SIEMPRE (devolverPanelACasa,
+// Quien decide es esto; app.js devuelve el panel a su casa SIEMPRE (aplicarModoAlta(alCerrarPanel),
 // que ademas apaga el modo de actualizacion y cierra el borrador de la superficie) y pinta la
 // pantalla que sale de aqui. La vista Clientes solo se limpia cuando el panel estaba
 // prestado ahi: repintarla desde el paso Cliente borraria la busqueda de otro momento.

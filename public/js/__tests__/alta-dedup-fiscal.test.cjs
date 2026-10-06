@@ -854,7 +854,7 @@ test('C16: los campos que precarga el upgrade viven fuera de #alta-body-1, la su
   }
 });
 
-// devolverPanelACasa (que corre dentro de ocultarTodasLasVistas) APAGA modoUpgrade.
+// Recoger el panel (alCerrarPanel, que aplica ocultarTodasLasVistas) APAGA el modo.
 // pcAbrirUpgradeFiscal lo llamaba DESPUES de prender el modo, asi que el chip
 // "Fiscal - subir CSF" del paso Cliente abria el panel en modo alta: confirmar la
 // CSF corria la dedup de un cliente nuevo y, sin coincidencia por nombre, daba de
@@ -874,9 +874,9 @@ test('C16b: pcAbrirUpgradeFiscal prende el modo DESPUES de ocultarTodasLasVistas
   const prender = cuerpo.indexOf('aplicarModoAlta(alAbrirActualizacion');
   assert.ok(ocultar > 0 && prender > 0, 'las dos llamadas deben seguir en la funcion');
   assert.ok(ocultar < prender, 'ocultarTodasLasVistas apaga el modo: tiene que correr antes de prenderlo');
-  const casa = src.slice(src.indexOf('function devolverPanelACasa('));
-  assert.ok(casa.slice(0, casa.indexOf('\n}\n')).includes('aplicarModoAlta(alCerrarPanel)'),
-    'si devolverPanelACasa deja de apagar el modo, este test ya no cuida nada: revisarlo');
+  const ocultarTodas = src.slice(src.indexOf('function ocultarTodasLasVistas('));
+  assert.ok(ocultarTodas.slice(0, ocultarTodas.indexOf('\n}\n')).includes('aplicarModoAlta(alCerrarPanel)'),
+    'si ocultarTodasLasVistas deja de apagar el modo, este test ya no cuida nada: revisarlo');
 });
 
 test('C17: la precarga normaliza a texto lo que Operam entregue como numero (un 15 no debe verse como cambio contra "15")', async () => {

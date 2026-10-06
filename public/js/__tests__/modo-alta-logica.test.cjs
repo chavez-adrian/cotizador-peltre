@@ -14,11 +14,18 @@ let aperturaDelAlta, alReiniciarAlta, alEmpezarLectura, alLeerConstancia, alFall
 const PRECARGA = { salesType: '3', segmentoId: '12', vendedorNombre: 'Adrian' };
 const EN_ACTUALIZACION = { clienteId: 15, origen: 'clientes', comercialPrecargado: PRECARGA };
 
+// Desde #541 las transiciones devuelven { estado, acciones }. Las pruebas MA y MC
+// afirman el ESTADO: aqui se cambia su acceso, una vez (`.estado`), y ningun literal.
+// Las de la pantalla (MP) usan el modulo tal cual (`M`).
+let M, ACCIONES_MODO;
+const soloEstado = transicion => (...args) => transicion(...args).estado;
+
 let errorAltaEnModoUpgrade;
 before(async () => {
   ({ errorAltaEnModoUpgrade } = await import('../alta-logica.js'));
+  M = await import('../modo-alta-logica.js');
+  ({ MODO_ALTA_INICIAL, aperturaDelAlta, ACCIONES_MODO } = M);
   ({
-    MODO_ALTA_INICIAL,
     alAbrirAlta,
     alAbrirActualizacion,
     alPrecargarComercial,
@@ -26,14 +33,13 @@ before(async () => {
     alActualizarCandidato,
     alCrearNuevoCandidato,
     alCerrarPanel,
-    aperturaDelAlta,
     alReiniciarAlta,
     alEmpezarLectura,
     alLeerConstancia,
     alFallarLectura,
     alConfirmarConstancia,
     alVaciarConstancia,
-  } = await import('../modo-alta-logica.js'));
+  } = Object.fromEntries(Object.entries(M).filter(([k]) => /^al[A-Z]/.test(k)).map(([k, f]) => [k, soloEstado(f)])));
 });
 
 test('MA0: el estado inicial es alta sin origen ni panel comercial, y sin constancia', () => {
@@ -107,8 +113,8 @@ test('MA7: cerrar el panel vuelve a alta y NO toca la precarga (asimetria 1)', (
     { clienteId: null, origen: null, comercialPrecargado: null });
 });
 
-// Sustituta de C16b (2) y #489-3: recoger el panel (devolverPanelACasa, que corre
-// dentro de ocultarTodasLasVistas) apaga la actualizacion que estuviera abierta. Por
+// Sustituta de C16b (2) y #489-3: recoger el panel (alCerrarPanel, que tambien aplica
+// ocultarTodasLasVistas) apaga la actualizacion que estuviera abierta. Por
 // eso pcAbrirUpgradeFiscal tiene que prender el modo DESPUES de ocultar las vistas.
 test('MA8: cerrar el panel tras abrir la actualizacion vuelve a alta', () => {
   const abierta = alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso');
@@ -333,4 +339,108 @@ test('MC13: "Actualizar este", "Crear nuevo", cerrar y la precarga no tocan la c
   for (const s of [alActualizarCandidato(m, 77), alCrearNuevoCandidato(m), alCerrarPanel(m), alPrecargarComercial(m, PRECARGA)]) {
     assert.deepStrictEqual(constanciaDe(s), CONSTANCIA_LEIDA);
   }
+});
+
+// --- La pantalla se deriva del modo (#541) -----------------------------------
+// Cada lista es literal de la tabla transicion -> acciones del ADR-0023: lo que hacia a
+// mano su funcion de app.js, en el mismo orden y con sus asimetrias.
+
+const BANNER_FUERA = { tipo: 'banner', cliente: null };
+const BOTON_ON = { tipo: 'botonDarDeAlta', habilitado: true };
+const BOTON_OFF = { tipo: 'botonDarDeAlta', habilitado: false };
+const PALOMAS = { tipo: 'limpiarProgreso' };
+const CANDADO = { tipo: 'candarSecciones' };
+
+test('MP1: abrir el alta solo prende el boton y oculta el banner; ni candado ni palomas (asimetria 1)', () => {
+  assert.deepStrictEqual(M.alAbrirAlta(EN_ACTUALIZACION).acciones, [BOTON_ON, BANNER_FUERA]);
+  assert.deepStrictEqual(M.alAbrirAlta(MODO_ALTA_INICIAL).acciones, [BOTON_ON, BANNER_FUERA]);
+});
+
+// El reinicio parte de clienteId null, como en su unico llamador (despues de abrir el alta).
+test('MP2: el reinicio tras un alta completada prende el boton, limpia las palomas y canda', () => {
+  assert.deepStrictEqual(M.alReiniciarAlta({ ...CONSTANCIA_LEIDA, clienteId: null }).acciones, [BOTON_ON, PALOMAS, CANDADO]);
+});
+
+test('MP3: el boton sale del estado ya cambiado, nunca es literal', () => {
+  assert.deepStrictEqual(M.alReiniciarAlta({ ...MODO_ALTA_INICIAL, clienteId: 15 }).acciones[0], BOTON_OFF);
+  assert.deepStrictEqual(M.alReiniciarAlta({ ...MODO_ALTA_INICIAL, clienteId: 0 }).acciones[0], BOTON_OFF, 'el 0 sigue siendo id');
+  assert.deepStrictEqual(M.alAbrirActualizacion(MODO_ALTA_INICIAL, 0, 'paso').acciones[3], BOTON_OFF);
+});
+
+// Sustituta de #432-2 (abrir la actualizacion limpia las palomas) y de #432-3 (el
+// reinicio y la actualizacion comparten UNA limpieza: la misma accion).
+test('MP4: abrir la actualizacion pone el banner, canda, limpia las palomas y apaga el boton', () => {
+  assert.deepStrictEqual(M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'clientes', { nombre: 'Adrian', rfc: 'XAXX010101000' }).acciones, [
+    { tipo: 'banner', cliente: { id: 15, nombre: 'Adrian', rfc: 'XAXX010101000' } },
+    CANDADO,
+    PALOMAS,
+    BOTON_OFF,
+  ]);
+  const delReinicio = M.alReiniciarAlta(MODO_ALTA_INICIAL).acciones.find(a => a.tipo === 'limpiarProgreso');
+  assert.deepStrictEqual(M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').acciones[2], delReinicio);
+  assert.deepStrictEqual(delReinicio, PALOMAS);
+});
+
+// El boton del Resumen abre la actualizacion sin datos del cliente (pipeline-logica fija
+// pcAbrirUpgradeFiscal(501, null, 'resumen')).
+test('MP5: el banner tolera abrir la actualizacion sin nombre ni RFC', () => {
+  assert.deepStrictEqual(M.alAbrirActualizacion(MODO_ALTA_INICIAL, 501, 'resumen', null).acciones[0],
+    { tipo: 'banner', cliente: { id: 501, nombre: undefined, rfc: undefined } });
+});
+
+// Sustituta de #489-3 (comportamiento): cerrar recoge el panel, los borradores, el boton y el banner.
+test('MP6: cerrar recoge el panel y cierra el borrador del upgrade solo si habia actualizacion', () => {
+  assert.deepStrictEqual(M.alCerrarPanel(EN_ACTUALIZACION).acciones, [
+    { tipo: 'recogerPanel' },
+    { tipo: 'cerrarBorrador', formId: 'alta-completa' },
+    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-15' },
+    BOTON_ON,
+    BANNER_FUERA,
+  ]);
+  assert.deepStrictEqual(M.alCerrarPanel(MODO_ALTA_INICIAL).acciones, [
+    { tipo: 'recogerPanel' },
+    { tipo: 'cerrarBorrador', formId: 'alta-completa' },
+    BOTON_ON,
+    BANNER_FUERA,
+  ]);
+  assert.deepStrictEqual(M.alCerrarPanel({ ...MODO_ALTA_INICIAL, clienteId: 0 }).acciones[2],
+    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-0' }, 'el 0 sigue siendo id');
+});
+
+test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende (asimetrias 3 y 5)', () => {
+  assert.deepStrictEqual(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77).acciones, [BOTON_OFF]);
+  assert.deepStrictEqual(M.alCrearNuevoCandidato({ ...MODO_ALTA_INICIAL, clienteId: 77 }).acciones, [BOTON_ON]);
+});
+
+// La lista vacia de la actualizacion lograda es la asimetria 4: no recoge el panel, no
+// reenciende "Dar de alta" ni oculta el banner.
+test('MP8: la actualizacion lograda, la precarga y la constancia no devuelven acciones', () => {
+  const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').estado;
+  const leyendo = M.alEmpezarLectura(MODO_ALTA_INICIAL).estado;
+  const salidas = [
+    M.alLograrActualizacion(abierta, 15),
+    M.alPrecargarComercial(abierta, PRECARGA),
+    M.alEmpezarLectura(MODO_ALTA_INICIAL),
+    M.alLeerConstancia(leyendo, 1, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x', fileName: 'a.pdf' }),
+    M.alLeerConstancia(leyendo, 9, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x', fileName: 'a.pdf' }),
+    M.alFallarLectura(leyendo, 1, 'x'),
+    M.alFallarLectura(leyendo, 9, 'x'),
+    M.alConfirmarConstancia(leyendo, { rfc: 'OGA140604560' }),
+    M.alVaciarConstancia(leyendo),
+  ];
+  for (const s of salidas) assert.deepStrictEqual(s.acciones, []);
+});
+
+// Un tipo mal escrito no lo veria ninguna prueba (app.js no se importa) y en el
+// navegador haria lanzar al ejecutor: todo tipo que se emite esta en la lista.
+test('MP9: toda accion que emite una transicion es de un tipo que el ejecutor conoce', () => {
+  assert.ok(Object.isFrozen(ACCIONES_MODO));
+  const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso', { nombre: 'A', rfc: 'B' }).estado;
+  const salidas = [
+    M.alAbrirAlta(abierta), M.alReiniciarAlta(MODO_ALTA_INICIAL), M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso'),
+    M.alCerrarPanel(abierta), M.alActualizarCandidato(MODO_ALTA_INICIAL, 7), M.alCrearNuevoCandidato(abierta),
+  ];
+  const emitidos = new Set(salidas.flatMap(s => s.acciones.map(a => a.tipo)));
+  for (const tipo of emitidos) assert.ok(ACCIONES_MODO.includes(tipo), `${tipo} no esta en ACCIONES_MODO`);
+  assert.deepStrictEqual([...emitidos].sort(), [...ACCIONES_MODO].sort(), 'cada tipo de la lista lo emite alguna transicion');
 });

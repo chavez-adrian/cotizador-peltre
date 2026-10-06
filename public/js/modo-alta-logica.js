@@ -23,8 +23,30 @@
 // Cada transicion reproduce lo que hacia su camino de app.js antes de #539/#540, con
 // sus asimetrias (tablas del ADR-0023): unificarlas es otro ticket. Ninguna muta el
 // estado recibido.
+//
+// Desde #541 cada transicion devuelve { estado, acciones }: `acciones` son las
+// instrucciones de pantalla que hacia a mano su funcion de app.js, en el MISMO orden,
+// y las ejecuta UN ejecutor (aplicarModoAlta) despues de asignar el estado. Una lista
+// vacia tambien es literal de la tabla: la actualizacion lograda no recoge el panel,
+// no reenciende "Dar de alta" ni oculta el banner (asimetria 4 de la pantalla).
 
 import { constanciaAlAbrirAlta, sinConstancia, estadoTrasErrorLectura, lecturaVigente } from './alta-logica.js';
+
+// Los tipos que entiende el ejecutor de app.js. Un tipo fuera de esta lista lo hace lanzar.
+// - recogerPanel: oculta #panel-alta-cliente y lo devuelve a su casa (#412, #489).
+// - cerrarBorrador { formId }: deja de autoguardar esa superficie sin matar su borrador (#185).
+// - botonDarDeAlta { habilitado }: "Dar de alta" existe solo en modo alta (#376).
+// - banner { cliente }: { id, nombre, rfc } lo muestra; null lo vacia y lo oculta (#94).
+// - candarSecciones: Secciones 3 y 4 a su candado y la 3 a modo captura (#376, #371).
+// - limpiarProgreso: las palomas de "Progreso del alta" a vacio (#432).
+export const ACCIONES_MODO = Object.freeze([
+  'recogerPanel', 'cerrarBorrador', 'botonDarDeAlta', 'banner', 'candarSecciones', 'limpiarProgreso',
+]);
+
+// El boton se deriva del estado YA cambiado, nunca es literal (como lo hacia
+// altaBotonDarDeAltaSegunModo, que leia el modo despues de la transicion).
+const boton = estado => ({ tipo: 'botonDarDeAlta', habilitado: estado.clienteId == null });
+const sinPantalla = estado => ({ estado, acciones: [] });
 
 export const MODO_ALTA_INICIAL = Object.freeze({
   clienteId: null,
@@ -45,9 +67,12 @@ export const MODO_ALTA_INICIAL = Object.freeze({
 
 // abrirAcordeonAlta, al abrir (plegar no cambia el modo). La constancia que dejo un
 // upgrade no es de este alta (#491): pasa por constanciaAlAbrirAlta.
+// Pantalla: solo el boton y el banner; el candado y las palomas los pone el reinicio, y
+// solo si el alta anterior se completo (asimetria 1 de la pantalla).
 export function alAbrirAlta(m) {
-  const { estado } = constanciaAlAbrirAlta(m);
-  return { ...estado, clienteId: null, origen: null, comercialPrecargado: undefined };
+  const { estado: conConstancia } = constanciaAlAbrirAlta(m);
+  const estado = { ...conConstancia, clienteId: null, origen: null, comercialPrecargado: undefined };
+  return { estado, acciones: [boton(estado), { tipo: 'banner', cliente: null }] };
 }
 
 // Lo que abrir el alta le dice a app.js (#540): si la constancia se descarto y la copia
@@ -61,7 +86,7 @@ export function aperturaDelAlta(m, datosAlta = null) {
 // altaReiniciarPanel, tras un alta ya completada (#192). No toca la marca del upgrade
 // ni el mensaje (asimetria 4 de la constancia).
 export function alReiniciarAlta(m) {
-  return {
+  const estado = {
     ...m,
     status: 'idle',
     rfc: null,
@@ -72,13 +97,15 @@ export function alReiniciarAlta(m) {
     confirmado: false,
     lectura: null,
   };
+  return { estado, acciones: [boton(estado), { tipo: 'limpiarProgreso' }, { tipo: 'candarSecciones' }] };
 }
 
 // pcAbrirUpgradeFiscal: la precarga queda en null hasta que llegue. Lo que se cargue en
 // el panel desde aqui es del upgrade (#491) y la lectura que empezo el alta queda
 // huerfana. rfc, fileName, mensaje y confirmado no se tocan (asimetria 1 de la constancia).
-export function alAbrirActualizacion(m, clienteId, origen) {
-  return {
+// `banner` ({ nombre, rfc }) puede llegar null: el boton del Resumen abre sin el (#94).
+export function alAbrirActualizacion(m, clienteId, origen, banner) {
+  const estado = {
     ...m,
     clienteId,
     origen: origen || null,
@@ -90,12 +117,21 @@ export function alAbrirActualizacion(m, clienteId, origen) {
     constanciaDeUpgrade: clienteId,
     lectura: null,
   };
+  return {
+    estado,
+    acciones: [
+      { tipo: 'banner', cliente: { id: clienteId, nombre: banner?.nombre, rfc: banner?.rfc } },
+      { tipo: 'candarSecciones' },
+      { tipo: 'limpiarProgreso' },
+      boton(estado),
+    ],
+  };
 }
 
 // pcPrecargarComercialUpgrade, con la lectura lograda. No mira el modo: si llega
 // despues de cerrar el panel o de abrir otro cliente, se escribe igual (asimetria 4).
 export function alPrecargarComercial(m, pre) {
-  return { ...m, comercialPrecargado: pre };
+  return sinPantalla({ ...m, comercialPrecargado: pre });
 }
 
 // pcEjecutarUpgradeFiscal, con la respuesta lograda. La fallida no es transicion: el
@@ -103,38 +139,46 @@ export function alPrecargarComercial(m, pre) {
 // (#491): se marca suya -- por "Actualizar este" la habia cargado el alta --, pero la
 // lectura en curso NO se anula (asimetria 2 de la constancia).
 export function alLograrActualizacion(m, clienteId) {
-  return { ...m, clienteId: null, origen: null, comercialPrecargado: undefined, constanciaDeUpgrade: clienteId };
+  return sinPantalla({ ...m, clienteId: null, origen: null, comercialPrecargado: undefined, constanciaDeUpgrade: clienteId });
 }
 
 // altaCandidatoActualizar ("Actualizar este" del duplicado por RFC): no toca el origen
 // (asimetria 2) y deja la precarga en undefined, porque el segmento que se capturo en
-// el alta SI tiene que viajar (#193).
+// el alta SI tiene que viajar (#193). Pantalla: solo apaga el boton (asimetria 3).
 export function alActualizarCandidato(m, clienteId) {
-  return { ...m, clienteId, comercialPrecargado: undefined };
+  const estado = { ...m, clienteId, comercialPrecargado: undefined };
+  return { estado, acciones: [boton(estado)] };
 }
 
 // altaCandidatoCrearNuevo: el modo vuelve a alta; la precarga se queda (asimetria 1).
 export function alCrearNuevoCandidato(m) {
-  return { ...m, clienteId: null, origen: null };
+  const estado = { ...m, clienteId: null, origen: null };
+  return { estado, acciones: [boton(estado)] };
 }
 
-// devolverPanelACasa: el modo vuelve a alta; la precarga se queda (asimetria 1).
+// Recoger el panel (antes devolverPanelACasa; cinco llamadores): el modo vuelve a alta;
+// la precarga se queda (asimetria 1). El borrador del upgrade se nombra con el id del
+// estado ANTERIOR y solo si habia actualizacion; el del alta se cierra siempre.
 export function alCerrarPanel(m) {
-  return { ...m, clienteId: null, origen: null };
+  const estado = { ...m, clienteId: null, origen: null };
+  const acciones = [{ tipo: 'recogerPanel' }, { tipo: 'cerrarBorrador', formId: 'alta-completa' }];
+  if (m.clienteId != null) acciones.push({ tipo: 'cerrarBorrador', formId: `upgrade-fiscal-${m.clienteId}` });
+  acciones.push(boton(estado), { tipo: 'banner', cliente: null });
+  return { estado, acciones };
 }
 
 // altaCsfProcesarArchivo, al empezar: la lectura nueva es la vigente. Los datos y el PDF
 // anteriores siguen en memoria hasta que termine (asimetria 7 de la constancia).
 export function alEmpezarLectura(m) {
   const lectura = (m.lecturas || 0) + 1;
-  return { ...m, lecturas: lectura, lectura, status: 'loading' };
+  return sinPantalla({ ...m, lecturas: lectura, lectura, status: 'loading' });
 }
 
 // altaCsfProcesarArchivo, con el PDF leido. Una lectura que ya no es la vigente no
 // escribe nada (#491). rfc y fileName solo cambian si los datos traen RFC (asimetria 6);
 // mensaje y confirmado no se tocan (asimetrias 5 y 8).
 export function alLeerConstancia(m, lectura, { status, datos, pdfBase64, fileName }) {
-  if (!lecturaVigente(m, lectura)) return m;
+  if (!lecturaVigente(m, lectura)) return sinPantalla(m);
   const siguiente = {
     ...m,
     status,
@@ -149,23 +193,23 @@ export function alLeerConstancia(m, lectura, { status, datos, pdfBase64, fileNam
     siguiente.rfc = datos.rfc;
     siguiente.fileName = fileName;
   }
-  return siguiente;
+  return sinPantalla(siguiente);
 }
 
 // altaCsfProcesarArchivo, con el PDF que no se pudo leer (#516). La vieja no escribe.
 export function alFallarLectura(m, lectura, mensaje) {
-  if (!lecturaVigente(m, lectura)) return m;
-  return estadoTrasErrorLectura(m, mensaje);
+  if (!lecturaVigente(m, lectura)) return sinPantalla(m);
+  return sinPantalla(estadoTrasErrorLectura(m, mensaje));
 }
 
 // altaCsfConfirmar: la Seccion 1 confirmada. El RFC confirmado es el dueno del PDF
 // (#350), solo si hay PDF.
 export function alConfirmarConstancia(m, datos) {
-  return { ...m, datos, confirmado: true, rfc: m.pdfBase64 && datos.rfc ? datos.rfc : m.rfc };
+  return sinPantalla({ ...m, datos, confirmado: true, rfc: m.pdfBase64 && datos.rfc ? datos.rfc : m.rfc });
 }
 
 // altaVaciarConstancia (el "vaciar" del borrador, #491): tambien quita la marca del
 // upgrade (asimetria 9).
 export function alVaciarConstancia(m) {
-  return sinConstancia(m);
+  return sinPantalla(sinConstancia(m));
 }

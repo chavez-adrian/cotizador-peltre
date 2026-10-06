@@ -43,7 +43,7 @@ El panel donde se da de alta un Cliente Operam es el MISMO nodo del DOM que el d
 ## Consequences
 
 - En esta tajada las transiciones solo devuelven estado; `app.js` sigue haciendo la pantalla y la constancia a mano (tajadas 2 y 3).
-- Quien lee el modo antes de cerrarlo (la llave del borrador en `devolverPanelACasa`) lo lee ANTES de aplicar la transicion.
+- Quien lee el modo antes de cerrarlo (la llave del borrador en `devolverPanelACasa`) lo lee ANTES de aplicar la transicion. (Hasta #541: desde entonces la arma `alCerrarPanel` con el estado que recibe; ver su nota.)
 - El orden "ocultar las vistas y luego abrir la actualizacion" sigue cuidado por una prueba de texto: ninguna prueba del modulo ve un reordenamiento en `app.js`.
 
 ## Nota 2026-10-06: la constancia entra al modulo (#540, tajada 2)
@@ -80,3 +80,48 @@ Las funciones puras de `alta-logica.js` (`constanciaAlAbrirAlta`, `sinConstancia
 9. Vaciar a mano quita la marca del upgrade; el error de lectura la conserva.
 10. La actualizacion lograda llega tarde (asimetria 5 de arriba): marca con su id aunque en medio se haya abierto otra cosa.
 11. `confirmado` es estado muerto: se escribe y nadie lo lee. Entra al literal inicial como `false`; quitarlo es del ticket de asimetrias.
+
+## Nota 2026-10-06: la pantalla se deriva del modo (#541, tajada 3)
+
+Cada transicion devuelve `{ estado, acciones }` -- tambien las que no tocan la pantalla, con `acciones: []` -- y `aplicarModoAlta` asigna el estado y EN SEGUIDA ejecuta la lista con UN ejecutor, `ejecutarAccionAlta` en `app.js`, un `case` por tipo. Los tipos viven congelados en `ACCIONES_MODO` y el `default` lanza: un tipo mal escrito no lo veria ninguna prueba de la suite (`app.js` no se importa), asi que una prueba del modulo afirma que todo tipo emitido esta en la lista y una de texto que el ejecutor tiene exactamente esos casos. `devolverPanelACasa`, `altaCandarSeccionesAvanzadas`, `altaLimpiarProgreso` y `altaBotonDarDeAltaSegunModo` dejaron de existir: son casos del ejecutor, y recoger el panel es `aplicarModoAlta(alCerrarPanel)` en sus cinco llamadores (`ocultarTodasLasVistas`, `pcRenderInicio`, `cvRenderBusqueda`, `cvVolverATarjeta`, `altaCerrarPanelPostExito`). La llave del borrador `upgrade-fiscal-<id>` ya no se lee del modo ANTES de cerrarlo (Consequences de arriba): la arma `alCerrarPanel` con el `clienteId` del estado que recibe.
+
+| Accion | Argumento | El ejecutor |
+|---|---|---|
+| `recogerPanel` | - | oculta `#panel-alta-cliente` y lo devuelve a su casa (#412, #489) |
+| `cerrarBorrador` | `formId` | `cerrarFormularioBorrador(formId, null)`: deja de autoguardar, no lo mata (#185) |
+| `botonDarDeAlta` | `habilitado` | `disabled` de "Dar de alta" (#376); el modulo lo calcula del estado YA cambiado (`clienteId == null`), nunca literal |
+| `banner` | `{ id, nombre, rfc }` o `null` | `bannerUpgradeHtml` y visible, o vacio y oculto (#94) |
+| `candarSecciones` | - | Secciones 3 y 4 a su candado y la 3 a modo captura (#376, #371) |
+| `limpiarProgreso` | - | palomas `chkdot-1..3` a vacio (#432) |
+
+### Transicion -> acciones (en el orden de antes de #541)
+
+| Transicion | Acciones |
+|---|---|
+| `alAbrirAlta` | boton, banner `null` |
+| `alReiniciarAlta` (#192, solo si el alta anterior se completo) | boton, limpiarProgreso, candarSecciones |
+| `alAbrirActualizacion(m, clienteId, origen, banner)` | banner `{ id, nombre, rfc }` (tolera `banner` null), candarSecciones, limpiarProgreso, boton |
+| `alCerrarPanel` | recogerPanel, cerrarBorrador `alta-completa`, cerrarBorrador `upgrade-fiscal-<id>` solo si el estado recibido tenia `clienteId`, boton, banner `null` |
+| `alActualizarCandidato` | boton |
+| `alCrearNuevoCandidato` | boton |
+| `alLograrActualizacion`, `alPrecargarComercial` y las seis de la constancia | ninguna |
+
+### Asimetrias de la pantalla
+
+1. Abrir el alta no canda ni limpia palomas: lo hace el reinicio, y solo si el alta anterior se completo (un alta a medias conserva su avance, #185). No existe "soltar secciones": se desbloquean una por una al confirmar la anterior.
+2. Cerrar no canda ni limpia palomas: lo decide la siguiente apertura.
+3. "Actualizar este" apaga el boton, pero no canda, no limpia palomas ni pone banner.
+4. La actualizacion lograda no recoge el panel -- lo esconde con `display:none` en `app.js` y desde la vista Clientes queda en el slot, a proposito: el reporte de #407 se inserta junto a el --, no reenciende "Dar de alta" ni oculta el banner hasta el siguiente abrir alta o cerrar. Es lo que #412 prohibio para el alta.
+5. "Crear nuevo" prende el boton y no toca el banner.
+6. Cerrar cierra SIEMPRE el borrador del alta, y el del upgrade solo si habia actualizacion.
+7. `altaCerrarPanelPostExito` con `limpiarVistaClientes` cierra dos veces, y `pcAbrirUpgradeFiscal` cierra (`ocultarTodasLasVistas`) justo antes de abrir: idempotente.
+8. Plegar el alta (`abrirAcordeonAlta` con el panel visible) es un medio cerrar SIN transicion: oculta el panel y cierra el borrador del alta, pero no recoge el nodo ni toca el modo, el boton o el banner.
+
+### Lo que sigue siendo cableado de `app.js`, y por que
+
+- QUE boton o pintor dispara QUE transicion: eso cuidan las pruebas de texto que quedan (#489-1, #489-2, AD6, AD7, C16b, #432-2/-3 en su mitad de orden, #489-3 en el caso `recogerPanel`).
+- Mostrar el panel al abrir, plegarlo y prestarlo a la vista Clientes (`moverPanelA`): dependen de la vista y del toggle, no del modo.
+- Los borradores de abrir la actualizacion (`alta-completa` con `ocultar: false`) y de la lograda (`vaciarCamposSuperficie` + `ENVIO_EXITOSO`): van pegados al vaciado de la superficie, que no es del vocabulario.
+- `aperturaDelAlta` se queda como consulta aparte (#540): escribe `altaState.datos`, que no es `modoAlta`, y absorberla moveria `altaPintarConstanciaVacia` antes del reinicio de #192, del que depende su pintura.
+
+**Orden.** Las acciones corren junto a su transicion, unas lineas antes que en el codigo de antes: en `pcAbrirUpgradeFiscal` el banner, el candado, las palomas y el boton van antes del regimen, el `display:block` y `altaTabSwitch`; en `altaReiniciarPanel` el boton, las palomas y el candado van antes del regimen, `altaCsfPintarStatus` y `altaPasosReset`; en el cierre los borradores se cierran despues de cambiar el estado, y `recogerPanel` junta el `display:none` (antes lo primero) con el regreso a `_panelHome` (antes lo ultimo) al principio de la lista. Ninguna de esas funciones lee el candado, las palomas, el boton, el banner ni `modoAlta.clienteId`, los helpers del borrador no dependen de donde este el nodo y todo es sincrono: nada observable cambia.

@@ -598,13 +598,13 @@ test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al
   assert.ok(cuerpo.includes('ocultarTodasLasVistas()'), 'ir al cotizador es cambiar de vista, no solo de pestana');
   assert.ok(cuerpo.includes("document.getElementById('app-view').style.display = 'block'"),
     'el cotizador tiene que quedar visible');
-  assert.ok(cuerpo.includes('devolverPanelACasa()'),
+  assert.ok(cuerpo.includes('aplicarModoAlta(alCerrarPanel)'),
     'quedarse en la vista Clientes o en el paso tambien devuelve el panel');
   assert.ok(cuerpo.includes('cvRenderBusqueda()'), 'la vista Clientes se repinta cuando le prestaba el panel');
   // Si ocultarTodasLasVistas deja de recoger el panel, la rama del cotizador ya no
   // cuida nada: mismo candado que C16b (alta-dedup-fiscal).
   const ocultar = cuerpoDeFuncionApp('function ocultarTodasLasVistas(');
-  assert.ok(ocultar.includes('devolverPanelACasa()'),
+  assert.ok(ocultar.includes('aplicarModoAlta(alCerrarPanel)'),
     'ocultarTodasLasVistas es quien devuelve el panel en la rama del cotizador: revisar este test si deja de hacerlo');
 });
 
@@ -614,10 +614,12 @@ test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al
 // "Volver al Contacto" y "Buscar otro" (vista Clientes) solo repintaban su raiz: el
 // panel seguia a la vista y confirmar la constancia ahi escribia sobre el cliente
 // ANTERIOR. app.js no se importa en Node: el ancla es la etiqueta del boton, no el
-// nombre del handler, para que renombrarlo no deje el test cuidando nada.
+// nombre del handler, para que renombrarlo no deje el test cuidando nada. Desde #541
+// recoger es aplicar alCerrarPanel; que hace esa transicion lo cuida el modulo
+// (modo-alta-logica.test.cjs MP6) y aqui queda el cableado.
 const SALIDAS_DEL_CLIENTE = ['Cambiar de cliente', 'Volver al cliente', 'Volver al Contacto', 'Buscar otro'];
 
-test('#489-1: cada boton que saca al vendedor del cliente recoge el panel con devolverPanelACasa', () => {
+test('#489-1: cada boton que saca al vendedor del cliente recoge el panel con alCerrarPanel', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -625,7 +627,7 @@ test('#489-1: cada boton que saca al vendedor del cliente recoge el panel con de
     const m = src.match(new RegExp(`onclick="(\\w+)\\(\\)">&lsaquo; ${etiqueta}<`));
     assert.ok(m, `el boton "${etiqueta}" debe seguir existiendo: si no, este test ya no cuida nada`);
     const cuerpo = cuerpoDeFuncionApp(`function ${m[1]}(`);
-    assert.ok(cuerpo.includes('devolverPanelACasa()'),
+    assert.ok(cuerpo.includes('aplicarModoAlta(alCerrarPanel)'),
       `"${etiqueta}" (${m[1]}) tiene que recoger el panel del alta/upgrade (#489)`);
   }
 });
@@ -634,23 +636,27 @@ test('#489-2: la vuelta a la busqueda sin cliente elegido tambien recoge el pane
   const tarjeta = cuerpoDeFuncionApp('function cvRenderTarjeta(');
   assert.ok(tarjeta.includes('if (!sel) { cvRenderBusqueda(); return; }'),
     'sin seleccion la tarjeta cae a la busqueda');
-  assert.ok(cuerpoDeFuncionApp('function cvRenderBusqueda(').includes('devolverPanelACasa()'),
+  assert.ok(cuerpoDeFuncionApp('function cvRenderBusqueda(').includes('aplicarModoAlta(alCerrarPanel)'),
     'la busqueda suelta al cliente: el panel no puede seguir colgado de la vista');
   // El exito del upgrade desde la vista Clientes repinta la tarjeta y DESPUES inserta
   // su reporte junto al panel (#407): si la tarjeta devolviera el panel a casa, el
   // reporte se iria al paso Cliente. Por eso recogen los botones, no la tarjeta.
-  assert.ok(!tarjeta.includes('devolverPanelACasa()'),
+  assert.ok(!tarjeta.includes('aplicarModoAlta(alCerrarPanel)'),
     'cvRenderTarjeta no recoge el panel: lo hace el handler de "Volver al cliente"/"Volver al Contacto"');
 });
 
-// Que cerrar apague la actualizacion es comportamiento del modulo del modo (#539):
-// modo-alta-logica.test.cjs MA8 y MA10. Aqui queda el cableado: recoger el panel
-// aplica esa transicion y lo oculta.
-test('#489-3: recoger el panel apaga el modo de actualizacion y lo oculta', () => {
-  const casa = cuerpoDeFuncionApp('function devolverPanelACasa(');
-  assert.ok(casa.includes('aplicarModoAlta(alCerrarPanel)'),
-    'salir del cliente A no puede dejar el upgrade apuntando a A');
-  assert.ok(casa.includes("panel.style.display = 'none'"), 'el panel deja de verse');
+// Que cerrar apague la actualizacion y devuelva recogerPanel, los borradores, el boton y
+// el banner es comportamiento del modulo del modo: modo-alta-logica.test.cjs MA8, MA10
+// y MP6 (#541). Aqui queda el ejecutor: el caso recogerPanel oculta el panel y lo
+// devuelve a su casa.
+test('#489-3: el caso recogerPanel del ejecutor oculta el panel y lo devuelve a su casa', () => {
+  const ejecutor = cuerpoDeFuncionApp('function ejecutarAccionAlta(');
+  const inicio = ejecutor.indexOf("case 'recogerPanel':");
+  assert.ok(inicio > 0, 'el ejecutor debe tener el caso recogerPanel');
+  const caso = ejecutor.slice(inicio, ejecutor.indexOf('\n    case ', inicio + 1));
+  assert.ok(caso.includes("panel.style.display = 'none'"), 'el panel deja de verse');
+  assert.ok(caso.includes('_panelHome') && caso.includes('parent.insertBefore(panel, next)'),
+    'y vuelve a su lugar en el paso Cliente (#412)');
 });
 
 // === Que adopta la tarjeta del Cliente Operam tras el upgrade (#407) ===
