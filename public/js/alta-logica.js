@@ -353,7 +353,7 @@ export function estadoAltaAlAbrirPanel(estado) {
   };
 }
 
-// La constancia en memoria (altaCsfState) al abrir el alta (#491). Es UNA para el alta
+// La constancia en memoria (modoAlta, #540) al abrir el alta (#491). Es UNA para el alta
 // y el upgrade fiscal -- el panel es el mismo nodo (#376) --, asi que la que cargo o
 // consumio un upgrade seguia ahi al abrir "Nuevo cliente" en la misma pestana: la
 // Seccion 1 con el RFC y los regimenes del upgrade, y el POST del alta con su PDF.
@@ -2252,7 +2252,7 @@ export function errorAltaSinConfirmar(csfDatos) {
 // Secciones 3 y 4 que desbloqueo un alta anterior de la MISMA pestana siguen abiertas
 // cuando el upgrade se abre despues, y desde ahi "Dar de alta" manda un
 // POST /api/crear-cliente con la CSF del upgrade (altaDarDeAlta cae a
-// altaCsfState.datos). Asi, en el HITL de #361, un upgrade que el gate de fusion ya
+// modoAlta.datos). Asi, en el HITL de #361, un upgrade que el gate de fusion ya
 // habia bloqueado degenero en un alta del cliente que ya existia. En modo upgrade no
 // hay alta posible: el trabajo termina en la Seccion 1 (+ la 2 por #197). La guardia
 // mira el MODO, no el DOM -- el candado de las secciones es lo que el vendedor ve,

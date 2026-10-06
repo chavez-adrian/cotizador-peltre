@@ -51,11 +51,8 @@ import {
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
-  constanciaAlAbrirAlta,
   lecturaVigente,
   constanciaViva,
-  sinConstancia,
-  estadoTrasErrorLectura,
   visibilidadPanelCsf,
   nombreConCorto,
   datosUpgradeConComercial,
@@ -80,6 +77,13 @@ import {
   alActualizarCandidato,
   alCrearNuevoCandidato,
   alCerrarPanel,
+  aperturaDelAlta,
+  alReiniciarAlta,
+  alEmpezarLectura,
+  alLeerConstancia,
+  alFallarLectura,
+  alConfirmarConstancia,
+  alVaciarConstancia,
 } from './modo-alta-logica.js';
 import {
   montarTelefono,
@@ -4445,14 +4449,9 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   }
   // Origen del upgrade ('paso' | 'clientes' | 'resumen'): decide si cl-email-factura
   // es confiable (ver emailFacturaParaUpgrade en alta-logica.js).
+  // Lo que se cargue en este panel desde aqui es del upgrade (#491): la transicion marca
+  // la constancia como suya y deja huerfana la lectura que habia empezado el alta.
   aplicarModoAlta(alAbrirActualizacion, customerId, origen);
-  // Lo que se cargue en este panel desde aqui es del upgrade (#491): el alta que se
-  // abra despues en la misma pestana no lo hereda (constanciaAlAbrirAlta).
-  altaCsfState.constanciaDeUpgrade = customerId;
-  altaCsfState.lectura = null;
-  altaCsfState.datos = null;
-  altaCsfState.pdfBase64 = null;
-  altaCsfState.regimenesDetectados = null;
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
   // Banner de contexto (#94): visible siempre que el modo este en actualizacion. Hace
   // visible CONTRA QUIEN se actualiza (hoy ese contexto es invisible). Aplica
@@ -4474,7 +4473,7 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   altaBotonDarDeAltaSegunModo();
   altaState.seccionAbierta = null;
   altaToggleSeccion(1);
-  altaCsfSetStatus('idle');
+  altaCsfPintarStatus();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Borrador de formulario (#185): la llave es POR CUSTOMER_ID (DEF_UPGRADE_FISCAL) --
   // el panel es el mismo nodo para cualquier cliente, asi que primero se vacia
@@ -4682,7 +4681,7 @@ async function pcEjecutarUpgradeFiscal(datos) {
   try {
     const res = await api(`/api/actualizar-cliente-fiscal/${customerId}`, {
       method: 'PUT',
-      body: { csfDatos: csfDatosConFactura, pdf_base64: altaCsfState.pdfBase64 || null },
+      body: { csfDatos: csfDatosConFactura, pdf_base64: modoAlta.pdfBase64 || null },
     });
     const data = await res.json().catch(() => ({}));
     // Quien decide que significo la respuesta es alta-logica.js (#367): aqui solo
@@ -4704,11 +4703,10 @@ async function pcEjecutarUpgradeFiscal(datos) {
     cerrarFormularioBorrador(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     // El modo vuelve a alta y la linea base comercial a undefined (no null): el
     // proximo upgrade que entre por "Actualizar este" (sin panel ni precarga) debe
-    // poder mandar el segmento que el vendedor capturo (#193).
-    aplicarModoAlta(alLograrActualizacion);
-    // La constancia ya quedo escrita en ESTE cliente (#491). Por "Actualizar este" la
-    // habia cargado el alta, y sin la marca el siguiente alta la arrastraria.
-    altaCsfState.constanciaDeUpgrade = customerId;
+    // poder mandar el segmento que el vendedor capturo (#193). La constancia ya quedo
+    // escrita en ESTE cliente (#491): la transicion la marca suya -- por "Actualizar
+    // este" la habia cargado el alta, y sin la marca el siguiente alta la arrastraria.
+    aplicarModoAlta(alLograrActualizacion, customerId);
     altaState.datos = null;
     // La Seccion 2 se limpia y vuelve al modo alta (#197), por la misma razon que lo
     // demas de aqui: que el proximo cliente abierto en esta pestana no herede la
@@ -5578,7 +5576,7 @@ const SUPERFICIES_BORRADOR = {
     // Lo que precargo el chip Fiscal (#166) y nadie toco no es captura: no se guarda.
     alGuardar: valores => valoresBorradorSinPrecarga(valores, altaPrecargaChip),
     // #491: el borrador no guarda la constancia, pero la pestana puede seguir teniendola.
-    constanciaViva: () => constanciaViva(altaCsfState),
+    constanciaViva: () => constanciaViva(modoAlta),
     vaciarConstancia: () => altaVaciarConstancia(),
   },
   // Upgrade fiscal (issue #185, #85) NO vive aqui: es por-instancia (por
@@ -8253,7 +8251,7 @@ function altaLeerComercialUpgrade() {
 // vale mientras el RFC de la pestana sea el de ESA constancia: vaciar el panel,
 // cambiar el RFC o cargar otra constancia la sueltan.
 function altaCsfRegimenesVigentes() {
-  const detectados = altaCsfState.regimenesDetectados;
+  const detectados = modoAlta.regimenesDetectados;
   const rfc = (document.getElementById('csf-rfc')?.value || '').trim().toUpperCase();
   return detectados && rfc && detectados.rfc === rfc ? detectados.codigos : [];
 }
@@ -8316,7 +8314,12 @@ function abrirAcordeonAlta() {
   // ese customer_id viejo. La linea base comercial queda en undefined ("no hay panel
   // de upgrade que podar"), no en null: desde este panel la Seccion 2 es captura del
   // vendedor, y si la dedup ofrece "Actualizar este" ese segmento tiene que viajar (#193).
+  // La constancia que dejo un upgrade de esta pestana no es de este alta (#491): ni su
+  // RFC, ni sus regimenes, ni su PDF en el POST; con ella se va la Seccion 1 confirmada.
+  // La que cargo el alta se conserva. El descarte se lee ANTES de la transicion.
+  const apertura = aperturaDelAlta(modoAlta, altaState.datos);
   aplicarModoAlta(alAbrirAlta);
+  altaState.datos = apertura.datosAlta;
   // Con el modo apagado, "Dar de alta" vuelve (#376). Aqui y no solo en
   // altaReiniciarPanel: un alta a medias no pasa por el reinicio y se quedaria sin boton.
   altaBotonDarDeAltaSegunModo();
@@ -8329,12 +8332,7 @@ function abrirAcordeonAlta() {
   const { estado, reiniciado } = estadoAltaAlAbrirPanel(altaState);
   Object.assign(altaState, estado);
   if (reiniciado) altaReiniciarPanel();
-  // La constancia que dejo un upgrade de esta pestana no es de este alta (#491): ni su
-  // RFC, ni sus regimenes, ni su PDF en el POST. La que cargo el alta se conserva.
-  const constancia = constanciaAlAbrirAlta(altaCsfState, altaState.datos);
-  Object.assign(altaCsfState, constancia.estado);
-  altaState.datos = constancia.datosAlta;
-  if (constancia.descartada) altaPintarConstanciaVacia();
+  if (apertura.descartada) altaPintarConstanciaVacia();
   // El default del uso de CFDI depende del modo (#193) y se fija ANTES de
   // restaurar: el borrador solo prellena el campo que sigue en su default.
   altaFijarDefaultUsoCfdi(null);
@@ -8404,15 +8402,9 @@ function altaLimpiarProgreso() {
 }
 
 function altaReiniciarPanel() {
-  altaCsfState.lectura = null;
-  altaCsfState.datos = null;
-  altaCsfState.confirmado = false;
-  altaCsfState.pdfBase64 = null;
-  altaCsfState.regimenesDetectados = null;
+  aplicarModoAlta(alReiniciarAlta);
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
-  altaCsfState.rfc = null;
-  altaCsfState.fileName = null;
-  altaCsfSetStatus('idle');
+  altaCsfPintarStatus();
   altaPasosReset();
   altaBotonDarDeAltaSegunModo();
   const exitoDiv = document.getElementById('alta-btns-exito');
@@ -8438,11 +8430,11 @@ function altaPintarConstanciaVacia() {
   const input = document.getElementById('csf-input');
   if (input) input.value = '';
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
-  altaCsfSetStatus('idle');
+  altaCsfPintarStatus();
 }
 
 function altaVaciarConstancia() {
-  Object.assign(altaCsfState, sinConstancia(altaCsfState));
+  aplicarModoAlta(alVaciarConstancia);
   altaPintarConstanciaVacia();
 }
 
@@ -8463,7 +8455,7 @@ function altaEsperarCatalogosCompletos() {
 // que el parseo de CSF rellena (altaCsfPonerDatos) son inputs normales dentro
 // del mismo contenedor, asi que el mecanismo los captura y restaura solo. Lo
 // que SI necesita pegamento es que la restauracion se VEA: el <details>
-// #csf-detalles empieza colapsado (altaCsfSetStatus('idle')) y si el borrador
+// #csf-detalles empieza colapsado (altaCsfPintarStatus en idle) y si el borrador
 // puso datos ahi dentro sin abrirlo, el vendedor no los veria. Se abre el
 // <details> sin tocar el estado idle/dropzone -- el dropzone se queda visible
 // para poder re-subir la CSF sin perder lo demas capturado.
@@ -8530,30 +8522,16 @@ window.altaToggleSeccion = altaToggleSeccion;
 // === CSF DROPZONE — Seccion 1 (issue #28) ===
 
 // Modo del alta (#539, ADR-0023): alta o actualizacion fiscal de un Cliente Operam,
-// con su origen y la linea base comercial. Lo decide modo-alta-logica.js; este es el
+// con su origen, la linea base comercial y, desde #540, la constancia en memoria (de
+// quien es y la lectura vigente del PDF). Lo decide modo-alta-logica.js; este es el
 // UNICO punto que lo escribe -- cada camino aplica su transicion, nunca un campo suelto.
 let modoAlta = MODO_ALTA_INICIAL;
 function aplicarModoAlta(transicion, ...args) { modoAlta = transicion(modoAlta, ...args); }
 
-const altaCsfState = {
-  status: 'idle',
-  rfc: null,
-  fileName: null,
-  mensaje: null,
-  datos: null,
-  pdfBase64: null,
-  // Regimenes de la ultima constancia leida, en el orden del SAT, con el RFC al que
-  // pertenecen (#390): { rfc, codigos } o null. Ver altaCsfRegimenesVigentes.
-  regimenesDetectados: null,
-  // customer_id del upgrade que se adueno de la constancia en memoria (#491), o null si
-  // es del alta. Ver constanciaAlAbrirAlta.
-  constanciaDeUpgrade: null,
-  // Numero de la lectura del PDF en curso (#491). Ver lecturaVigente.
-  lectura: null,
-};
-
-function altaCsfSetStatus(status, opts = {}) {
-  altaCsfState.status = status;
+// Pinta el estado de la constancia (modoAlta.status), que escriben las transiciones;
+// aqui solo se lee. `opts` lleva los textos del spinner, del banner y del error.
+function altaCsfPintarStatus(opts = {}) {
+  const status = modoAlta.status;
   const dropzone = document.getElementById('csf-dropzone');
   const spinner = document.getElementById('csf-spinner');
   const bannerOk = document.getElementById('csf-banner-ok');
@@ -8701,31 +8679,22 @@ async function altaCsfLeerPDF(file) {
   return { respuesta, resultadoQR: RESULTADO_QR.SIN_RFC };
 }
 
-let altaCsfLecturas = 0;
-
 async function altaCsfProcesarArchivo(file) {
-  const lectura = ++altaCsfLecturas;
-  altaCsfState.lectura = lectura;
-  altaCsfSetStatus('loading', { spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
+  aplicarModoAlta(alEmpezarLectura);
+  const lectura = modoAlta.lectura;
+  altaCsfPintarStatus({ spinnerText: 'Extrayendo RFC, razon social, domicilio fiscal, regimen, SAT IdCIF...' });
   try {
     // Base64 del PDF para respaldarlo en Dropbox al confirmar el upgrade fiscal (#85).
     const pdfBase64 = await leerArchivoBase64(file).catch(() => null);
     const { respuesta, resultadoQR } = await altaCsfLeerPDF(file);
-    // Mientras se leia, el vendedor pudo cambiar de flujo o soltar otro PDF (#491).
-    if (!lecturaVigente(altaCsfState, lectura)) return;
-    altaCsfState.pdfBase64 = pdfBase64;
+    // Mientras se leia, el vendedor pudo cambiar de flujo o soltar otro PDF (#491). La
+    // transicion tampoco escribiria; este chequeo es el que salta la pantalla y el borrador.
+    if (!lecturaVigente(modoAlta, lectura)) return;
     const resultado = altaCsfResultadoParseo(respuesta, file.name, resultadoQR);
-    altaCsfState.datos = resultado.datos;
-    altaCsfState.regimenesDetectados = {
-      rfc: String(resultado.datos.rfc || '').trim().toUpperCase(),
-      codigos: resultado.datos.regimenesFiscales || [],
-    };
+    aplicarModoAlta(alLeerConstancia, lectura,
+      { status: resultado.status, datos: resultado.datos, pdfBase64, fileName: file.name });
     altaCsfPonerDatos(resultado.datos);
-    altaCsfSetStatus(resultado.status, { bannerText: resultado.bannerText });
-    if (resultado.datos.rfc) {
-      altaCsfState.rfc = resultado.datos.rfc;
-      altaCsfState.fileName = file.name;
-    }
+    altaCsfPintarStatus({ bannerText: resultado.bannerText });
     // Borrador de formulario (#185): altaCsfPonerDatos asigna .value por JS, que
     // NO dispara 'input'/'change' -- sin este guardado explicito, los datos que
     // el parseo acaba de rellenar no entrarian al borrador hasta el siguiente
@@ -8737,13 +8706,13 @@ async function altaCsfProcesarArchivo(file) {
     // pantalla en cuanto deja de ser cierto.
     pintarAvisoConstancia(formIdCsf, null);
   } catch (err) {
-    if (!lecturaVigente(altaCsfState, lectura)) return;
+    if (!lecturaVigente(modoAlta, lectura)) return;
     // Un PDF que no se pudo leer no deja constancia detras, y la zona para soltar otro
     // sigue a la vista (#516). Sin limpiar el input, elegir el MISMO archivo ya
     // corregido no dispararia 'change'.
     const mensaje = 'Error al leer el PDF: ' + err.message;
-    Object.assign(altaCsfState, estadoTrasErrorLectura(altaCsfState, mensaje));
-    altaCsfSetStatus('error', { mensaje });
+    aplicarModoAlta(alFallarLectura, lectura, mensaje);
+    altaCsfPintarStatus({ mensaje });
     const input = document.getElementById('csf-input');
     if (input) input.value = '';
   }
@@ -8759,7 +8728,7 @@ function altaCsfLeerFormulario() {
   // en el formulario -- se preservan del ultimo parseo (altaCsfProcesarArchivo). Sin
   // este merge, el alta/upgrade fiscal siempre las recibia vacias porque esta funcion
   // solo leia el DOM.
-  const previo = altaCsfState.datos || {};
+  const previo = modoAlta.datos || {};
   return {
     // Mayusculas como en altaManualLeerFormulario: el gate anti-fusion del upgrade
     // fiscal (#85) depende de comparar el mismo RFC contra Operam sin diferencias de case.
@@ -8795,11 +8764,9 @@ async function altaCsfConfirmar() {
   if (errDiv) errDiv.style.display = 'none';
 
   const datos = altaCsfLeerFormulario();
-  altaCsfState.datos = datos;
-  altaCsfState.confirmado = true;
   // El RFC confirmado es el dueno del PDF (#350): si el vendedor corrigio lo que el
   // parseo saco mal, el respaldo sigue al RFC corregido en vez de perderse.
-  if (altaCsfState.pdfBase64 && datos.rfc) altaCsfState.rfc = datos.rfc;
+  aplicarModoAlta(alConfirmarConstancia, datos);
 
   // Modo upgrade (#85): el destino es el PUT sobre el cliente generico existente,
   // no el POST de creacion con dedup por nombre del acordeon viejo.
@@ -9534,7 +9501,7 @@ function altaSec4Pregunta(pregunta) {
 }
 
 function altaDarDeAlta() {
-  const csfDatos = altaState.datos || altaCsfState.datos || {};
+  const csfDatos = altaState.datos || modoAlta.datos || {};
   // Guardia ANTES de deshabilitar el boton y de resetear los pasos (#213): sin RFC el
   // POST muere en un 400 y hasta ahora eso se veia igual que no hacer nada.
   const errPrevio = errorAltaSinConfirmar(csfDatos);
@@ -9579,8 +9546,8 @@ function altaDarDeAlta() {
     decision,
     // El PDF de la constancia y el RFC del que salio, para que pdfCsfParaRespaldo
     // decida si este alta es la duena de ese archivo (#350).
-    pdfBase64: altaCsfState.pdfBase64,
-    pdfRfc: altaCsfState.rfc,
+    pdfBase64: modoAlta.pdfBase64,
+    pdfRfc: modoAlta.rfc,
   });
 
   altaEnviarAlta(payload);
@@ -9732,14 +9699,14 @@ function altaPreguntaNuevoDomicilio(clienteId) {
 window.altaPreguntaNuevoDomicilio = altaPreguntaNuevoDomicilio;
 
 function altaPreguntaReintentar(eleccion, extras) {
-  const csfDatos = altaState.datos || altaCsfState.datos || {};
+  const csfDatos = altaState.datos || modoAlta.datos || {};
   const cuerpo = cuerpoDeReintentoAlta(altaPreguntaState.opciones, eleccion, {
     ...(extras || {}),
     // El PDF de la constancia no vuelve en el 428 (pesa): se readjunta aqui, y
     // solo cuando la salida elegida va a CREAR el Cliente Operam (#350).
     pdfBase64: pdfCsfParaRespaldo({
-      pdfBase64: altaCsfState.pdfBase64,
-      pdfRfc: altaCsfState.rfc,
+      pdfBase64: modoAlta.pdfBase64,
+      pdfRfc: modoAlta.rfc,
       rfc: csfDatos.rfc,
       clienteExistente: eleccion.tipo !== 'ninguno',
     }),

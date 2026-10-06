@@ -45,3 +45,38 @@ El panel donde se da de alta un Cliente Operam es el MISMO nodo del DOM que el d
 - En esta tajada las transiciones solo devuelven estado; `app.js` sigue haciendo la pantalla y la constancia a mano (tajadas 2 y 3).
 - Quien lee el modo antes de cerrarlo (la llave del borrador en `devolverPanelACasa`) lo lee ANTES de aplicar la transicion.
 - El orden "ocultar las vistas y luego abrir la actualizacion" sigue cuidado por una prueba de texto: ninguna prueba del modulo ve un reordenamiento en `app.js`.
+
+## Nota 2026-10-06: la constancia entra al modulo (#540, tajada 2)
+
+La constancia en memoria (`status`, `rfc`, `fileName`, `mensaje`, `datos`, `pdfBase64`, `regimenesDetectados`, `confirmado`, `constanciaDeUpgrade`, `lectura`) deja `altaCsfState`, que desaparece de `app.js`, y vive PLANA en `modoAlta`, junto al modo; el contador de lecturas (`altaCsfLecturas`) entra como `lecturas`, monotono. Transiciones nuevas: `alReiniciarAlta`, `alEmpezarLectura`, `alLeerConstancia`, `alFallarLectura`, `alConfirmarConstancia`, `alVaciarConstancia`; `alAbrirAlta`, `alAbrirActualizacion` y `alLograrActualizacion` (que gana el `clienteId`) la tratan en el mismo paso. Abrir el alta le dice a `app.js` que hacer con `altaState.datos` por la consulta pura `aperturaDelAlta`, leida antes de la transicion: las transiciones siguen devolviendo solo estado hasta #541. `altaCsfSetStatus` se renombra `altaCsfPintarStatus` y solo pinta.
+
+Las funciones puras de `alta-logica.js` (`constanciaAlAbrirAlta`, `sinConstancia`, `estadoTrasErrorLectura`, `lecturaVigente`, `visibilidadPanelCsf`, `constanciaViva`) se QUEDAN donde estan y con su firma: el modulo las llama. Moverlas habria obligado a tocar las pruebas de comportamiento de #491 y #516 que las importan, y esas no cambian. Las cinco pruebas de texto de #491 se partieron como en la tajada 1: la garantia pasa al modulo y el orden en `app.js` se queda de texto.
+
+### Asimetrias de la constancia ("-" = no lo toca)
+
+| Camino | status | rfc / fileName | mensaje | datos / pdfBase64 / regimenes | confirmado | constanciaDeUpgrade | lectura | `altaState.datos` |
+|---|---|---|---|---|---|---|---|---|
+| Abrir alta, reinicio #192 (alta anterior completada) | idle | null | - | null | false | - | null | null |
+| Abrir alta con constancia del upgrade (#491) | idle | null | - | null | false | null | null | null |
+| Abrir alta con constancia del alta; plegar | - | - | - | - | - | - | - | - |
+| Abrir actualizacion | idle | - | - | null | - | el id | null | - |
+| Actualizacion lograda | - | - | - | - | - | el id | - | null |
+| Actualizacion fallida; "Actualizar este"; "Crear nuevo"; cerrar; precarga | - | - | - | - | - | - | - | - |
+| Empieza una lectura | loading | - | - | - | - | - | n | - |
+| Lectura lograda y vigente | el del resultado | solo con RFC | - | los nuevos | - | - | - | - |
+| Lectura fallida y vigente (#516) | error | null | el error | null | false | se conserva | null | - |
+| Lectura no vigente | - | - | - | - | - | - | - | - |
+| Confirmar | - | rfc solo con PDF | - | datos del formulario | true | - | - | `{...datos}` en alta |
+| Vaciar a mano (borrador) | idle | null | - | null | false | null | null | - |
+
+1. Abrir la actualizacion no limpia `rfc`, `fileName`, `mensaje` ni `confirmado`.
+2. La actualizacion lograda marca la constancia pero NO anula la lectura en curso; solo abrirla la anula.
+3. "Actualizar este" no marca la constancia: la marca llega solo si el PUT se logra. Ni cerrar ni "Crear nuevo" la tocan.
+4. El reinicio #192 no toca la marca del upgrade ni el mensaje; el descarte de #491 si quita la marca.
+5. `mensaje` solo lo escribe el error: una lectura lograda despues deja el mensaje viejo (no se ve).
+6. Una lectura lograda sin RFC deja `rfc` y `fileName` de la constancia anterior.
+7. Empezar una lectura deja los `datos` y el PDF anteriores hasta que termine.
+8. La lectura lograda no regresa `confirmado` a `false`.
+9. Vaciar a mano quita la marca del upgrade; el error de lectura la conserva.
+10. La actualizacion lograda llega tarde (asimetria 5 de arriba): marca con su id aunque en medio se haya abierto otra cosa.
+11. `confirmado` es estado muerto: se escribe y nadie lo lee. Entra al literal inicial como `false`; quitarlo es del ticket de asimetrias.

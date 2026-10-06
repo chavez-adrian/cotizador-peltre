@@ -241,24 +241,21 @@ test('#491-5: descartar la constancia no muta el estado recibido', () => {
   assert.strictEqual(original.constanciaDeUpgrade, 15);
 });
 
-// El pegamento de #491 vive en app.js, que no se importa en Node: se cuida el fuente,
-// como #432-2. Ver la Seccion 1 limpia en pantalla es HITL.
-test('#491-6: abrir el alta pasa la constancia por constanciaAlAbrirAlta antes de restaurar el borrador', () => {
+// El pegamento de #491 vive en app.js, que no se importa en Node: el ORDEN se cuida en
+// el fuente, como #432-2. Que abrir el alta descarte la constancia del upgrade y la
+// Seccion 1 lo prueba el modulo (modo-alta-logica.test.cjs MC1-MC3, #540), y que el
+// upgrade la marque como suya, MC4 y MC5. Ver la Seccion 1 limpia en pantalla es HITL.
+test('#491-6: abrir el alta decide la constancia al abrir y antes de restaurar el borrador', () => {
   const abrir = cuerpoDeFuncion(fuenteApp(), 'function abrirAcordeonAlta(');
   const plegar = abrir.indexOf("cerrarFormularioBorrador('alta-completa', null)");
   assert.ok(plegar > 0, 'la rama de plegar debe existir: si no, este test ya no cuida nada');
-  const decide = abrir.indexOf('constanciaAlAbrirAlta(altaCsfState, altaState.datos)');
+  const decide = abrir.indexOf('aperturaDelAlta(modoAlta, altaState.datos)');
   assert.ok(decide > plegar, 'se decide al ABRIR, no al plegar el panel (plegar no es cancelar, #185)');
-  assert.ok(decide < abrir.indexOf("abrirFormularioBorrador('alta-completa')"),
+  assert.ok(decide < abrir.indexOf('aplicarModoAlta(alAbrirAlta)'), 'el descarte se lee del estado ANTERIOR a la transicion');
+  assert.ok(abrir.indexOf('altaState.datos = apertura.datosAlta') > decide);
+  const pinta = abrir.indexOf('if (apertura.descartada) altaPintarConstanciaVacia()');
+  assert.ok(pinta > 0 && pinta < abrir.indexOf("abrirFormularioBorrador('alta-completa')"),
     'antes de restaurar: el plan del borrador lee la constancia ya decidida');
-});
-
-test('#491-7: el upgrade marca la constancia como suya al abrirse y al lograrse', () => {
-  const src = fuenteApp();
-  assert.ok(cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(').includes('altaCsfState.constanciaDeUpgrade = customerId'),
-    'lo que se cargue en el panel del upgrade es del upgrade');
-  assert.ok(cuerpoDeFuncion(src, 'async function pcEjecutarUpgradeFiscal(').includes('altaCsfState.constanciaDeUpgrade = customerId'),
-    '"Actualizar este" del alta tambien entrega la constancia al cliente actualizado');
 });
 
 test('#491-8: el alta completa le dice al plan si la constancia sigue viva y vacia la Seccion 1 cuando no', () => {
@@ -268,7 +265,7 @@ test('#491-8: el alta completa le dice al plan si la constancia sigue viva y vac
   assert.ok(restaurar.includes('if (plan.vaciarConstancia) def.vaciarConstancia?.()'));
   const inicio = src.indexOf("  'alta-completa': {");
   const def = src.slice(inicio, src.indexOf('\n  },', inicio));
-  assert.ok(def.includes('constanciaViva: () => constanciaViva(altaCsfState)'));
+  assert.ok(def.includes('constanciaViva: () => constanciaViva(modoAlta)'));
   assert.ok(def.includes('vaciarConstancia: () => altaVaciarConstancia()'));
 });
 
@@ -285,28 +282,34 @@ test('#491-10: una lectura solo escribe si sigue siendo la vigente', () => {
   assert.strictEqual(lecturaVigente(undefined, 7), false);
 });
 
+// Que una lectura vieja no escriba la constancia, y que abrir el upgrade deje huerfana la
+// que habia empezado el alta, lo prueba el modulo (MC4 y MC8, #540). Aqui queda el
+// cableado: la lectura se marca antes de ceder el hilo, y la pantalla y el borrador se
+// saltan con el mismo predicado.
 test('#491-11: el procesado del PDF descarta su resultado si la lectura dejo de ser vigente', () => {
-  const src = fuenteApp();
-  const procesar = cuerpoDeFuncion(src, 'async function altaCsfProcesarArchivo(');
-  const marca = procesar.indexOf('altaCsfState.lectura = lectura');
+  const procesar = cuerpoDeFuncion(fuenteApp(), 'async function altaCsfProcesarArchivo(');
+  const marca = procesar.indexOf('aplicarModoAlta(alEmpezarLectura)');
   assert.ok(marca > 0 && marca < procesar.indexOf('await '), 'la lectura se marca antes de ceder el hilo');
   const despuesDeLeer = procesar.slice(procesar.indexOf('await altaCsfLeerPDF('));
-  assert.ok(despuesDeLeer.indexOf('lecturaVigente(altaCsfState, lectura)') < despuesDeLeer.indexOf('altaCsfState.datos ='),
-    'el resultado se revisa antes de escribir los datos');
-  assert.ok(despuesDeLeer.indexOf('altaCsfState.pdfBase64 =') > despuesDeLeer.indexOf('lecturaVigente(altaCsfState, lectura)'),
-    'el PDF tampoco se escribe de una lectura vieja');
+  const vigente = despuesDeLeer.indexOf('if (!lecturaVigente(modoAlta, lectura)) return;');
+  assert.ok(vigente > 0 && vigente < despuesDeLeer.indexOf('aplicarModoAlta(alLeerConstancia'),
+    'el resultado se revisa antes de escribir la constancia');
+  assert.ok(vigente < despuesDeLeer.indexOf('altaCsfPonerDatos('), 'ni la Seccion 1 ni el borrador reciben una lectura vieja');
   const atrapa = procesar.slice(procesar.indexOf('} catch (err) {'));
-  assert.ok(atrapa.indexOf('lecturaVigente(altaCsfState, lectura)') < atrapa.indexOf("altaCsfSetStatus('error'"),
+  const vigenteError = atrapa.indexOf('if (!lecturaVigente(modoAlta, lectura)) return;');
+  assert.ok(vigenteError > 0 && vigenteError < atrapa.indexOf('altaCsfPintarStatus({ mensaje })'),
     'el error de una lectura vieja no pinta encima de la vigente');
-  assert.ok(cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(').includes('altaCsfState.lectura = null'),
-    'abrir el upgrade deja huerfana la lectura que habia empezado el alta');
 });
 
+// La marca de la constancia al lograrse la prueba el modulo (MC5, #540); aqui queda que
+// app.js aplica esa transicion con el id y consume altaState.datos solo al lograrse.
 test('#491-12: el upgrade logrado consume la Seccion 1 que el alta habia confirmado', () => {
   const ejecutar = cuerpoDeFuncion(fuenteApp(), 'async function pcEjecutarUpgradeFiscal(');
-  const marca = ejecutar.indexOf('altaCsfState.constanciaDeUpgrade = customerId');
-  assert.ok(marca > 0);
-  assert.ok(ejecutar.indexOf('altaState.datos = null') > ejecutar.indexOf("vista.tipo !== 'lograda'"),
+  const lograda = ejecutar.indexOf("vista.tipo !== 'lograda'");
+  assert.ok(lograda > 0);
+  assert.ok(ejecutar.indexOf('aplicarModoAlta(alLograrActualizacion, customerId)') > lograda,
+    'la transicion recibe el id del cliente actualizado, solo al lograrse');
+  assert.ok(ejecutar.indexOf('altaState.datos = null') > lograda,
     'solo al lograrse: si el upgrade falla, "Actualizar este" se reintenta con esos datos');
 });
 

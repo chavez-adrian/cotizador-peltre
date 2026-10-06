@@ -107,7 +107,7 @@ export function valoresAplicables(borrador, idsPresentes) {
 }
 
 // Que valores del borrador se APLICAN al restaurar (issue #352). El borrador
-// guarda el DOM, no el estado de JS: el PDF de la constancia (altaCsfState.pdfBase64),
+// guarda el DOM, no el estado de JS: el PDF de la constancia (modoAlta.pdfBase64),
 // el RFC dueno de ese PDF y las actividades economicas de #171 NO sobreviven. Reponer
 // los campos que la constancia llena, sin lo que la constancia trae consigo, deja un
 // panel que se ve identico a tener la CSF cargada y da de alta sin respaldo en Dropbox
