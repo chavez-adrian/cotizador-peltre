@@ -345,11 +345,30 @@ export function estadoAltaAlAbrirPanel(estado) {
       // alta anterior igual que customer_id: heredarla podaria la Seccion 2 del
       // PROXIMO cliente contra la configuracion del que ya se dio de alta.
       comercialReutilizado: null,
+      comercialConfirmado: false,
       seccionAbierta: null,
       altaCompletada: false,
       usoCfdiElegido: false,
     },
     reiniciado: true,
+  };
+}
+
+// El avance de un alta a medias al abrir el panel (#542). Abrir una actualizacion canda
+// las Secciones 3 y 4 y limpia las palomas (#376, #432); volver al alta lo repone desde
+// lo que altaState ya confirmo. Solo repone: el candado y la limpieza son del reinicio
+// (#192), que parte de cero tras un alta completada.
+// La Seccion 1 no aporta paloma ni desbloqueo: tras la actualizacion su constancia ya se
+// descarto (#491), y sin actualizacion en medio nada se borro. `datos` tampoco prueba que
+// la Seccion 2 se haya desbloqueado: se escribe ANTES de la dedup, que puede seguir sin
+// decidir. Solo decide `abrir`: la primera seccion sin confirmar.
+export function progresoDelAlta({ datos, comercialConfirmado, domicilio } = {}) {
+  const comercial = comercialConfirmado === true;
+  const conDomicilio = domicilio != null;
+  return {
+    palomas: [comercial && 2, conDomicilio && 3].filter(Boolean),
+    desbloquear: [comercial && 3, conDomicilio && 4].filter(Boolean),
+    abrir: datos == null ? 1 : !comercial ? 2 : !conDomicilio ? 3 : 4,
   };
 }
 
@@ -368,19 +387,17 @@ export function constanciaAlAbrirAlta(csf, datosAlta = null) {
   return { estado: sinConstancia(base), descartada: true, datosAlta: null };
 }
 
-// La ranura de la constancia vacia: lo que el PDF trajo consigo (datos, RFC dueno, el
-// archivo, sus regimenes) fuera, y `idle`, que es lo que vuelve a mostrar la zona para
-// soltar el PDF. El modo y la precarga comercial viven aparte (modoAlta, #539).
+// La ranura de la constancia vacia: lo que el PDF trajo consigo (datos, RFC dueno, sus
+// regimenes) fuera, y `idle`, que es lo que vuelve a mostrar la zona para soltar el
+// PDF. El modo y la precarga comercial viven aparte (modoAlta, #539).
 export function sinConstancia(csf) {
   return {
     ...(csf || {}),
     status: 'idle',
     datos: null,
     rfc: null,
-    fileName: null,
     pdfBase64: null,
     regimenesDetectados: null,
-    confirmado: false,
     constanciaDeUpgrade: null,
     lectura: null,
   };
@@ -388,14 +405,13 @@ export function sinConstancia(csf) {
 
 // La constancia cuyo PDF no se pudo leer (#516): la ranura queda vacia como en
 // sinConstancia -- nada de un PDF anterior sigue en memoria con la pantalla diciendo
-// "error" --, pero en 'error' y con el mensaje que pinta el banner. Vacia la constancia,
-// no el flujo: la marca del upgrade se queda para que la CSF que se suelte despues en
-// ese mismo upgrade siga siendo suya.
-export function estadoTrasErrorLectura(csf, mensaje) {
+// "error" --, pero en 'error'. El texto del error no se guarda: viaja directo a la
+// pantalla (#542). Vacia la constancia, no el flujo: la marca del upgrade se queda para
+// que la CSF que se suelte despues en ese mismo upgrade siga siendo suya.
+export function estadoTrasErrorLectura(csf) {
   return {
     ...sinConstancia(csf),
     status: 'error',
-    mensaje,
     constanciaDeUpgrade: (csf || {}).constanciaDeUpgrade ?? null,
   };
 }

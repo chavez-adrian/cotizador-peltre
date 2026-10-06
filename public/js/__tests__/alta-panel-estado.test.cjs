@@ -12,12 +12,12 @@ const assert = require('node:assert/strict');
 //     alta a medias que el borrador de #185 restaura a proposito.
 
 let usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload;
-let lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura;
+let lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura, progresoDelAlta;
 let planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario;
 before(async () => {
   ({
     usoCfdiPorDefecto, estadoAltaAlAbrirPanel, constanciaAlAbrirAlta, constanciaViva, buildAltaDarDeAltaPayload,
-    lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura,
+    lecturaVigente, sinConstancia, visibilidadPanelCsf, estadoTrasErrorLectura, progresoDelAlta,
   } = await import('../alta-logica.js'));
   ({
     planRestauracionFormulario, RESTAURACION_SUPERFICIE, serializarBorradorFormulario, deserializarBorradorFormulario,
@@ -174,11 +174,9 @@ test('#541: el ejecutor de app.js tiene un caso por cada tipo de ACCIONES_MODO y
 const CONSTANCIA_DEL_UPGRADE = {
   status: 'success',
   rfc: 'OGA140604560',
-  fileName: 'csf-operadora.pdf',
   datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
   pdfBase64: 'JVBERi0xLjQK',
   regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-  confirmado: true,
   modoUpgrade: null,
   constanciaDeUpgrade: 15,
 };
@@ -189,10 +187,8 @@ test('#491-1: abrir el alta despues de un upgrade con constancia arranca en idle
   assert.strictEqual(estado.status, 'idle', 'idle es lo que vuelve a mostrar la zona para soltar el PDF');
   assert.strictEqual(estado.datos, null);
   assert.strictEqual(estado.rfc, null);
-  assert.strictEqual(estado.fileName, null);
   assert.strictEqual(estado.pdfBase64, null);
   assert.strictEqual(estado.regimenesDetectados, null, 'el aviso de varios regimenes sale de aqui');
-  assert.strictEqual(estado.confirmado, false);
   assert.strictEqual(estado.constanciaDeUpgrade, null);
   assert.strictEqual(constanciaViva(estado), false);
 });
@@ -269,12 +265,10 @@ test('#491-5: descartar la constancia no muta el estado recibido', () => {
 // el fuente, como #432-2. Que abrir el alta descarte la constancia del upgrade y la
 // Seccion 1 lo prueba el modulo (modo-alta-logica.test.cjs MC1-MC3, #540), y que el
 // upgrade la marque como suya, MC4 y MC5. Ver la Seccion 1 limpia en pantalla es HITL.
-test('#491-6: abrir el alta decide la constancia al abrir y antes de restaurar el borrador', () => {
+test('#491-6: abrir el alta decide la constancia antes de la transicion y antes de restaurar el borrador', () => {
   const abrir = cuerpoDeFuncion(fuenteApp(), 'function abrirAcordeonAlta(');
-  const plegar = abrir.indexOf("cerrarFormularioBorrador('alta-completa', null)");
-  assert.ok(plegar > 0, 'la rama de plegar debe existir: si no, este test ya no cuida nada');
   const decide = abrir.indexOf('aperturaDelAlta(modoAlta, altaState.datos)');
-  assert.ok(decide > plegar, 'se decide al ABRIR, no al plegar el panel (plegar no es cancelar, #185)');
+  assert.ok(decide > 0, 'abrir el alta decide la constancia (desde #542 no hay rama de plegar: siempre abre)');
   assert.ok(decide < abrir.indexOf('aplicarModoAlta(alAbrirAlta)'), 'el descarte se lee del estado ANTERIOR a la transicion');
   assert.ok(abrir.indexOf('altaState.datos = apertura.datosAlta') > decide);
   const pinta = abrir.indexOf('if (apertura.descartada) altaPintarConstanciaVacia()');
@@ -331,8 +325,10 @@ test('#491-12: el upgrade logrado consume la Seccion 1 que el alta habia confirm
   const ejecutar = cuerpoDeFuncion(fuenteApp(), 'async function pcEjecutarUpgradeFiscal(');
   const lograda = ejecutar.indexOf("vista.tipo !== 'lograda'");
   assert.ok(lograda > 0);
-  assert.ok(ejecutar.indexOf('aplicarModoAlta(alLograrActualizacion, customerId)') > lograda,
+  assert.ok(ejecutar.indexOf('aplicarModoAlta(alLograrActualizacion, customerId, lectura)') > lograda,
     'la transicion recibe el id del cliente actualizado, solo al lograrse');
+  assert.ok(ejecutar.indexOf('altaState.comercialConfirmado = false') > ejecutar.indexOf('altaVaciarComercial()'),
+    'la lograda vacia la Seccion 2: su paloma no se repone en el siguiente alta (#542)');
   assert.ok(ejecutar.indexOf('altaState.datos = null') > lograda,
     'solo al lograrse: si el upgrade falla, "Actualizar este" se reintenta con esos datos');
 });
@@ -359,16 +355,13 @@ test('#516-2: idle, loading y success se ven igual que antes de #516', () => {
 
 // Tras un error la ranura de la constancia queda vacia: nada de un PDF anterior sigue
 // en memoria con la pantalla diciendo "error" (la misma clase de bug que #491).
-test('#516-3: un error de lectura descarta la constancia entera y guarda el mensaje', () => {
-  const estado = estadoTrasErrorLectura(CONSTANCIA_DEL_UPGRADE, 'Error al leer el PDF: Invalid PDF structure');
+test('#516-3: un error de lectura descarta la constancia entera', () => {
+  const estado = estadoTrasErrorLectura(CONSTANCIA_DEL_UPGRADE);
   assert.strictEqual(estado.status, 'error');
-  assert.strictEqual(estado.mensaje, 'Error al leer el PDF: Invalid PDF structure');
   assert.strictEqual(estado.datos, null);
   assert.strictEqual(estado.rfc, null);
-  assert.strictEqual(estado.fileName, null);
   assert.strictEqual(estado.pdfBase64, null, 'el POST no puede llevar el PDF de la constancia anterior');
   assert.strictEqual(estado.regimenesDetectados, null);
-  assert.strictEqual(estado.confirmado, false);
 });
 
 // El panel es el mismo nodo para el alta y el upgrade fiscal (#376): el error vacia la
@@ -384,7 +377,7 @@ test('#516-4: en el upgrade fiscal el error conserva el modo, su origen, la prec
     comercialPrecargado: comercial,
     constanciaDeUpgrade: 15,
   };
-  const estado = estadoTrasErrorLectura(enUpgrade, 'Error al leer el PDF: Failed to fetch');
+  const estado = estadoTrasErrorLectura(enUpgrade);
   assert.strictEqual(estado.modoUpgrade, 15);
   assert.strictEqual(estado.upgradeOrigen, 'clientes');
   assert.strictEqual(estado.comercialPrecargado, comercial);
@@ -393,9 +386,117 @@ test('#516-4: en el upgrade fiscal el error conserva el modo, su origen, la prec
 
 test('#516-5: tras un error no hay constancia viva y el estado recibido no se toca', () => {
   const original = { ...CONSTANCIA_DEL_UPGRADE };
-  const estado = estadoTrasErrorLectura(original, 'Error al leer el PDF: Invalid PDF structure');
+  const estado = estadoTrasErrorLectura(original);
   assert.strictEqual(constanciaViva(estado), false,
     'el aviso del borrador de que los datos fiscales quedaron vacios sigue siendo cierto');
   assert.strictEqual(original.status, 'success');
   assert.strictEqual(original.pdfBase64, 'JVBERi0xLjQK');
+});
+
+// --- El avance de un alta a medias al reabrir el panel (#542, filas 4 y 5) -------
+// Abrir una actualizacion canda las Secciones 3 y 4 y limpia las palomas (#376, #432),
+// y al volver al alta a medias su avance no regresaba. progresoDelAlta decide que se
+// repone desde lo que altaState ya confirmo; pintarlo es HITL. La Seccion 1 NUNCA
+// aporta paloma ni desbloqueo: tras la actualizacion su constancia ya se descarto
+// (#491), y sin actualizacion en medio nada se borro -- `datos` se escribe antes de la
+// dedup, asi que no prueba que la Seccion 2 se haya desbloqueado.
+
+test('#542-1: sin alta a medias no hay nada que reponer y se abre la Seccion 1', () => {
+  assert.deepStrictEqual(progresoDelAlta({}), { palomas: [], desbloquear: [], abrir: 1 });
+  assert.deepStrictEqual(progresoDelAlta(undefined), { palomas: [], desbloquear: [], abrir: 1 });
+});
+
+test('#542-2: las Secciones 1 y 2 confirmadas reponen la paloma 2, desbloquean la 3 y la abren', () => {
+  assert.deepStrictEqual(progresoDelAlta({ datos: { rfc: 'OGA140604560' }, comercialConfirmado: true }),
+    { palomas: [2], desbloquear: [3], abrir: 3 });
+});
+
+test('#542-3: con el domicilio confirmado se reponen tambien la paloma 3 y la Seccion 4', () => {
+  assert.deepStrictEqual(
+    progresoDelAlta({ datos: { rfc: 'OGA140604560' }, comercialConfirmado: true, domicilio: { br_name: 'Matriz' } }),
+    { palomas: [2, 3], desbloquear: [3, 4], abrir: 4 });
+});
+
+test('#542-4: tras pasar por una actualizacion la Seccion 1 sale vacia y abierta, con la paloma 2 de vuelta', () => {
+  assert.deepStrictEqual(progresoDelAlta({ datos: null, comercialConfirmado: true }),
+    { palomas: [2], desbloquear: [3], abrir: 1 });
+});
+
+test('#542-5: la Seccion 1 sola no repone paloma ni desbloquea la 2 (la dedup pudo quedar sin decidir)', () => {
+  assert.deepStrictEqual(progresoDelAlta({ datos: { rfc: 'OGA140604560' } }),
+    { palomas: [], desbloquear: [], abrir: 2 });
+});
+
+test('#542-6: el reinicio de un alta completada suelta la Seccion 2 confirmada y no queda nada que reponer', () => {
+  const completada = {
+    altaCompletada: true, datos: { rfc: 'OGA140604560' }, comercialConfirmado: true, domicilio: { br_name: 'Matriz' },
+  };
+  const { estado } = estadoAltaAlAbrirPanel(completada);
+  assert.strictEqual(estado.comercialConfirmado, false);
+  assert.deepStrictEqual(progresoDelAlta(estado), { palomas: [], desbloquear: [], abrir: 1 });
+});
+
+// El cableado de #542 en app.js (no se importa en Node): el ORDEN se cuida en el fuente.
+// Lo que decide cada caso lo prueban el modulo (MV1-MV4, MP10) y progresoDelAlta (#542-1..6).
+
+test('#542-7: abrir el alta no tiene rama de plegar y sus dos llamadores ya no fuerzan display:none', () => {
+  const src = fuenteApp();
+  const abrir = cuerpoDeFuncion(src, 'function abrirAcordeonAlta(');
+  assert.ok(!abrir.includes('if (visible)'), 'abrir el alta siempre abre (fila 2: la rama de plegar era codigo muerto)');
+  assert.ok(!abrir.includes("cerrarFormularioBorrador('alta-completa', null)"));
+  for (const firma of ['async function pcAbrirAltaCompletaDesdePaso(', 'function cvCaminoAlta(']) {
+    assert.ok(!cuerpoDeFuncion(src, firma).includes("panel.style.display = 'none'"), `${firma} ya no tiene que forzar el cierre`);
+  }
+});
+
+test('#542-8: abrir el alta repone el avance y ABRE la seccion que corresponde, nunca la alterna', () => {
+  const src = fuenteApp();
+  const abrir = cuerpoDeFuncion(src, 'function abrirAcordeonAlta(');
+  assert.ok(!abrir.includes('altaToggleSeccion('), 'fila 5: el toggle plegaba la Seccion 1 que la actualizacion dejo abierta');
+  const reinicio = abrir.indexOf('if (reiniciado) altaReiniciarPanel()');
+  const progreso = abrir.indexOf('const progreso = progresoDelAlta(altaState)');
+  const repone = abrir.indexOf('altaReponerProgreso(progreso)');
+  const abre = abrir.indexOf('altaAbrirSeccion(');
+  assert.ok(reinicio > 0 && progreso > reinicio, 'el progreso se lee del altaState que dejo el reinicio de #192');
+  assert.ok(repone > progreso && abre > repone, 'se abre despues de desbloquear: altaAbrirSeccion respeta el candado');
+  assert.ok(abre < abrir.indexOf("abrirFormularioBorrador('alta-completa')"));
+  const comercial = cuerpoDeFuncion(src, 'async function altaConfirmarComercial(');
+  assert.ok(comercial.includes('if (modoAlta.clienteId == null) altaState.comercialConfirmado = true'),
+    'la Seccion 2 confirmada del ALTA queda en altaState; la de una actualizacion (mismo boton, mismo nodo) no');
+  const upgrade = cuerpoDeFuncion(src, 'async function pcAbrirUpgradeFiscal(');
+  assert.ok(upgrade.includes('altaAbrirSeccion(1)') && !upgrade.includes('altaToggleSeccion('));
+});
+
+test('#542-9: la precarga tardia aplica su transicion y no pinta si la actualizacion ya no es la suya', () => {
+  const precarga = cuerpoDeFuncion(fuenteApp(), 'async function pcPrecargarComercialUpgrade(');
+  const transicion = precarga.indexOf('aplicarModoAlta(alPrecargarComercial, customerId, pre)');
+  const guarda = precarga.indexOf('if (!actualizacionVigente(modoAlta, customerId)) return;');
+  assert.ok(transicion > 0 && guarda > transicion, 'la transicion corre siempre: ella se guarda sola');
+  assert.ok(guarda < precarga.indexOf('altaPoblarListasPrecios('), 'antes de la primera escritura de pantalla');
+  const atrapa = precarga.slice(precarga.indexOf('} catch {'));
+  const guardaError = atrapa.indexOf('if (!actualizacionVigente(modoAlta, customerId)) return;');
+  assert.ok(guardaError > 0 && guardaError < atrapa.indexOf('errDiv'), 'el aviso de la precarga fallida de A no sale en el panel de B');
+});
+
+test('#542-10: la lograda tardia mata su borrador, aplica su transicion y no toca la pantalla', () => {
+  const ejecutar = cuerpoDeFuncion(fuenteApp(), 'async function pcEjecutarUpgradeFiscal(');
+  const lectura = ejecutar.indexOf('const lectura = modoAlta.lectura');
+  assert.ok(lectura > 0 && lectura < ejecutar.indexOf('await '), 'la constancia que viaja se lee antes del PUT');
+  const error = ejecutar.indexOf('const mostrarError');
+  assert.ok(ejecutar.slice(error, ejecutar.indexOf('\n', error)).includes('actualizacionVigente(modoAlta, customerId)'),
+    'el error tardio no se pinta en el panel de otro');
+  const lograda = ejecutar.indexOf("vista.tipo !== 'lograda'");
+  const guarda = ejecutar.indexOf('if (!actualizacionVigente(modoAlta, customerId)) {', lograda);
+  assert.ok(guarda > lograda && guarda < ejecutar.indexOf("panel.style.display = 'none'"), 'se pregunta antes de ocultar el panel');
+  const tardia = ejecutar.slice(guarda, ejecutar.indexOf('\n    }\n', guarda));
+  const mata = tardia.indexOf('matarBorradorFormulario(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO)');
+  const transicion = tardia.indexOf('aplicarModoAlta(alLograrActualizacion, customerId, lectura)');
+  assert.ok(mata > 0 && transicion > mata);
+  assert.ok(tardia.indexOf('if (modoAlta.constanciaDeUpgrade === customerId) altaState.datos = null') > transicion,
+    'la Seccion 1 del alta se consume segun lo que devolvio la transicion');
+  for (const pinta of ['vaciarCamposSuperficie', 'cerrarFormularioBorrador', 'altaVaciarComercial', 'cvAdoptarUpgradeFiscal',
+    'RenderTarjeta', 'pcRenderReporteUpgrade', 'style.display']) {
+    assert.ok(!tardia.includes(pinta), `la lograda tardia no hace ${pinta}`);
+  }
+  assert.ok(tardia.includes('return;'));
 });

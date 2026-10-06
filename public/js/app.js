@@ -51,6 +51,7 @@ import {
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
   estadoAltaAlAbrirPanel,
+  progresoDelAlta,
   lecturaVigente,
   constanciaViva,
   visibilidadPanelCsf,
@@ -70,6 +71,7 @@ import {
 } from './alta-logica.js';
 import {
   MODO_ALTA_INICIAL,
+  actualizacionVigente,
   alAbrirAlta,
   alAbrirActualizacion,
   alPrecargarComercial,
@@ -4455,13 +4457,12 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
   // Secciones 3 y 4 candadas -- el acordeon es UN solo nodo (#376) y desde las que dejo
   // abiertas un alta anterior "Dar de alta" daria de alta, con la CSF de ESTE upgrade,
   // al cliente que se esta actualizando --, sin las palomas de esa alta (#432) y sin el
-  // boton. Va antes de altaToggleSeccion, que respeta el candado.
+  // boton. Va antes de altaAbrirSeccion, que respeta el candado.
   aplicarModoAlta(alAbrirActualizacion, customerId, origen, banner);
   altaPoblarRegimen('csf-regimen-fiscal', 'csf-rfc');
   panel.style.display = 'block';
   altaTabSwitch('csf');
-  altaState.seccionAbierta = null;
-  altaToggleSeccion(1);
+  altaAbrirSeccion(1);
   altaCsfPintarStatus();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Borrador de formulario (#185): la llave es POR CUSTOMER_ID (DEF_UPGRADE_FISCAL) --
@@ -4501,6 +4502,9 @@ window.pcAbrirUpgradeFiscal = pcAbrirUpgradeFiscal;
 // Si la lectura falla, la linea base queda en null y NADA comercial viaja (el nucleo
 // puro lo garantiza); se avisa en pantalla en vez de dejar al vendedor creyendo que
 // unos selectores vacios son la configuracion real del cliente.
+// La lectura vuelve de un `await` (#542): si en medio el vendedor cerro el panel o abrio
+// la actualizacion de otro cliente, la transicion no escribe (ella se guarda sola) y aqui
+// no se pinta nada -- ni la Seccion 2 ni el aviso de la fallida son del panel abierto.
 async function pcPrecargarComercialUpgrade(customerId) {
   // Contenedor propio, no #alta-comercial-error: ese lo limpia "Confirmar config
   // comercial" (altaConfirmarComercial), y un clic ahi borraria este aviso dejando al
@@ -4510,7 +4514,8 @@ async function pcPrecargarComercialUpgrade(customerId) {
     const res = await api(`/api/operam/clientes/${customerId}/comercial`);
     if (!res.ok) throw new Error('lectura fallida');
     const pre = await res.json();
-    aplicarModoAlta(alPrecargarComercial, pre);
+    aplicarModoAlta(alPrecargarComercial, customerId, pre);
+    if (!actualizacionVigente(modoAlta, customerId)) return;
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     // La lista que el cliente ya tiene entra al selector aunque quien edita no la
     // tenga habilitada (#300): conservarla es valido y el servidor la deja pasar.
@@ -4525,6 +4530,7 @@ async function pcPrecargarComercialUpgrade(customerId) {
     altaAplicarModoComercial(customerId, pre.vendedorNombre);
     if (errDiv) errDiv.style.display = 'none';
   } catch {
+    if (!actualizacionVigente(modoAlta, customerId)) return;
     if (errDiv) {
       errDiv.textContent = 'No se pudo leer la configuracion comercial actual del cliente: esta seccion no se actualizara.';
       errDiv.style.display = '';
@@ -4576,7 +4582,6 @@ async function pcAbrirAltaCompletaDesdePaso() {
   switchTab('cliente');
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
-  panel.style.display = 'none'; // abrirAcordeonAlta togglea sobre display
   const restaurado = abrirAcordeonAlta();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   await restaurado;
@@ -4635,14 +4640,38 @@ function pcCerrarReporteUpgrade() {
 }
 window.pcCerrarReporteUpgrade = pcCerrarReporteUpgrade;
 
+// El paso Cliente adopta los cambios solo si su cliente ES el que se acaba de
+// actualizar: desde la vista Clientes se edita un cliente cualquiera, que no
+// tiene por que ser al que se esta cotizando (la misma fuga de contexto que
+// emailFacturaParaUpgrade evita con el email). Desde el chip Fiscal siempre
+// coinciden, asi que ese camino no cambia. La lograda tardia (#542) tambien adopta:
+// son datos de ese cliente que Operam si cambio.
+function pcAdoptarUpgradeFiscal(customerId, cambios) {
+  if (!pcState.cliente || String(customerIdFiscal(pcState.cliente)) !== String(customerId)) return;
+  Object.assign(pcState.cliente, cambios);
+  const rfcInput = document.getElementById('cl-rfc');
+  if (rfcInput && cambios.rfc) rfcInput.value = cambios.rfc;
+  const razonInput = document.getElementById('cl-razon-social');
+  if (razonInput && cambios.name) razonInput.value = cambios.name;
+}
+
 async function pcEjecutarUpgradeFiscal(datos) {
   const customerId = modoAlta.clienteId;
   // El origen se lee al entrar, no al salir (#407): abajo se anula junto con
   // el clienteId, y hasta entonces nadie podia consultarlo para decidir que pintar.
   const origen = modoAlta.origen;
+  // La constancia que viaja en este PUT (#542): si el PUT vuelve cuando el panel ya no es
+  // de este cliente, la transicion la marca suya solo si la que esta en memoria sigue
+  // siendo esta lectura.
+  const lectura = modoAlta.lectura;
   const btn = document.getElementById('csf-btn-confirmar');
   const errDiv = document.getElementById('csf-campos-error');
-  const mostrarError = msg => { if (errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
+  // El error que vuelve cuando el panel ya es de otro cliente, o ya se cerro, no se pinta
+  // (#542): csf-campos-error es del panel abierto. Se pierde en silencio (declarado en el
+  // ADR-0023). El `finally` NO se guarda: csf-btn-confirmar es el mismo boton de la
+  // Seccion 1 y solo esta funcion lo apaga y lo enciende; guardado, el siguiente alta lo
+  // encontraria muerto con "Actualizando en Operam...".
+  const mostrarError = msg => { if (actualizacionVigente(modoAlta, customerId) && errDiv) { errDiv.style.display = ''; errDiv.textContent = msg; } };
   if (btn) { btn.disabled = true; btn.textContent = 'Actualizando en Operam...'; }
   // Email de facturacion (issue #95 regla 3): se captura en el paso Cliente/Envio
   // (cl-email-factura), input GLOBAL que vive fuera del acordeon de la CSF. Solo se
@@ -4681,13 +4710,31 @@ async function pcEjecutarUpgradeFiscal(datos) {
       return;
     }
     const cambios = camposClienteOperamTrasUpgrade(datos, vista.noAplicados);
+    const formIdUpgrade = `upgrade-fiscal-${customerId}`;
+    // La lograda tardia (#542): en medio el vendedor cerro el panel o abrio la
+    // actualizacion de otro cliente, y el panel -- un solo nodo (#376) -- ya es de ese.
+    // El PUT si quedo escrito en Operam, asi que el borrador de ESTE cliente muere; pero
+    // solo su llave: vaciarCamposSuperficie escribiria en la Seccion 1 del panel abierto,
+    // y cerrarFormularioBorrador (aun sin ocultar) le taparia su aviso de constancia. Basta
+    // porque este cliente ya paso por alCerrarPanel -- todo camino que abre otro pasa antes
+    // por cerrar --, que lo saco de las superficies abiertas. La transicion no escribe el
+    // modo y solo marca la constancia si es la que viajo; la Seccion 1 del alta se consume
+    // segun lo que devolvio. El paso Cliente adopta los cambios (ya lo guarda el id) sin
+    // pintar nada: ni tarjeta, ni reporte, ni la vista Clientes, cuya tarjeta
+    // (cvAdoptarUpgradeFiscal) se escribiria sin mirar el id.
+    if (!actualizacionVigente(modoAlta, customerId)) {
+      matarBorradorFormulario(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
+      aplicarModoAlta(alLograrActualizacion, customerId, lectura);
+      if (modoAlta.constanciaDeUpgrade === customerId) altaState.datos = null;
+      pcAdoptarUpgradeFiscal(customerId, cambios);
+      return;
+    }
     const panel = document.getElementById('panel-alta-cliente');
     if (panel) panel.style.display = 'none';
     // El upgrade fiscal ya quedo escrito en Operam: el borrador cumplio su
     // trabajo y muere (#185). Se vacia el DOM tambien (no solo el panel se
     // oculta) para que un cliente distinto abierto despues en la MISMA pestana
     // no herede visualmente lo que se acaba de escribir aqui.
-    const formIdUpgrade = `upgrade-fiscal-${customerId}`;
     vaciarCamposSuperficie(formIdUpgrade);
     cerrarFormularioBorrador(formIdUpgrade, EVENTOS_BORRADOR_FORM.ENVIO_EXITOSO);
     // El modo vuelve a alta y la linea base comercial a undefined (no null): el
@@ -4695,30 +4742,22 @@ async function pcEjecutarUpgradeFiscal(datos) {
     // poder mandar el segmento que el vendedor capturo (#193). La constancia ya quedo
     // escrita en ESTE cliente (#491): la transicion la marca suya -- por "Actualizar
     // este" la habia cargado el alta, y sin la marca el siguiente alta la arrastraria.
-    aplicarModoAlta(alLograrActualizacion, customerId);
+    // Su pantalla (#542): reenciende "Dar de alta" y oculta el banner.
+    aplicarModoAlta(alLograrActualizacion, customerId, lectura);
     altaState.datos = null;
     // La Seccion 2 se limpia y vuelve al modo alta (#197), por la misma razon que lo
     // demas de aqui: que el proximo cliente abierto en esta pestana no herede la
     // configuracion del que se acaba de actualizar.
     altaVaciarComercial();
+    // Con la Seccion 2 vacia, su paloma no se repone en el siguiente alta (#542).
+    altaState.comercialConfirmado = false;
     altaAplicarModoComercial(null, '');
     // El chip Fiscal pasa a verde solo si el RFC real SI pego (chipsCompletitud lo
     // deriva de pcState.cliente.rfc). Si Operam ignoro un campo (quirk del PUT),
     // esa parte de la tarjeta se queda con el valor viejo en vez de mostrar un dato
     // que Operam en realidad no guardo: camposClienteOperamTrasUpgrade ya podo esos campos.
     //
-    // El paso Cliente adopta los cambios solo si su cliente ES el que se acaba de
-    // actualizar: desde la vista Clientes se edita un cliente cualquiera, que no
-    // tiene por que ser al que se esta cotizando (la misma fuga de contexto que
-    // emailFacturaParaUpgrade evita con el email). Desde el chip Fiscal siempre
-    // coinciden, asi que ese camino no cambia.
-    if (pcState.cliente && String(customerIdFiscal(pcState.cliente)) === String(customerId)) {
-      Object.assign(pcState.cliente, cambios);
-      const rfcInput = document.getElementById('cl-rfc');
-      if (rfcInput && cambios.rfc) rfcInput.value = cambios.rfc;
-      const razonInput = document.getElementById('cl-razon-social');
-      if (razonInput && cambios.name) razonInput.value = cambios.name;
-    }
+    pcAdoptarUpgradeFiscal(customerId, cambios);
     // Quien decide a que pantalla volver es alta-logica.js (#407): aqui solo se
     // pinta. El reporte va DESPUES del repintado y sobrevive a los dos: se inserta
     // junto a #panel-alta-cliente, que vive fuera de la zona que cada vista reescribe.
@@ -6215,8 +6254,6 @@ function cvCaminoAlta(query) {
     (q ? ' (' + escapeHtml(q) + ')' : '') + '</small></div>' +
     '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Cancelar</button>';
   moverPanelA(document.getElementById('clientes-panel-slot'));
-  const panel = document.getElementById('panel-alta-cliente');
-  if (panel) panel.style.display = 'none'; // abrirAcordeonAlta togglea sobre display
   abrirAcordeonAlta();
 }
 window.cvCaminoAlta = cvCaminoAlta;
@@ -8110,6 +8147,9 @@ const altaState = {
   // cliente ya tiene en Operam, para que solo viaje lo que el vendedor cambie. null =
   // no hay precarga (alta nueva, o la lectura fallo) y la Seccion 2 viaja tal cual.
   comercialReutilizado: null,
+  // La Seccion 2 quedo confirmada (#542): de ahi sale la paloma 2 que se repone al volver
+  // a un alta a medias tras una actualizacion, que limpia las palomas (#432).
+  comercialConfirmado: false,
   // "El vendedor toco el select de Uso de CFDI en ESTA alta" (#250). El campo nace
   // preseleccionado en G03 y altaFijarDefaultUsoCfdi lo escribe por JS, que no dispara
   // `change`: sin esta marca, el default se le escribia encima al cliente existente.
@@ -8260,17 +8300,11 @@ function altaFijarDefaultUsoCfdi(modoUpgrade) {
   if (sinCaptura) sel.value = def;
 }
 
+// Abrir el alta siempre abre (#542): la rama de plegar que tenia no la alcanzaba nadie
+// -- sus dos llamadores forzaban display:none antes -- y ya no existe.
 function abrirAcordeonAlta() {
   const panel = document.getElementById('panel-alta-cliente');
   if (!panel) return;
-  const visible = panel.style.display !== 'none';
-  if (visible) {
-    panel.style.display = 'none';
-    // Plegar no es cancelar (#185): el borrador sobrevive, mismo patron que la
-    // captura de prospecto.
-    cerrarFormularioBorrador('alta-completa', null);
-    return;
-  }
   panel.style.display = 'block';
   // Este camino es el de "cliente formal nuevo" (POST), nunca el upgrade fiscal
   // (#85): si un intento de upgrade anterior quedo colgado en modoAlta.clienteId
@@ -8300,7 +8334,14 @@ function abrirAcordeonAlta() {
   // Vendedor y celular vuelven a ser capturables (#197): un upgrade anterior en esta
   // misma pestana los dejo deshabilitados.
   altaAplicarModoComercial(null, '');
-  altaToggleSeccion(1);
+  // El avance de un alta a medias (#542): una actualizacion en medio cando la 3 y la 4 y
+  // limpio las palomas; aqui vuelven desde lo que altaState ya confirmo. Se ABRE la
+  // seccion que corresponde, nunca se alterna: la actualizacion dejaba seccionAbierta en
+  // 1 y el toggle la plegaba. Si esa seccion sigue candada -- la Seccion 1 confirmada
+  // con la dedup sin decidir deja la 2 con candado --, se abre la 1, donde esta la dedup.
+  const progreso = progresoDelAlta(altaState);
+  altaReponerProgreso(progreso);
+  altaAbrirSeccion(altaSeccionCandada(progreso.abrir) ? 1 : progreso.abrir);
   // Borrador de formulario (#185): prefill de todo el acordeon si el vendedor
   // dejo un alta a medias. Puebla los mismos catalogos que antes pero DESPUES
   // de -- no en paralelo con -- la restauracion (altaEsperarCatalogosCompletos,
@@ -8414,13 +8455,51 @@ function altaLimpiarAvisosAlta() {
   if (sec4Err) { sec4Err.textContent = ''; sec4Err.style.display = 'none'; }
 }
 
-function altaToggleSeccion(n) {
+function altaSeccionCandada(n) {
   const sec = document.getElementById(`alta-sec-${n}`);
-  if (sec && sec.classList.contains('alta-seccion-bloqueada')) return;
+  return !!sec && sec.classList.contains('alta-seccion-bloqueada');
+}
 
-  const prev = altaState.seccionAbierta;
-  altaState.seccionAbierta = (prev === n) ? null : n;
+// El encabezado de cada seccion: alterna. Una seccion candada no se abre.
+function altaToggleSeccion(n) {
+  if (altaSeccionCandada(n)) return;
+  altaState.seccionAbierta = (altaState.seccionAbierta === n) ? null : n;
+  altaPintarSecciones();
+}
+window.altaToggleSeccion = altaToggleSeccion;
 
+// Abre la seccion n, estuviera abierta o no (#542): abrir el alta o la actualizacion ABRE
+// la que corresponde, nunca la alterna. Respeta el candado, como el toggle.
+function altaAbrirSeccion(n) {
+  if (altaSeccionCandada(n)) return;
+  altaState.seccionAbierta = n;
+  altaPintarSecciones();
+}
+
+// Las palomas y los desbloqueos que progresoDelAlta (#542) repone al abrir el alta a
+// medias: el mismo pintado que altaConfirmarComercial y altaDomicilioConfirmado. La
+// Seccion 3 vuelve tambien al modo del domicilio que se eligio (#371): candarSecciones
+// la habia regresado a captura. Solo agrega: candar y limpiar son del reinicio (#192).
+function altaReponerProgreso({ palomas, desbloquear }) {
+  for (const n of palomas) {
+    const dot = document.getElementById(`chkdot-${n}`);
+    if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+  }
+  for (const n of desbloquear) {
+    const sec = document.getElementById(`alta-sec-${n}`);
+    if (!sec) continue;
+    sec.classList.remove('alta-seccion-bloqueada');
+    const hdr = document.getElementById(`alta-hd-${n}`);
+    if (hdr) hdr.style.cursor = '';
+    const ico = document.getElementById(`alta-ico-${n}`);
+    if (ico) ico.textContent = '+';
+  }
+  if (desbloquear.includes(3)) {
+    altaModoDomicilio(domicilioReutilizadoDelAlta(altaState.clienteExistente, altaState.domiciliosCliente));
+  }
+}
+
+function altaPintarSecciones() {
   [1, 2, 3, 4].forEach(i => {
     const s = document.getElementById(`alta-sec-${i}`);
     const body = document.getElementById(`alta-body-${i}`);
@@ -8437,7 +8516,6 @@ function altaToggleSeccion(n) {
 }
 
 window.abrirAcordeonAlta = abrirAcordeonAlta;
-window.altaToggleSeccion = altaToggleSeccion;
 
 // === CSF DROPZONE — Seccion 1 (issue #28) ===
 
@@ -8691,7 +8769,7 @@ async function altaCsfProcesarArchivo(file) {
     if (!lecturaVigente(modoAlta, lectura)) return;
     const resultado = altaCsfResultadoParseo(respuesta, file.name, resultadoQR);
     aplicarModoAlta(alLeerConstancia, lectura,
-      { status: resultado.status, datos: resultado.datos, pdfBase64, fileName: file.name });
+      { status: resultado.status, datos: resultado.datos, pdfBase64 });
     altaCsfPonerDatos(resultado.datos);
     altaCsfPintarStatus({ bannerText: resultado.bannerText });
     // Borrador de formulario (#185): altaCsfPonerDatos asigna .value por JS, que
@@ -8710,7 +8788,7 @@ async function altaCsfProcesarArchivo(file) {
     // sigue a la vista (#516). Sin limpiar el input, elegir el MISMO archivo ya
     // corregido no dispararia 'change'.
     const mensaje = 'Error al leer el PDF: ' + err.message;
-    aplicarModoAlta(alFallarLectura, lectura, mensaje);
+    aplicarModoAlta(alFallarLectura, lectura);
     altaCsfPintarStatus({ mensaje });
     const input = document.getElementById('csf-input');
     if (input) input.value = '';
@@ -9315,6 +9393,9 @@ async function altaConfirmarComercial() {
   }
   if (errDiv) errDiv.style.display = 'none';
 
+  // La marca es del alta (#542): el mismo boton se ve en la Seccion 2 de una
+  // actualizacion, y esa no es avance del alta a medias.
+  if (modoAlta.clienteId == null) altaState.comercialConfirmado = true;
   const dot = document.getElementById('chkdot-2');
   if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
 

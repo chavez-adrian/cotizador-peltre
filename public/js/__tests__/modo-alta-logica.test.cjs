@@ -4,12 +4,13 @@ const assert = require('node:assert/strict');
 
 // Modo del alta (#539, ADR-0023): el panel del alta y el de la actualizacion fiscal
 // son el MISMO nodo (#376), y en que modo esta lo decide este modulo. Cada transicion
-// reproduce lo que hacia su camino de app.js antes de #539/#540, con sus asimetrias
-// (tablas del ADR): las salidas de estas pruebas son literales de esas tablas.
+// reproducia lo que hacia su camino de app.js antes de #539/#540, con sus asimetrias
+// (tablas del ADR); #542 unifico las que la tabla de veredictos mando unificar y
+// declaro las demas. Las salidas de estas pruebas son literales de esas tablas.
 let MODO_ALTA_INICIAL, alAbrirAlta, alAbrirActualizacion, alPrecargarComercial, alLograrActualizacion,
   alActualizarCandidato, alCrearNuevoCandidato, alCerrarPanel;
 let aperturaDelAlta, alReiniciarAlta, alEmpezarLectura, alLeerConstancia, alFallarLectura,
-  alConfirmarConstancia, alVaciarConstancia;
+  alConfirmarConstancia, alVaciarConstancia, actualizacionVigente;
 
 const PRECARGA = { salesType: '3', segmentoId: '12', vendedorNombre: 'Adrian' };
 const EN_ACTUALIZACION = { clienteId: 15, origen: 'clientes', comercialPrecargado: PRECARGA };
@@ -24,7 +25,7 @@ let errorAltaEnModoUpgrade;
 before(async () => {
   ({ errorAltaEnModoUpgrade } = await import('../alta-logica.js'));
   M = await import('../modo-alta-logica.js');
-  ({ MODO_ALTA_INICIAL, aperturaDelAlta, ACCIONES_MODO } = M);
+  ({ MODO_ALTA_INICIAL, aperturaDelAlta, ACCIONES_MODO, actualizacionVigente } = M);
   ({
     alAbrirAlta,
     alAbrirActualizacion,
@@ -45,9 +46,10 @@ before(async () => {
 test('MA0: el estado inicial es alta sin origen ni panel comercial, y sin constancia', () => {
   assert.deepStrictEqual(MODO_ALTA_INICIAL, {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'idle', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: null, lectura: null, lecturas: 0,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: null, lecturas: 0,
   });
+  assert.strictEqual(Object.keys(MODO_ALTA_INICIAL).length, 11);
   assert.ok(Object.isFrozen(MODO_ALTA_INICIAL));
 });
 
@@ -57,28 +59,30 @@ test('MA1: abrir el alta vuelve a alta y deja la precarga en undefined', () => {
   assert.ok('comercialPrecargado' in m);
 });
 
-test('MA2: abrir la actualizacion deja el cliente y el origen, y la precarga en null', () => {
+// Fila 8 de #542: abrir la actualizacion parte de la constancia vacia (tambien el rfc).
+test('MA2: abrir la actualizacion deja el cliente y el origen, la precarga en null y la constancia vacia', () => {
   assert.deepStrictEqual(alAbrirActualizacion(MODO_ALTA_INICIAL, 501, 'resumen'), {
     clienteId: 501, origen: 'resumen', comercialPrecargado: null,
-    status: 'idle', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: 501, lectura: null, lecturas: 0,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: 501, lectura: null, lecturas: 0,
   });
   assert.deepStrictEqual(alAbrirActualizacion(EN_ACTUALIZACION, 22, undefined), {
     clienteId: 22, origen: null, comercialPrecargado: null,
-    status: 'idle', datos: null, pdfBase64: null, regimenesDetectados: null, constanciaDeUpgrade: 22, lectura: null,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null, regimenesDetectados: null, constanciaDeUpgrade: 22, lectura: null,
   });
   assert.deepStrictEqual(alAbrirActualizacion(MODO_ALTA_INICIAL, 0, ''), {
     clienteId: 0, origen: null, comercialPrecargado: null,
-    status: 'idle', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: 0, lectura: null, lecturas: 0,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: 0, lectura: null, lecturas: 0,
   });
 });
 
-test('MA3: la precarga lograda solo escribe la precarga (aunque el modo ya se haya cerrado: asimetria 4)', () => {
-  assert.deepStrictEqual(alPrecargarComercial({ clienteId: 15, origen: 'paso', comercialPrecargado: null }, PRECARGA),
+// Fila 3 de #542: la precarga solo escribe si la actualizacion sigue siendo la de ese cliente.
+test('MA3: la precarga lograda escribe la precarga solo si la actualizacion sigue siendo la de ese cliente', () => {
+  assert.deepStrictEqual(alPrecargarComercial({ clienteId: 15, origen: 'paso', comercialPrecargado: null }, 15, PRECARGA),
     { clienteId: 15, origen: 'paso', comercialPrecargado: PRECARGA });
-  assert.deepStrictEqual(alPrecargarComercial({ clienteId: null, origen: null, comercialPrecargado: undefined }, PRECARGA),
-    { clienteId: null, origen: null, comercialPrecargado: PRECARGA });
+  const cerrado = { clienteId: null, origen: null, comercialPrecargado: undefined };
+  assert.strictEqual(alPrecargarComercial(cerrado, 15, PRECARGA), cerrado, 'con el panel ya cerrado no escribe');
 });
 
 test('MA4: la actualizacion lograda vuelve a alta y deja la precarga en undefined', () => {
@@ -87,30 +91,35 @@ test('MA4: la actualizacion lograda vuelve a alta y deja la precarga en undefine
   assert.ok('comercialPrecargado' in m);
 });
 
-test('MA5: "Actualizar este" del duplicado deja el cliente, NO toca el origen y la precarga queda undefined', () => {
+// Fila 10 de #542: "Actualizar este" pone el origen en null.
+test('MA5: "Actualizar este" del duplicado deja el cliente, el origen en null y la precarga en undefined', () => {
   const m = alActualizarCandidato(MODO_ALTA_INICIAL, 77);
   assert.deepStrictEqual(m, {
     clienteId: 77, origen: null, comercialPrecargado: undefined,
-    status: 'idle', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: null, lectura: null, lecturas: 0,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: null, lecturas: 0,
   });
   assert.ok('comercialPrecargado' in m);
   assert.deepStrictEqual(alActualizarCandidato(EN_ACTUALIZACION, 77),
-    { clienteId: 77, origen: 'clientes', comercialPrecargado: undefined });
+    { clienteId: 77, origen: null, comercialPrecargado: undefined });
 });
 
-test('MA6: "Crear nuevo" del duplicado vuelve a alta y NO toca la precarga (asimetria 1)', () => {
-  assert.deepStrictEqual(alCrearNuevoCandidato(EN_ACTUALIZACION),
-    { clienteId: null, origen: null, comercialPrecargado: PRECARGA });
+// Fila 10 de #542: "Crear nuevo" suelta la precarga.
+test('MA6: "Crear nuevo" del duplicado vuelve a alta y deja la precarga en undefined', () => {
+  const m = alCrearNuevoCandidato(EN_ACTUALIZACION);
+  assert.deepStrictEqual(m, { clienteId: null, origen: null, comercialPrecargado: undefined });
+  assert.ok('comercialPrecargado' in m);
   assert.deepStrictEqual(alCrearNuevoCandidato({ clienteId: 77, origen: null, comercialPrecargado: undefined }),
     { clienteId: null, origen: null, comercialPrecargado: undefined });
 });
 
-test('MA7: cerrar el panel vuelve a alta y NO toca la precarga (asimetria 1)', () => {
-  assert.deepStrictEqual(alCerrarPanel(EN_ACTUALIZACION),
-    { clienteId: null, origen: null, comercialPrecargado: PRECARGA });
+// Fila 10 de #542: cerrar suelta la precarga.
+test('MA7: cerrar el panel vuelve a alta y deja la precarga en undefined', () => {
+  const m = alCerrarPanel(EN_ACTUALIZACION);
+  assert.deepStrictEqual(m, { clienteId: null, origen: null, comercialPrecargado: undefined });
+  assert.ok('comercialPrecargado' in m);
   assert.deepStrictEqual(alCerrarPanel({ clienteId: 15, origen: 'paso', comercialPrecargado: null }),
-    { clienteId: null, origen: null, comercialPrecargado: null });
+    { clienteId: null, origen: null, comercialPrecargado: undefined });
 });
 
 // Sustituta de C16b (2) y #489-3: recoger el panel (alCerrarPanel, que tambien aplica
@@ -134,15 +143,15 @@ test('MA9: ninguna transicion muta el estado recibido', () => {
   const salidas = [
     alAbrirAlta(recibido),
     alAbrirActualizacion(recibido, 22, 'paso'),
-    alPrecargarComercial(recibido, PRECARGA),
-    alLograrActualizacion(recibido),
+    alPrecargarComercial(recibido, 15, PRECARGA),
+    alLograrActualizacion(recibido, 15),
     alActualizarCandidato(recibido, 77),
     alCrearNuevoCandidato(recibido),
     alCerrarPanel(recibido),
     alReiniciarAlta(recibido),
     alEmpezarLectura(recibido),
-    alLeerConstancia(recibido, 3, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'JVBERi0xLjQK', fileName: 'a.pdf' }),
-    alFallarLectura(recibido, 3, 'Error al leer el PDF: x'),
+    alLeerConstancia(recibido, 3, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'JVBERi0xLjQK' }),
+    alFallarLectura(recibido, 3),
     alConfirmarConstancia(recibido, { rfc: 'OGA140604560' }),
     alVaciarConstancia(recibido),
   ];
@@ -171,12 +180,9 @@ test('MA10: #376 -- en actualizacion el alta se bloquea, y al cerrar o crear nue
 const CONSTANCIA_LEIDA = {
   status: 'success',
   rfc: 'OGA140604560',
-  fileName: 'csf-operadora.pdf',
-  mensaje: null,
   datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
   pdfBase64: 'JVBERi0xLjQK',
   regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-  confirmado: true,
   constanciaDeUpgrade: null,
   lectura: 4,
   lecturas: 4,
@@ -190,8 +196,8 @@ test('MC1: abrir el alta tras una actualizacion con constancia la descarta junto
   assert.deepStrictEqual(aperturaDelAlta(trasActualizar, DATOS_ALTA), { descartada: true, datosAlta: null });
   assert.deepStrictEqual(alAbrirAlta(trasActualizar), {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'idle', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: null, lectura: null, lecturas: 4,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: null, lecturas: 4,
   });
 });
 
@@ -200,10 +206,10 @@ test('MC2: abrir el alta con la constancia del propio alta la conserva, igual qu
   assert.deepStrictEqual(aperturaDelAlta(delAlta, DATOS_ALTA), { descartada: false, datosAlta: DATOS_ALTA });
   assert.deepStrictEqual(alAbrirAlta(delAlta), {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'success', rfc: 'OGA140604560', fileName: 'csf-operadora.pdf', mensaje: null,
+    status: 'success', rfc: 'OGA140604560',
     datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
     pdfBase64: 'JVBERi0xLjQK', regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-    confirmado: true, constanciaDeUpgrade: null, lectura: 4, lecturas: 4,
+    constanciaDeUpgrade: null, lectura: 4, lecturas: 4,
   });
 });
 
@@ -219,14 +225,14 @@ test('MC3: aperturaDelAlta descarta exactamente cuando alAbrirAlta quita la marc
 });
 
 // Sustituta de #491-7 y de #491-11 (abrir la actualizacion deja huerfana la lectura). La
-// lectura en null la deja la APERTURA; lograr no la toca (asimetria 2).
+// lectura en null la deja la APERTURA; lograr no la toca (asimetria 2, declarada en #542).
 test('MC4: abrir la actualizacion y lograrla deja la constancia marcada y la lectura anulada', () => {
   const leyendo = alEmpezarLectura({ clienteId: null, origen: null, comercialPrecargado: undefined, ...CONSTANCIA_LEIDA });
   const abierta = alAbrirActualizacion(leyendo, 15, 'clientes');
   assert.deepStrictEqual(abierta, {
     clienteId: 15, origen: 'clientes', comercialPrecargado: null,
-    status: 'idle', rfc: 'OGA140604560', fileName: 'csf-operadora.pdf', mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: true, constanciaDeUpgrade: 15, lectura: null, lecturas: 5,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: 15, lectura: null, lecturas: 5,
   });
   const lograda = alLograrActualizacion(abierta, 15);
   assert.strictEqual(lograda.constanciaDeUpgrade, 15);
@@ -239,10 +245,10 @@ test('MC5: lograr la actualizacion marca la constancia y NO anula la lectura en 
   assert.strictEqual(porCandidato.constanciaDeUpgrade, null, '"Actualizar este" no la marca (asimetria 3)');
   assert.deepStrictEqual(alLograrActualizacion(porCandidato, 77), {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'loading', rfc: 'OGA140604560', fileName: 'csf-operadora.pdf', mensaje: null,
+    status: 'loading', rfc: 'OGA140604560',
     datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
     pdfBase64: 'JVBERi0xLjQK', regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-    confirmado: true, constanciaDeUpgrade: 77, lectura: 5, lecturas: 5,
+    constanciaDeUpgrade: 77, lectura: 5, lecturas: 5,
   });
 });
 
@@ -250,8 +256,8 @@ test('MC6: empezar una lectura le da el siguiente numero, aunque la constancia s
   const primera = alEmpezarLectura(MODO_ALTA_INICIAL);
   assert.deepStrictEqual(primera, {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'loading', rfc: null, fileName: null, mensaje: null, datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: null, lectura: 1, lecturas: 1,
+    status: 'loading', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: 1, lecturas: 1,
   });
   const trasVaciar = alEmpezarLectura(alVaciarConstancia(primera));
   assert.strictEqual(trasVaciar.lectura, 2, 'un numero repetido haria vigente a la lectura huerfana');
@@ -261,20 +267,19 @@ test('MC6: empezar una lectura le da el siguiente numero, aunque la constancia s
   assert.strictEqual(conDatos.pdfBase64, 'JVBERi0xLjQK', 'lo anterior sigue hasta que termine (asimetria 7)');
 });
 
-test('MC7: una lectura lograda y vigente escribe la constancia; rfc y fileName solo con RFC', () => {
-  const leyendo = alEmpezarLectura({ ...MODO_ALTA_INICIAL, mensaje: 'Error al leer el PDF: x', confirmado: true });
+test('MC7: una lectura lograda y vigente escribe la constancia; el rfc solo con RFC', () => {
+  const leyendo = alEmpezarLectura({ ...MODO_ALTA_INICIAL });
   const datos = { rfc: 'oga140604560 ', regimenesFiscales: ['605', '611'] };
-  assert.deepStrictEqual(alLeerConstancia(leyendo, 1, { status: 'success', datos, pdfBase64: 'JVBERi0xLjQK', fileName: 'csf.pdf' }), {
+  assert.deepStrictEqual(alLeerConstancia(leyendo, 1, { status: 'success', datos, pdfBase64: 'JVBERi0xLjQK' }), {
     clienteId: null, origen: null, comercialPrecargado: undefined,
-    status: 'success', rfc: 'oga140604560 ', fileName: 'csf.pdf', mensaje: 'Error al leer el PDF: x',
+    status: 'success', rfc: 'oga140604560 ',
     datos: { rfc: 'oga140604560 ', regimenesFiscales: ['605', '611'] }, pdfBase64: 'JVBERi0xLjQK',
     regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-    confirmado: true, constanciaDeUpgrade: null, lectura: 1, lecturas: 1,
+    constanciaDeUpgrade: null, lectura: 1, lecturas: 1,
   });
   const anterior = alEmpezarLectura({ ...CONSTANCIA_LEIDA });
-  const sinRfc = alLeerConstancia(anterior, 5, { status: 'success', datos: { rfc: '' }, pdfBase64: null, fileName: 'otro.pdf' });
+  const sinRfc = alLeerConstancia(anterior, 5, { status: 'success', datos: { rfc: '' }, pdfBase64: null });
   assert.strictEqual(sinRfc.rfc, 'OGA140604560', 'sin RFC se queda el anterior (asimetria 6)');
-  assert.strictEqual(sinRfc.fileName, 'csf-operadora.pdf');
   assert.deepStrictEqual(sinRfc.regimenesDetectados, { rfc: '', codigos: [] });
   assert.strictEqual(sinRfc.status, 'success');
 });
@@ -284,61 +289,136 @@ test('MC8: una lectura que termina cuando ya hay otra vigente no escribe nada', 
   const vieja = alEmpezarLectura(MODO_ALTA_INICIAL);
   const nueva = alEmpezarLectura(vieja);
   const datos = { rfc: 'OGA140604560' };
-  assert.strictEqual(alLeerConstancia(nueva, vieja.lectura, { status: 'success', datos, pdfBase64: 'x', fileName: 'a.pdf' }), nueva);
-  assert.strictEqual(alFallarLectura(nueva, vieja.lectura, 'Error al leer el PDF: x'), nueva);
+  assert.strictEqual(alLeerConstancia(nueva, vieja.lectura, { status: 'success', datos, pdfBase64: 'x' }), nueva);
+  assert.strictEqual(alFallarLectura(nueva, vieja.lectura), nueva);
   const huerfana = alAbrirActualizacion(vieja, 15, 'paso');
-  assert.strictEqual(alLeerConstancia(huerfana, vieja.lectura, { status: 'success', datos, pdfBase64: 'x', fileName: 'a.pdf' }), huerfana,
+  assert.strictEqual(alLeerConstancia(huerfana, vieja.lectura, { status: 'success', datos, pdfBase64: 'x' }), huerfana,
     'abrir la actualizacion deja huerfana la lectura que empezo el alta');
   const vaciada = alVaciarConstancia(vieja);
-  assert.strictEqual(alFallarLectura(vaciada, vieja.lectura, 'x'), vaciada);
+  assert.strictEqual(alFallarLectura(vaciada, vieja.lectura), vaciada);
 });
 
 test('MC9: una lectura que falla deja el error sin constancia y conserva modo, origen, precarga y marca', () => {
   const leyendo = alEmpezarLectura({
     ...CONSTANCIA_LEIDA, clienteId: 15, origen: 'clientes', comercialPrecargado: PRECARGA, constanciaDeUpgrade: 15,
   });
-  assert.deepStrictEqual(alFallarLectura(leyendo, 5, 'Error al leer el PDF: Failed to fetch'), {
+  assert.deepStrictEqual(alFallarLectura(leyendo, 5), {
     clienteId: 15, origen: 'clientes', comercialPrecargado: { salesType: '3', segmentoId: '12', vendedorNombre: 'Adrian' },
-    status: 'error', rfc: null, fileName: null, mensaje: 'Error al leer el PDF: Failed to fetch', datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: 15, lectura: null, lecturas: 5,
+    status: 'error', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: 15, lectura: null, lecturas: 5,
   });
 });
 
 test('MC10: confirmar escribe los datos y pasa el RFC al PDF solo si hay PDF (#350)', () => {
   const datos = { rfc: 'OGA140604561', razonSocial: 'OPERADORA' };
-  const conPdf = alConfirmarConstancia({ ...CONSTANCIA_LEIDA, confirmado: false }, datos);
+  const conPdf = alConfirmarConstancia({ ...CONSTANCIA_LEIDA }, datos);
   assert.deepStrictEqual(conPdf, {
-    status: 'success', rfc: 'OGA140604561', fileName: 'csf-operadora.pdf', mensaje: null,
+    status: 'success', rfc: 'OGA140604561',
     datos: { rfc: 'OGA140604561', razonSocial: 'OPERADORA' }, pdfBase64: 'JVBERi0xLjQK',
     regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
-    confirmado: true, constanciaDeUpgrade: null, lectura: 4, lecturas: 4,
+    constanciaDeUpgrade: null, lectura: 4, lecturas: 4,
   });
   assert.deepStrictEqual(alConfirmarConstancia({ rfc: 'VIEJO', pdfBase64: null }, datos),
-    { rfc: 'VIEJO', pdfBase64: null, datos: { rfc: 'OGA140604561', razonSocial: 'OPERADORA' }, confirmado: true });
+    { rfc: 'VIEJO', pdfBase64: null, datos: { rfc: 'OGA140604561', razonSocial: 'OPERADORA' } });
 });
 
 test('MC11: vaciar a mano quita la constancia y la marca del upgrade (asimetria 9), no el modo', () => {
-  const m = { ...CONSTANCIA_LEIDA, clienteId: 15, origen: 'paso', comercialPrecargado: PRECARGA, mensaje: 'x', constanciaDeUpgrade: 15 };
+  const m = { ...CONSTANCIA_LEIDA, clienteId: 15, origen: 'paso', comercialPrecargado: PRECARGA, constanciaDeUpgrade: 15 };
   assert.deepStrictEqual(alVaciarConstancia(m), {
     clienteId: 15, origen: 'paso', comercialPrecargado: { salesType: '3', segmentoId: '12', vendedorNombre: 'Adrian' },
-    status: 'idle', rfc: null, fileName: null, mensaje: 'x', datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: null, lectura: null, lecturas: 4,
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: null, lecturas: 4,
   });
 });
 
-test('MC12: el reinicio tras un alta completada vacia la constancia sin tocar la marca ni el mensaje (asimetria 4)', () => {
-  assert.deepStrictEqual(alReiniciarAlta({ ...CONSTANCIA_LEIDA, mensaje: 'x', constanciaDeUpgrade: 15 }), {
-    status: 'idle', rfc: null, fileName: null, mensaje: 'x', datos: null, pdfBase64: null,
-    regimenesDetectados: null, confirmado: false, constanciaDeUpgrade: 15, lectura: null, lecturas: 4,
+// Fila 9 de #542: el reinicio es la constancia vacia, marca incluida.
+test('MC12: el reinicio tras un alta completada vacia la constancia y quita la marca del upgrade', () => {
+  assert.deepStrictEqual(alReiniciarAlta({ ...CONSTANCIA_LEIDA, constanciaDeUpgrade: 15 }), {
+    status: 'idle', rfc: null, datos: null, pdfBase64: null,
+    regimenesDetectados: null, constanciaDeUpgrade: null, lectura: null, lecturas: 4,
   });
 });
 
 test('MC13: "Actualizar este", "Crear nuevo", cerrar y la precarga no tocan la constancia (asimetria 3)', () => {
   const m = { clienteId: null, origen: null, comercialPrecargado: undefined, ...CONSTANCIA_LEIDA };
   const constanciaDe = ({ clienteId, origen, comercialPrecargado, ...resto }) => resto;
-  for (const s of [alActualizarCandidato(m, 77), alCrearNuevoCandidato(m), alCerrarPanel(m), alPrecargarComercial(m, PRECARGA)]) {
+  const enA = { ...m, clienteId: 15 };
+  for (const s of [alActualizarCandidato(m, 77), alCrearNuevoCandidato(m), alCerrarPanel(m), alPrecargarComercial(enA, 15, PRECARGA)]) {
     assert.deepStrictEqual(constanciaDe(s), CONSTANCIA_LEIDA);
   }
+});
+
+// Fila 1 de #542: confirmado, fileName y mensaje eran estado muerto (se escribian y nadie
+// los leia: el texto del banner se arma al pintar). Ninguna transicion los vuelve a escribir.
+test('MC14: ninguna transicion escribe confirmado, fileName ni mensaje', () => {
+  const leyendo = alEmpezarLectura({ ...CONSTANCIA_LEIDA, clienteId: 15, origen: 'paso', comercialPrecargado: null });
+  const salidas = [
+    MODO_ALTA_INICIAL,
+    alAbrirAlta(leyendo), alAbrirActualizacion(leyendo, 22, 'paso'), alPrecargarComercial(leyendo, 15, PRECARGA),
+    alLograrActualizacion(leyendo, 15), alActualizarCandidato(leyendo, 77), alCrearNuevoCandidato(leyendo),
+    alCerrarPanel(leyendo), alReiniciarAlta(leyendo), alEmpezarLectura(leyendo),
+    alLeerConstancia(leyendo, 5, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x', fileName: 'a.pdf' }),
+    alFallarLectura(leyendo, 5, 'Error al leer el PDF: x'),
+    alConfirmarConstancia(leyendo, { rfc: 'OGA140604560' }), alVaciarConstancia(leyendo),
+  ];
+  for (const s of salidas) {
+    for (const muerto of ['confirmado', 'fileName', 'mensaje']) assert.ok(!(muerto in s), `${muerto} en ${JSON.stringify(s)}`);
+  }
+});
+
+// --- La guarda por clienteId de las escrituras tardias (fila 3 de #542) -------
+// La precarga comercial y el PUT logrado vuelven de un `await`: en medio el vendedor pudo
+// cerrar el panel o abrir la actualizacion de OTRO cliente (la fuga de #355 por otra puerta).
+
+test('MV1: con el modo en el cliente B, la precarga y la lograda del cliente A no escriben ni piden pantalla', () => {
+  const enB = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 22, 'clientes', { nombre: 'B', rfc: 'X' }).estado;
+  for (const s of [M.alPrecargarComercial(enB, 15, PRECARGA), M.alLograrActualizacion(enB, 15, null)]) {
+    assert.strictEqual(s.estado, enB);
+    assert.deepStrictEqual(s.acciones, []);
+  }
+  const leyendoEnB = M.alEmpezarLectura(enB).estado;
+  assert.strictEqual(M.alLograrActualizacion(leyendoEnB, 15, leyendoEnB.lectura).estado, leyendoEnB,
+    'la constancia de B es de B: la lograda de A no la marca aunque la lectura coincida');
+});
+
+test('MV2: con el modo en el cliente A, la precarga y la lograda de A hacen lo de siempre', () => {
+  const enA = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').estado;
+  assert.strictEqual(alPrecargarComercial(enA, 15, PRECARGA).comercialPrecargado, PRECARGA);
+  const lograda = alLograrActualizacion(enA, 15, null);
+  assert.strictEqual(lograda.clienteId, null);
+  assert.strictEqual(lograda.constanciaDeUpgrade, 15);
+});
+
+// Con el panel cerrado la lograda no escribe el modo (clienteId, origen, precarga). La
+// marca SI sigue a la constancia (decision del punto de revision de #542): si la que esta
+// en memoria es la que viajo -- misma lectura, el patron de lecturaVigente -- y nadie la
+// marco, es de A. Sin eso, la que "Actualizar este" escribio en A la mandaria el
+// siguiente alta por POST como cliente nuevo (#491).
+test('MV3: con el panel cerrado la lograda de A no escribe el modo, y marca la constancia solo si es la que viajo', () => {
+  const abierta = alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'clientes');
+  const cerrada = alCerrarPanel(abierta);
+  assert.strictEqual(alLograrActualizacion(cerrada, 15, null), cerrada, 'ya era de A: nada que escribir');
+
+  const delAlta = { ...MODO_ALTA_INICIAL, ...CONSTANCIA_LEIDA };
+  const porCandidato = alCerrarPanel(alActualizarCandidato(delAlta, 77));
+  assert.deepStrictEqual(M.alLograrActualizacion(porCandidato, 77, 4), {
+    estado: { ...porCandidato, constanciaDeUpgrade: 77 },
+    acciones: [],
+  });
+  const otraLectura = alEmpezarLectura(porCandidato);
+  assert.strictEqual(alLograrActualizacion(otraLectura, 77, 4), otraLectura, 'otra constancia: no es la que viajo');
+  const vaciada = alVaciarConstancia(porCandidato);
+  assert.strictEqual(alLograrActualizacion(vaciada, 77, 4), vaciada);
+  const manual = alCerrarPanel(alActualizarCandidato(MODO_ALTA_INICIAL, 77));
+  assert.strictEqual(alLograrActualizacion(manual, 77, null), manual, 'la captura manual no tiene lectura: no se marca tarde');
+});
+
+test('MV4: actualizacionVigente pide la misma actualizacion; el 0 es id', () => {
+  assert.strictEqual(actualizacionVigente({ clienteId: 15 }, 15), true);
+  assert.strictEqual(actualizacionVigente({ clienteId: 0 }, 0), true);
+  assert.strictEqual(actualizacionVigente({ clienteId: 22 }, 15), false);
+  assert.strictEqual(actualizacionVigente({ clienteId: null }, null), false);
+  assert.strictEqual(actualizacionVigente(null, 15), false);
 });
 
 // --- La pantalla se deriva del modo (#541) -----------------------------------
@@ -412,23 +492,27 @@ test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende 
   assert.deepStrictEqual(M.alCrearNuevoCandidato({ ...MODO_ALTA_INICIAL, clienteId: 77 }).acciones, [BOTON_ON]);
 });
 
-// La lista vacia de la actualizacion lograda es la asimetria 4: no recoge el panel, no
-// reenciende "Dar de alta" ni oculta el banner.
-test('MP8: la actualizacion lograda, la precarga y la constancia no devuelven acciones', () => {
+test('MP8: la precarga y la constancia no devuelven acciones', () => {
   const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').estado;
   const leyendo = M.alEmpezarLectura(MODO_ALTA_INICIAL).estado;
   const salidas = [
-    M.alLograrActualizacion(abierta, 15),
-    M.alPrecargarComercial(abierta, PRECARGA),
+    M.alPrecargarComercial(abierta, 15, PRECARGA),
     M.alEmpezarLectura(MODO_ALTA_INICIAL),
-    M.alLeerConstancia(leyendo, 1, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x', fileName: 'a.pdf' }),
-    M.alLeerConstancia(leyendo, 9, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x', fileName: 'a.pdf' }),
-    M.alFallarLectura(leyendo, 1, 'x'),
-    M.alFallarLectura(leyendo, 9, 'x'),
+    M.alLeerConstancia(leyendo, 1, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x' }),
+    M.alLeerConstancia(leyendo, 9, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x' }),
+    M.alFallarLectura(leyendo, 1),
+    M.alFallarLectura(leyendo, 9),
     M.alConfirmarConstancia(leyendo, { rfc: 'OGA140604560' }),
     M.alVaciarConstancia(leyendo),
   ];
   for (const s of salidas) assert.deepStrictEqual(s.acciones, []);
+});
+
+// Fila 6 de #542: la lograda reenciende "Dar de alta" y oculta el banner. No recoge el
+// panel (declarado: el reporte de #407 se inserta junto a el).
+test('MP10: la actualizacion lograda prende el boton y oculta el banner', () => {
+  const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').estado;
+  assert.deepStrictEqual(M.alLograrActualizacion(abierta, 15).acciones, [BOTON_ON, BANNER_FUERA]);
 });
 
 // Un tipo mal escrito no lo veria ninguna prueba (app.js no se importa) y en el
@@ -439,6 +523,7 @@ test('MP9: toda accion que emite una transicion es de un tipo que el ejecutor co
   const salidas = [
     M.alAbrirAlta(abierta), M.alReiniciarAlta(MODO_ALTA_INICIAL), M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso'),
     M.alCerrarPanel(abierta), M.alActualizarCandidato(MODO_ALTA_INICIAL, 7), M.alCrearNuevoCandidato(abierta),
+    M.alLograrActualizacion(abierta, 15),
   ];
   const emitidos = new Set(salidas.flatMap(s => s.acciones.map(a => a.tipo)));
   for (const tipo of emitidos) assert.ok(ACCIONES_MODO.includes(tipo), `${tipo} no esta en ACCIONES_MODO`);
