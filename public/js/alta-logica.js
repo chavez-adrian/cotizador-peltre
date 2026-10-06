@@ -306,7 +306,7 @@ export function separarTelefonoCodigo(telefono) {
 //   - alta completa: G03 (gastos en general), el default historico de la Seccion 2;
 //   - upgrade fiscal: S01, el mismo que DIFF_FISCAL_CAMPOS fuerza en el PUT (regla 2
 //     de #95) -- mostrar G03 ahi haria ver un valor que el PUT no manda.
-// El argumento es altaCsfState.modoUpgrade: un customer_id o null. El modo lo decide
+// El argumento es modoAlta.clienteId (#539): un customer_id o null. El modo lo decide
 // la PRESENCIA del id, no su verdad.
 export const USO_CFDI_DEFAULT_ALTA = 'G03';
 export const USO_CFDI_DEFAULT_UPGRADE = 'S01';
@@ -370,7 +370,7 @@ export function constanciaAlAbrirAlta(csf, datosAlta = null) {
 
 // La ranura de la constancia vacia: lo que el PDF trajo consigo (datos, RFC dueno, el
 // archivo, sus regimenes) fuera, y `idle`, que es lo que vuelve a mostrar la zona para
-// soltar el PDF. Lo demas de altaCsfState (modo, precarga comercial) no es de la constancia.
+// soltar el PDF. El modo y la precarga comercial viven aparte (modoAlta, #539).
 export function sinConstancia(csf) {
   return {
     ...(csf || {}),
@@ -730,7 +730,7 @@ export function destinoTrasUpgradeLogrado(origen, vista) {
 // Clientes quedaba con el encabezado del alta y nada debajo.
 //
 // Quien decide es esto; app.js devuelve el panel a su casa SIEMPRE (devolverPanelACasa,
-// que ademas apaga modoUpgrade y cierra el borrador de la superficie) y pinta la
+// que ademas apaga el modo de actualizacion y cierra el borrador de la superficie) y pinta la
 // pantalla que sale de aqui. La vista Clientes solo se limpia cuando el panel estaba
 // prestado ahi: repintarla desde el paso Cliente borraria la busqueda de otro momento.
 export function destinoTrasAltaLograda(accion, opciones = {}) {

@@ -859,8 +859,10 @@ test('C16: los campos que precarga el upgrade viven fuera de #alta-body-1, la su
 // "Fiscal - subir CSF" del paso Cliente abria el panel en modo alta: confirmar la
 // CSF corria la dedup de un cliente nuevo y, sin coincidencia por nombre, daba de
 // alta un Cliente Operam en vez de actualizar el generico (HITL de #355 con el 15).
-// app.js no se importa en Node: solo el orden en el fuente lo protege.
-test('C16b: pcAbrirUpgradeFiscal prende modoUpgrade DESPUES de ocultarTodasLasVistas', () => {
+// app.js no se importa en Node: solo el orden en el fuente lo protege. Que cerrar el
+// panel apague la actualizacion es comportamiento del modulo del modo (#539):
+// modo-alta-logica.test.cjs MA8; aqui queda solo el cableado (orden y llamada).
+test('C16b: pcAbrirUpgradeFiscal prende el modo DESPUES de ocultarTodasLasVistas', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -869,11 +871,11 @@ test('C16b: pcAbrirUpgradeFiscal prende modoUpgrade DESPUES de ocultarTodasLasVi
   assert.ok(inicio > 0 && fin > inicio, 'pcAbrirUpgradeFiscal debe existir');
   const cuerpo = src.slice(inicio, fin);
   const ocultar = cuerpo.indexOf('ocultarTodasLasVistas()');
-  const prender = cuerpo.indexOf('altaCsfState.modoUpgrade = customerId');
+  const prender = cuerpo.indexOf('aplicarModoAlta(alAbrirActualizacion');
   assert.ok(ocultar > 0 && prender > 0, 'las dos llamadas deben seguir en la funcion');
   assert.ok(ocultar < prender, 'ocultarTodasLasVistas apaga el modo: tiene que correr antes de prenderlo');
   const casa = src.slice(src.indexOf('function devolverPanelACasa('));
-  assert.ok(casa.slice(0, casa.indexOf('\n}\n')).includes('altaCsfState.modoUpgrade = null'),
+  assert.ok(casa.slice(0, casa.indexOf('\n}\n')).includes('aplicarModoAlta(alCerrarPanel)'),
     'si devolverPanelACasa deja de apagar el modo, este test ya no cuida nada: revisarlo');
 });
 

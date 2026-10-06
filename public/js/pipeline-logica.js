@@ -690,7 +690,7 @@ export function filaCrearClienteHtml(query) {
 }
 
 // Banner de contexto del upgrade fiscal (#94): hace visible CONTRA QUIEN se
-// actualiza. Se muestra siempre que altaCsfState.modoUpgrade este activo (tambien
+// actualiza. Se muestra siempre que modoAlta.clienteId este activo (tambien
 // cuando el upgrade se abre desde el paso Cliente).
 export function bannerUpgradeHtml(ctx) {
   const c = ctx || {};

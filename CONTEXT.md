@@ -292,6 +292,11 @@ Tres caminos (todos desde el cotizador): el **Cliente Operam sin datos fiscales*
 
 Los tres caminos son **una sola operación** con distinta riqueza de datos, no tres procesos (decisión 2026-09-09, ADR-0017): reciben una Solicitud de alta, recorren la misma secuencia de pasos — deduplicación, crear o reutilizar el Cliente Operam, configuración comercial, domicilio de entrega (que solo se escribe cuando es nuevo, y siempre se relee para comprobar qué aceptó Operam), Cel, segmento — y los pasos que no aplican se reportan como omitidos con su motivo, nunca se saltan en silencio. Lo único que cambia por camino es la preferencia sobre el segmento (ver Solicitud de alta). El alta no incluye subir la cotización: eso es de la cotización (ADR-0009), que consume el resultado del alta.
 
+## Modo del alta
+
+En qué está el panel donde se da de alta un Cliente Operam, que es el mismo panel de la actualización fiscal: **cerrado**, **alta** (un Cliente Operam nuevo) o **actualización fiscal** de un Cliente Operam existente, que lleva además desde dónde se abrió (el paso Cliente, la vista Clientes o el resumen de la cotización) y la configuración comercial que el cliente ya tenía. El modo lo decide un módulo (`modo-alta-logica.js`), no la pantalla: cada camino que abre, cierra o cambia el panel pide su transición y la pantalla solo la ejecuta (decisión 2026-10-05, ADR-0023). Hoy el estado no distingue cerrado de alta: los dos son "sin Cliente Operam en actualización".
+_Evitar_: modo upgrade (nombre del campo viejo), tipo de alta, estado del alta.
+
 ## Subida del quote
 
 Dejar la cotización registrada en Operam como quote con su folio (**crear**) o reescribir ese quote conservando el folio (**actualizar**). Incluye el **Alta de cliente** cuando el Cliente Operam todavía no existe, el **Post-fix del encabezado del quote**, la huella de lo que quedó en Operam y el reporte de pasos en dos capas (**Mensaje en dos capas**). Termina en uno de cuatro desenlaces: lograda (con su folio), pregunta al vendedor, bloqueo con motivo, o **Pre-cotización**. A diferencia del alta, la subida sí escribe en el registro de la cotización: el folio, la huella y la marca de quote desactualizado son suyos (ADR-0022).

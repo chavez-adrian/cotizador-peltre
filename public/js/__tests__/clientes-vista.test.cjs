@@ -643,9 +643,12 @@ test('#489-2: la vuelta a la busqueda sin cliente elegido tambien recoge el pane
     'cvRenderTarjeta no recoge el panel: lo hace el handler de "Volver al cliente"/"Volver al Contacto"');
 });
 
-test('#489-3: recoger el panel apaga modoUpgrade y lo oculta', () => {
+// Que cerrar apague la actualizacion es comportamiento del modulo del modo (#539):
+// modo-alta-logica.test.cjs MA8 y MA10. Aqui queda el cableado: recoger el panel
+// aplica esa transicion y lo oculta.
+test('#489-3: recoger el panel apaga el modo de actualizacion y lo oculta', () => {
   const casa = cuerpoDeFuncionApp('function devolverPanelACasa(');
-  assert.ok(casa.includes('altaCsfState.modoUpgrade = null'),
+  assert.ok(casa.includes('aplicarModoAlta(alCerrarPanel)'),
     'salir del cliente A no puede dejar el upgrade apuntando a A');
   assert.ok(casa.includes("panel.style.display = 'none'"), 'el panel deja de verse');
 });
