@@ -92,5 +92,6 @@ const ETAPAS_AVISO_CALCA = new Set(['pedido_liberado', 'saldo_pagado', 'producto
 
 export function calcaIncompletaAvanzada(o) {
   if (!o || !esDecorada(o) || !ETAPAS_AVISO_CALCA.has(o.etapa)) return false;
-  return !puedeLiberar(o.calcaChecklist || (o.data && o.data.calcaChecklist));
+  const { completos, total } = progresoDecorado(o.calcaChecklist || (o.data && o.data.calcaChecklist));
+  return completos < total;
 }

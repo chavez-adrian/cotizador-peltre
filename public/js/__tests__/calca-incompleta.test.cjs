@@ -29,6 +29,18 @@ test('#535: el aviso aplica a la decorada incompleta en Pedido liberado, Saldo p
   }
 });
 
+test('#535: la decorada que nunca marco un paso (checklist null, como lo sirve /api/oportunidades) tambien lleva el aviso', () => {
+  for (const etapa of AVANZADAS) {
+    assert.equal(calcaIncompletaAvanzada(cot(etapa, { decorado: true, calcaChecklist: null })), true, etapa);
+    assert.equal(calcaIncompletaAvanzada(cot(etapa, { decorado: true })), true, etapa);
+    assert.equal(calcaIncompletaAvanzada({ etapa, data: { decorado: true } }), true, etapa);
+    const o = cot(etapa, { decorado: true, calcaChecklist: null });
+    assert.match(L.buildTableroPipelineHtml([o]), /Calca incompleta/, etapa);
+    assert.match(L.buildFilaListaPipelineHtml(o, { abierta: false }), /Calca incompleta/, etapa);
+    assert.match(L.buildDecoradoControlHtml(o), /pl-estado-alerta/, etapa);
+  }
+});
+
 test('#535: sin aviso antes de Pedido liberado, con checklist completo o sin marca de decorada', () => {
   for (const etapa of ANTES) assert.equal(calcaIncompletaAvanzada(decorada(etapa)), false, etapa);
   for (const etapa of AVANZADAS) {
