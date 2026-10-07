@@ -129,7 +129,7 @@ test('Q7: puedeArrastrarCotizacion rechaza todo lo demas: el tiempo no se arrast
   assert.equal(puedeArrastrarCotizacion('perdida', 'perdida'), false);
 });
 
-// #482 (CONTEXT.md "Perdida"): una cotizacion con pedido -- etapa post-venta o
+// #482 (GLOSSARY.md "Perdida"): una cotizacion con pedido -- etapa post-venta o
 // espejo de Operam con pedido -- ya se cerro y no se puede perder. En el tablero
 // del Historial ni el boton ni el arrastre la llevan a Perdida; Ganada sigue.
 const ESPEJO_CON_PEDIDO = { cotizacion: '1240', pedido: '873', remisiones: [] };
@@ -1279,7 +1279,7 @@ test('#428-H6: el Historial pinta y filtra el ISO a medianoche UTC en su dia (11
   });
 });
 
-// #484 (CONTEXT.md "Cancelada"): la Cancelada aparece en el Historial con su
+// #484 (GLOSSARY.md "Cancelada"): la Cancelada aparece en el Historial con su
 // motivo y una etiqueta propia, distinta de Perdida, en su propia columna
 // cerrada del tablero; no se arrastra ni hacia ella ni desde ella.
 test('#484: el Historial pinta la Cancelada en su columna, con etiqueta propia y su motivo', async () => {

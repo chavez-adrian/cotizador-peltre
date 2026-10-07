@@ -643,7 +643,7 @@ test('#77: producto_entregado ya pagada (sin flag) es terminal para el sync', ()
 // La seleccion de cotizaciones por aviso de Operam (#510) se prueba en
 // test/sync-operam-avisos.test.js.
 
-// #484 (CONTEXT.md "Cancelada"): la Oportunidad con pedido que el admin cerro
+// #484 (GLOSSARY.md "Cancelada"): la Oportunidad con pedido que el admin cerro
 // como Cancelada es una salida; el sync post-venta no la mueve ni la revive
 // aunque Operam registre pagos o remisiones despues.
 test('#484: una Cancelada no es candidata del sync post-venta', () => {

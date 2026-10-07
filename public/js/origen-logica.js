@@ -1,4 +1,4 @@
-// Nucleo puro del Origen (issue #287, CONTEXT.md "Origen"): de donde vino el
+// Nucleo puro del Origen (issue #287, GLOSSARY.md "Origen"): de donde vino el
 // prospecto. El campo en codigo, API y base de datos sigue llamandose `canal`;
 // "Origen" es la palabra del glosario y de la interfaz.
 //

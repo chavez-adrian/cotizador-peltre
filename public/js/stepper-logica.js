@@ -1,5 +1,5 @@
 // Logica pura del stepper del flujo de cotizar (issue #60, PRD #52 historia 38,
-// CONTEXT.md "Alta de cliente"): los 4 pasos del flujo se presentan como un
+// GLOSSARY.md "Alta de cliente"): los 4 pasos del flujo se presentan como un
 // stepper guiado con avance visible (en que paso voy / cuanto falta). Modulo
 // sin efectos de navegador, mismo patron que pipeline-logica.js /
 // cotizaciones-logica.js: lo consumen app.js y los tests .cjs via import().

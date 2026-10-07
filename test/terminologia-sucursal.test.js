@@ -5,7 +5,7 @@ import { join, dirname, relative } from 'path';
 import { fileURLToPath } from 'url';
 
 // Terminologia del glosario (#363, decision 2026-09-09): la palabra de pantalla es
-// "domicilio de entrega" (CONTEXT.md "Domicilio de entrega"); "sucursal" ya no
+// "domicilio de entrega" (GLOSSARY.md "Domicilio de entrega"); "sucursal" ya no
 // llega al vendedor. `branch` y `sucursal` SI pueden seguir en comentarios, en
 // nombres de variables/funciones/constantes tecnicas y en el detalle tecnico de
 // un aviso (reporte de pasos) -- nunca en el mensaje que lee el vendedor. Este
@@ -41,7 +41,7 @@ function sinComentarios(archivo, contenido) {
 // Excepciones explicitas (con su razon) a lo que puede seguir diciendo
 // "sucursal" fuera de un comentario:
 const EXCEPCIONES = [
-  // "sucursales" (plural) es la calificacion de expo (CONTEXT.md "Captura de
+  // "sucursales" (plural) es la calificacion de expo (GLOSSARY.md "Captura de
   // expo"): cuantos locales tiene el NEGOCIO del prospecto, un dato de
   // calificacion comercial que no tiene nada que ver con el domicilio de
   // entrega de un Cliente Operam. Vive en prospectos-logica.js, prospectos.html
@@ -60,7 +60,7 @@ const EXCEPCIONES = [
   // Nombres de pasos tecnicos y detalle tecnico del reporte de pasos: el
   // "mensaje" que el vendedor lee (el error 503, el boton de la pregunta de
   // duplicado) ya no dice sucursal; lo que sigue aqui es el detalle plegado
-  // (Mensaje en dos capas, CONTEXT.md) que nadie renderiza como prosa.
+  // (Mensaje en dos capas, GLOSSARY.md) que nadie renderiza como prosa.
   { patron: /'POST branch \(sucursal\)'/g, razon: 'nombre de paso tecnico del reporte de pasos (#211)' },
   { patron: /'verificar sucursal'/g, razon: 'nombre de paso tecnico del reporte de pasos (#211)' },
   { patron: /candidato elegido como matriz de la sucursal/g, razon: 'detalle tecnico del paso "dedup", no se pinta al vendedor' },

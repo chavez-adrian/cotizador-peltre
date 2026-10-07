@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { estadoProspecto, faltaCotizar, filaTabla, gafeteDe, queFalta, queSigue, LLAVES_QUE_FALTA, cotizacionesDelProspecto, cotizacionesVivas } from '../lib/tabla-prospectos.js';
 
 // --- #313: quien ya fue contactado ---
-// El Toque es la UNICA verdad de "ya lo contacte" (CONTEXT.md "Toque"): de el
+// El Toque es la UNICA verdad de "ya lo contacte" (GLOSSARY.md "Toque"): de el
 // salen el Estado del prospecto, el Ultimo contacto y el conteo. Los fixtures
 // llevan la forma real del prospecto del store.
 
@@ -49,7 +49,7 @@ test('#313: la fila conserva los campos del prospecto que la tabla pinta', () =>
 });
 
 // --- #316: gafete ---
-// La columna Gafete (CONTEXT.md "Gafete"): dice por cual camino entro el dato,
+// La columna Gafete (GLOSSARY.md "Gafete"): dice por cual camino entro el dato,
 // no por donde llego el prospecto (eso es Origen). Solo cuentan como captura
 // humana los eventos 'captura_expo' y 'captura_publica'; un toque o una
 // cotizacion son actividad posterior, no captura.
@@ -94,7 +94,7 @@ test('#316: filaTabla agrega gafete', () => {
 });
 
 // --- #314: agendado ---
-// El escalon Agendado es "Siguiente contacto abierto" (CONTEXT.md "Estado del
+// El escalon Agendado es "Siguiente contacto abierto" (GLOSSARY.md "Estado del
 // prospecto"): fecha futura, o vencida sin un toque POSTERIOR que la cierre.
 // Son las mismas reglas de la cola Hoy, por eso el nucleo reusa
 // siguienteContactoFuturo/siguienteContactoVencido en vez de reescribirlas.
@@ -148,7 +148,7 @@ test('#314: un toque ANTERIOR al compromiso vencido no lo cierra y sigue agendad
 
 // --- #321: que falta (prospectos) ---
 // 'calificacion' solo aplica a un prospecto DE EVENTO (misma regla del aviso
-// "Calificacion pendiente" de la tarjeta, CONTEXT.md "Que sigue / Que falta").
+// "Calificacion pendiente" de la tarjeta, GLOSSARY.md "Que sigue / Que falta").
 // 'datos_fiscales' y 'domicilio' los agrega #322 y aqui NUNCA se emiten.
 
 function prospecto321(data) {
@@ -198,7 +198,7 @@ test('#321: filaTabla agrega queFalta', () => {
 });
 
 // --- #317: cualquier prospecto, Origen y /prospectos ---
-// El Origen del glosario (CONTEXT.md "Origen") es el `canal` del prospecto. La
+// El Origen del glosario (GLOSSARY.md "Origen") es el `canal` del prospecto. La
 // fila lo trae resuelto por origenDe para que la pantalla filtre por el mismo
 // campo que pintan el pipeline, el Historial y Hoy.
 
@@ -219,7 +219,7 @@ test('#317: sin origen capturado la fila trae origen vacio', () => {
 });
 
 // --- #315: cotizado y cliente ---
-// Los dos escalones de arriba de CONTEXT.md "Estado del prospecto", con la
+// Los dos escalones de arriba de GLOSSARY.md "Estado del prospecto", con la
 // precedencia completa: cliente > cotizado > agendado > contactado >
 // sin_contactar. Cotizado tiene DOS fuentes (el evento de cotizacion del
 // prospecto y el arreglo de cotizaciones ligadas que resolvera #319) porque el
@@ -271,7 +271,7 @@ test('#315: filaTabla trae clienteId null cuando el prospecto no es cliente', ()
 });
 
 // --- #318: que sigue (prospectos) ---
-// Una sola accion en palabras derivada del Estado del prospecto (CONTEXT.md
+// Una sola accion en palabras derivada del Estado del prospecto (GLOSSARY.md
 // "Que sigue / Que falta"). El umbral de la sugerencia de No util sale de
 // SUGERIR_NO_UTIL_TOQUES (lib/seguimiento-prospectos.js), no de un literal: es
 // la MISMA cadencia que ya corre en la cola Hoy.
@@ -428,7 +428,7 @@ test('#319: sin celular10 la liga usa los ultimos 10 digitos del celular', () =>
   assert.deepEqual(cotizacionesDelProspecto(p, [porTelefono]).map(c => c.id), [640]);
 });
 
-// El orden es el de CONTEXT.md "Que sigue / Que falta": con varias cotizaciones
+// El orden es el de GLOSSARY.md "Que sigue / Que falta": con varias cotizaciones
 // vivas la MAS AVANZADA en el embudo manda. Los fixtures entran al reves del
 // resultado esperado para que el orden de entrada no pueda dar el test por
 // bueno.
@@ -480,7 +480,7 @@ test('#319: cotizacionesVivas deja fuera las salidas del embudo', () => {
 
 // Que sigue para Cotizado: la accion se afirma como cadena COMPLETA -- es el
 // texto que el vendedor lee en la fila -- y el numero que nombra la cotizacion
-// es SIEMPRE el folio, nunca el id interno (ADR-0009, CONTEXT.md "Numero de la
+// es SIEMPRE el folio, nunca el id interno (ADR-0009, GLOSSARY.md "Numero de la
 // cotizacion"). El reloj es fijo para poder afirmar el dia de cadencia.
 const AHORA_319 = new Date('2026-09-10T12:00:00.000Z');
 
@@ -562,7 +562,7 @@ test('#319: una cotizacion fuera del embudo no cuenta como viva pero si viaja en
 });
 
 // --- #320: que sigue (clientes) ---
-// El escalon Ya es cliente (CONTEXT.md "Que sigue / Que falta"): se responde con
+// El escalon Ya es cliente (GLOSSARY.md "Que sigue / Que falta"): se responde con
 // lo que el cotizador YA guarda -- el sync post-venta ya escribio la etapa y el
 // estado de pago --, nunca consultando Operam en vivo. Reloj fijo para poder
 // afirmar el dia de cadencia.
@@ -688,7 +688,7 @@ test('#320: una No util no es viva y no se cuenta en el aviso de cuantas mas hay
 // --- #322: que falta (clientes) ---
 // Los huecos del CLIENTE salen de lo que el cotizador YA GUARDA de la subida a
 // Operam (#81/#83) -- la cotizacion de referencia -- y nunca de una consulta a
-// Operam (CONTEXT.md "Que sigue / Que falta"). Sin ninguna cotizacion ligada no
+// Operam (GLOSSARY.md "Que sigue / Que falta"). Sin ninguna cotizacion ligada no
 // hay evidencia y no se inventan huecos.
 
 function prospecto322(data = {}) {
@@ -790,7 +790,7 @@ test('#322: con las cuatro llaves presentes el orden de salida es el de LLAVES_Q
 });
 
 // --- #400: la etiqueta "Ya tiene Cliente Operam, falta cotizar" ---
-// El glosario (CONTEXT.md) la lee literal: vale mientras el Contacto tiene
+// El glosario (GLOSSARY.md) la lee literal: vale mientras el Contacto tiene
 // Cliente Operam ligado y TODAVIA no cotiza -- existe para vigilar las altas
 // que nunca cotizan. El juicio de "ya cotizo" es el MISMO del escalon Cotizado
 // de la escalera (tieneCotizacion), no una segunda opinion.

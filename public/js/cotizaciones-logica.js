@@ -1,4 +1,4 @@
-// Logica pura del tablero de cotizaciones (issue #50, CONTEXT.md "Tablero de
+// Logica pura del tablero de cotizaciones (issue #50, GLOSSARY.md "Tablero de
 // cotizaciones"): columnas = cadencia de seguimiento + cierre. Las tarjetas
 // avanzan solas con el tiempo (umbrales de lib/seguimiento.js: 2/7/21/28 dias
 // naturales desde la fecha de envio); solo el cierre se opera arrastrando a
@@ -201,7 +201,7 @@ export function clienteAlCargarCotizacion(cotCliente, clienteEnSesion) {
 }
 
 // La liga de una cotizacion con su Cliente Operam es FIJA (#394, ADR-0006;
-// CONTEXT.md "Oportunidad": en Operam la cotizacion nunca se reasigna). Al
+// GLOSSARY.md "Oportunidad": en Operam la cotizacion nunca se reasigna). Al
 // guardar sobre un registro que YA tiene liga, la persistida manda: el cuerpo
 // puede traer un id ajeno -- el del cliente de la sesion anterior del navegador,
 // que es como la cotizacion 1280 termino apuntando al Cliente Operam 529 con el
@@ -230,7 +230,7 @@ export function ligaClienteAlGuardar(clienteNuevo, clientePrevio) {
 }
 
 // El Representante de Ventas de una cotizacion es quien la CREO, y editarla no
-// lo cambia (#405, decision 2026-09-20; CONTEXT.md "Vendedor"). Hay DOS campos y
+// lo cambia (#405, decision 2026-09-20; GLOSSARY.md "Vendedor"). Hay DOS campos y
 // divergian: la columna `vendedor` del registro -- la del Historial, el pipeline
 // y los permisos -- no se toca al actualizar, mientras que `data.vendedor` -- lo
 // que imprime el documento -- se pisaba en cada guardado con quien guardaba, asi

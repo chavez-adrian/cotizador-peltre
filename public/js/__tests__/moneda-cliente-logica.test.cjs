@@ -2,7 +2,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-// Moneda del cliente (#297, ADR-0015; CONTEXT.md "Moneda del cliente").
+// Moneda del cliente (#297, ADR-0015; GLOSSARY.md "Moneda del cliente").
 //
 // El cotizador calcula, imprime y sube PESOS, y Operam etiqueta esos numeros con
 // la moneda del CLIENTE (curr_code): cotizarle a un cliente en USD registraria

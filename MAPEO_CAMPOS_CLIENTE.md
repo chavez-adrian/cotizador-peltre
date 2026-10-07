@@ -189,6 +189,6 @@ Sin cambios respecto a la auditoría anterior — verificado que `DEFAULTS` en `
 - **ADR-0003** — `csf-upload.html` se depreca; alta integrada en `index.html`. El acordeón que ADR-0003 integró sigue vivo y volvió a tener disparador propio: la vista Clientes lo abre en modo creación (gap #9, cerrado).
 - **ADR-0006** — subida automática de cotizaciones y alta temprana de cliente genérico; CSF como upgrade, nunca alta. Es el ADR que rige el flujo vivo hoy.
 - **#172 / #186** — `segmento_id` no es escribible por la API v3 por ningún camino; se persiste reposteando la ficha de cliente de la web legacy (FrontAccounting) desde los tres caminos del alta. Detalle del sondeo en vivo en `peltre-operam.md` §12.5c y en `docs/arquitectura.md` (§web legacy y §Quirks).
-- **`CONTEXT.md`** — glosario de dominio con definiciones precisas de todos los términos del proceso.
+- **`GLOSSARY.md`** — glosario de dominio con definiciones precisas de todos los términos del proceso.
 
 Ver `PROCESO_COMERCIAL_AS_IS.md` para el contexto del proceso comercial completo.

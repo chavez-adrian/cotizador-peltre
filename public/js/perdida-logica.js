@@ -1,4 +1,4 @@
-// Nucleo PURO de la salida Perdida (#482, CONTEXT.md "Perdida"; decision
+// Nucleo PURO de la salida Perdida (#482, GLOSSARY.md "Perdida"; decision
 // 2026-09-28 a sugerencia de Alejandro): una Oportunidad que ya tiene pedido en
 // Operam ya se cerro y no se puede perder. Lo consumen server.js (las rutas que
 // cierran como Perdida responden 409) y los cinco caminos del navegador que
@@ -23,7 +23,7 @@ export const MENSAJE_PERDIDA_CON_PEDIDO = 'Esta oportunidad ya tiene pedido en O
 // regla se queda: el pedido manda sobre la etapa. El espejo llega a dos
 // alturas -- la entrada completa (server) y la fila aplanada de las listas
 // (navegador) --, como motivoPre.
-// #484: una Cancelada (CONTEXT.md "Cancelada") llego a pedido por definicion,
+// #484: una Cancelada (GLOSSARY.md "Cancelada") llego a pedido por definicion,
 // aunque su espejo no exista: tampoco se puede perder.
 export function tienePedido(o) {
   if (!o) return false;
@@ -39,7 +39,7 @@ export function pedidoEnEspejo(o) {
   return pedido != null && pedido !== '';
 }
 
-// #483 (CONTEXT.md "Perdida"; lista final de Adrian 2026-09-30, base HubSpot):
+// #483 (GLOSSARY.md "Perdida"; lista final de Adrian 2026-09-30, base HubSpot):
 // cerrar como Perdida pide un Motivo de Perdida, para medir por que se pierde.
 // Catalogo PROPIO, distinto del de No util aunque compartan "sin respuesta": "No
 // cumple los requerimientos" es que lo cotizado no resolvia lo que el Contacto

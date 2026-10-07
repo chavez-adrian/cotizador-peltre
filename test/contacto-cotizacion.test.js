@@ -1,5 +1,5 @@
 // Nucleo puro de "de que Contacto es esta cotizacion" (#342, spec #337,
-// ADR-0016, CONTEXT.md "Oportunidad"): la liga es FIJA -- el celular se anota
+// ADR-0016, GLOSSARY.md "Oportunidad"): la liga es FIJA -- el celular se anota
 // al nacer y no se recalcula del telefono que se teclee despues -- y para lo ya
 // existente se resuelve con las cuatro fuentes del ticket, en orden.
 import { test } from 'node:test';

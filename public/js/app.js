@@ -591,7 +591,7 @@ function mostrarLoginView() {
 // Cierre de sesion EXPLICITO (boton Salir, #182): limpia la SESION (token,
 // usuario, carrito en memoria) pero el borrador en localStorage queda INTACTO
 // -- cambio deliberado respecto a la conducta previa de tirar tambien la
-// captura (CONTEXT.md "Borrador de cotizacion"). borradorListo se apaga
+// captura (GLOSSARY.md "Borrador de cotizacion"). borradorListo se apaga
 // PRIMERO, mismo freno que showApp() usa al entrar (#179): sin el, un autosave
 // en vuelo (p.ej. una respuesta de red que ya estaba en camino) podria disparar
 // DESPUES de vaciar state.cart y escribir un borrador vacio ENCIMA del que este
@@ -732,7 +732,7 @@ function renderTierSelect() {
   select.style.display = opciones.length ? 'inline-block' : 'none';
 }
 
-// === BORRADOR DE COTIZACION (issue #179/#180, spec #178, CONTEXT.md) ===
+// === BORRADOR DE COTIZACION (issue #179/#180, spec #178, GLOSSARY.md) ===
 // Pegamento delgado sobre borrador-logica.js: aqui SOLO se lee y se escribe
 // localStorage/DOM. Que se guarda, que se descarta y como se re-resuelve el
 // carrito vive en el nucleo puro.
@@ -911,7 +911,7 @@ function aplicarBorrador(borrador) {
       if (linea.descripcion) entrada.descripcion = linea.descripcion;
       // Precio manual de calca (#282, spec #278): es captura del vendedor, no
       // catalogo -- la unica excepcion a "los precios no reviven con el
-      // borrador" (CONTEXT.md "Borrador de cotizacion").
+      // borrador" (GLOSSARY.md "Borrador de cotizacion").
       if (linea.precioManual) entrada.precioManual = linea.precioManual;
       // La llave sale del codigo + el diseno (#221): indexar por el codigo a
       // secas fusionaba dos disenos de la misma calca en una sola linea.
@@ -3538,7 +3538,7 @@ function aplicarDomicilio(d) {
 // (#pc-entrega-wrap) ya NO vive aqui: se captura/confirma en el paso Envio (#84);
 // el chip Entrega de la tarjeta es informativo y lleva alla (switchTab('envio')).
 // El render es tonto: toda la decision vive en alta-logica.js
-// (mezclar/recientes/chips/guardrails). Ver CONTEXT.md.
+// (mezclar/recientes/chips/guardrails). Ver GLOSSARY.md.
 // ============================================================================
 
 // `contactoManual` = el vendedor eligio "+ Nuevo contacto" en el selector del paso
@@ -3585,7 +3585,7 @@ function pcNota() {
 // mal el chip Entrega). No toca el carrito ni el resto del flujo de cotizacion.
 function pcLimpiarCamposCliente() {
   // cl-referencia NO se limpia aqui (#241): la Referencia del cliente es dato de la
-  // OPERACION, no del cliente (CONTEXT.md), y se captura en el paso Cotizacion. Como
+  // OPERACION, no del cliente (GLOSSARY.md), y se captura en el paso Cotizacion. Como
   // este limpiador corre en TODOS los entry points de seleccion, incluirla le borraba
   // al vendedor lo que ya habia escrito con solo cambiar de cliente. Muere con la
   // cotizacion (nuevaCotizacion), igual que las notas y el carrito.
@@ -5553,7 +5553,7 @@ window.cambiarEstadoCotizacion = cambiarEstadoCotizacion;
 window.agendarReunionCotizacion = agendarReunionCotizacion;
 window.resultadoReunionCotizacion = resultadoReunionCotizacion;
 
-// === BORRADOR DE FORMULARIO (issue #183, spec #178, CONTEXT.md) ===
+// === BORRADOR DE FORMULARIO (issue #183, spec #178, GLOSSARY.md) ===
 // Pegamento generico sobre borrador-form-logica.js: aqui SOLO se lee y se
 // escribe localStorage y el DOM. Que se guarda, que se descarta, cuanto vive y
 // que evento lo mata vive en el nucleo puro.
@@ -6902,7 +6902,7 @@ async function cerrarPerdidaTablero(tipo, id) {
 }
 window.cerrarPerdidaTablero = cerrarPerdidaTablero;
 
-// Cancelada (#484, CONTEXT.md "Cancelada"): la Oportunidad con pedido que se
+// Cancelada (#484, GLOSSARY.md "Cancelada"): la Oportunidad con pedido que se
 // cayo. Solo el admin la ve y solo sobre una cotizacion con pedido; pide el
 // motivo en texto libre (cancelar la ventana no llama al servidor). No cancela
 // nada en Operam: solo saca la tarjeta del tablero.
@@ -7445,7 +7445,7 @@ async function agendarReunionProspecto(id) {
   }
 }
 
-// Siguiente contacto (issue #262, CONTEXT.md "Siguiente contacto"): el
+// Siguiente contacto (issue #262, GLOSSARY.md "Siguiente contacto"): el
 // compromiso de canal + fecha que el vendedor acuerda con el prospecto. La
 // fecha se captura como dia (no hay hora acordada) y viaja a las 9:00 de CDMX,
 // no del reloj del equipo: asi el compromiso vence al abrir ese dia, antes de
@@ -10015,7 +10015,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// === CAPTURA DE EXPO (issue #267, spec #266; CONTEXT.md "Captura de expo") ===
+// === CAPTURA DE EXPO (issue #267, spec #266; GLOSSARY.md "Captura de expo") ===
 // UNA sola pantalla -- contacto, calificacion (toda opcional) y siguiente
 // contacto -- que se guarda de una sola vez. Se entra por el "+" del cotizador
 // ("Nuevo prospecto expo"), que solo la ofrece con evento activo. Todo el bloque
@@ -10051,7 +10051,7 @@ function pintarChipsExpo() {
     buildChipsHtml('tipo_cliente', TIPOS_CLIENTE, expoState.tipo_cliente);
   document.getElementById('ex-interes-chips').innerHTML =
     buildChipsHtml('interes', Object.keys(NIVELES_INTERES), expoState.interes);
-  // "Otro" exige decir cual (CONTEXT.md "Tipo de cliente").
+  // "Otro" exige decir cual (GLOSSARY.md "Tipo de cliente").
   document.getElementById('ex-tipo-otro').style.display =
     expoState.tipo_cliente === 'Otro' ? 'block' : 'none';
 }
@@ -10152,7 +10152,7 @@ function abrirCapturaExpo() {
     buildGrupoChipsHtml('piezas_estimadas', PIEZAS_ESTIMADAS, '');
   document.getElementById('ex-notas-mic').innerHTML = buildMicHtml('ex-notas');
   // Siguiente contacto: la fecha llega prellenada con el primer dia habil
-  // despues de la expo (CONTEXT.md "Siguiente contacto") y los canales con
+  // despues de la expo (GLOSSARY.md "Siguiente contacto") y los canales con
   // WhatsApp, para que el compromiso por omision este COMPLETO. Sin fecha
   // sugerida no se prellena ninguno de los dos: medio compromiso no se guarda.
   // Los canales son multiples (#270): "te escribo y te mando el catalogo por
@@ -10263,7 +10263,7 @@ async function guardarCapturaExpo() {
   }
 }
 
-// Las acciones de stand con el prospecto todavia enfrente (CONTEXT.md "Captura
+// Las acciones de stand con el prospecto todavia enfrente (GLOSSARY.md "Captura
 // de expo"). WhatsApp abre el chat con el mensaje aprobado ya escrito; Cotizar
 // entra al cotizador con el prospecto cargado (sin pedir canal: ya es
 // prospecto); Capturar otro devuelve la pantalla en blanco.
@@ -10321,7 +10321,7 @@ document.addEventListener('DOMContentLoaded', () => {
   campoCpExpo.addEventListener('input', resolverCiudadPorCpExpo);
   campoCpExpo.addEventListener('blur', resolverCiudadPorCpExpo);
   document.getElementById('ex-celular').addEventListener('countrychange', resolverCiudadPorCpExpo);
-  // Salida del stand (CONTEXT.md "Captura de expo"): quien no sabe su CP dicta
+  // Salida del stand (GLOSSARY.md "Captura de expo"): quien no sabe su CP dicta
   // su ciudad y el codigo deja de pedirse. No se vuelve a ofrecer -- una vez
   // relajado el requisito, el campo Ciudad ya es el que manda.
   document.getElementById('ex-sin-cp').addEventListener('click', e => {
@@ -10350,7 +10350,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // guardan su estado en el DOM y la lectura de los campos. Mientras la
 // calificacion siga vacia, la tarjeta lo reclama con "Calificacion pendiente".
 
-// Reconocimiento de voz del navegador (CONTEXT.md "Captura de expo": dictar en
+// Reconocimiento de voz del navegador (GLOSSARY.md "Captura de expo": dictar en
 // vez de teclear parrafos en el stand). Sin soporte no hay boton: el CSS los
 // esconde todos a partir de la marca en <body>, incluidos los que nacen despues
 // dentro de un innerHTML (la edicion inline de cada tarjeta).

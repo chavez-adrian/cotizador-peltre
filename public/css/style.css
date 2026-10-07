@@ -1367,7 +1367,7 @@ body {
 .evento-badge { background: oklch(0.9 0.07 200); color: oklch(0.34 0.09 220); }
 .siguiente-contacto-badge { background: oklch(0.89 0.07 230); color: oklch(0.34 0.1 250); }
 
-/* Origen (issue #287, CONTEXT.md "Origen"): de donde vino el prospecto, con
+/* Origen (issue #287, GLOSSARY.md "Origen"): de donde vino el prospecto, con
    etiqueta propia en toda tarjeta de prospecto, cotizacion y cliente. El
    "sin identificar" (cliente historico de Operam, cotizacion sin prospecto
    ligado) va atenuado para que no se lea como un origen real. */

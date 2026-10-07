@@ -1,4 +1,4 @@
-// #484 (CONTEXT.md "Cancelada", decision de Adrian 2026-09-28): la Oportunidad
+// #484 (GLOSSARY.md "Cancelada", decision de Adrian 2026-09-28): la Oportunidad
 // que si llego a pedido y despues se cayo (el Contacto pago y se echo para
 // atras) sale del tablero como Cancelada. Es la unica salida posible con pedido,
 // solo la decide el admin y lleva motivo en texto libre obligatorio. No cancela
@@ -158,7 +158,7 @@ test('#484: la Perdida con pedido le dice al vendedor que el administrador la ci
   assertNadaCambio(COT_CON_PEDIDO);
 });
 
-// Una Cancelada ya llego a pedido (CONTEXT.md "Cancelada") aunque su espejo de
+// Una Cancelada ya llego a pedido (GLOSSARY.md "Cancelada") aunque su espejo de
 // Operam no exista (el sync solo lo persiste con binding preciso): el vendedor
 // no la puede convertir en Perdida, que es solo sin pedido.
 test('#484: el vendedor no puede cerrar como Perdida una Cancelada, aunque no tenga espejo de Operam', async () => {

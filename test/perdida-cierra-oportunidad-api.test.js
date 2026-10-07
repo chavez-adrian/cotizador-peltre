@@ -142,7 +142,7 @@ test('#481: cotizacion SIN Oportunidad de origen -- perder se comporta como ante
 // Una Oportunidad puede llevar dos cotizaciones (el segundo evento cae en la
 // misma cuando no hay otra que avance, oportunidadQueCotiza). Mientras la otra
 // siga viva la tarjeta no reaparece, y esa otra todavia puede llegar a pedido:
-// Perdida es solo para la Oportunidad que no llego (CONTEXT.md "Perdida").
+// Perdida es solo para la Oportunidad que no llego (GLOSSARY.md "Perdida").
 test('#481: si la Oportunidad conserva otra cotizacion viva, no se cierra', async () => {
   const segunda = { ...COT_JORGE, id: 13, fecha: hace(5), folioOperam: 1290 };
   fijarDatos(OPORTUNIDADES_PATH, [{

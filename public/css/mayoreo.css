@@ -74,7 +74,7 @@ body {
 form { display: flex; flex-direction: column; gap: 18px; }
 
 /* Respiro entre grupos semanticos: la separacion es por espaciado, sin rotulo
-   (el orden comunica solo -- CONTEXT.md "Captura publica"). */
+   (el orden comunica solo -- GLOSSARY.md "Captura publica"). */
 .respiro { margin-top: 14px; }
 
 .campo { display: flex; flex-direction: column; gap: 5px; }

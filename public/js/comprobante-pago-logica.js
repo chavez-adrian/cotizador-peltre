@@ -1,4 +1,4 @@
-// Nucleo PURO del Comprobante de pago (#485, CONTEXT.md "Comprobante de pago";
+// Nucleo PURO del Comprobante de pago (#485, GLOSSARY.md "Comprobante de pago";
 // decision de Adrian 2026-09-28 a sugerencia de Alejandro): el archivo -- imagen
 // o PDF -- que el Contacto manda como prueba de un pago, archivado en el Dropbox
 // de la empresa por el flujo `pago` (lib/dropbox-destinos.js). Lo consumen

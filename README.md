@@ -3,7 +3,7 @@
 Herramienta interna de Peltre Nacional SA de CV. Combina tres funciones:
 
 1. **Cotizador** — vendedores generan cotizaciones de acero esmaltado en campo, calculan envio y comparten PDF o HTML por WhatsApp.
-2. **Pipeline comercial (CRM)** — tablero unico de oportunidades en 7 etapas (de prospecto a producto entregado) con cola "Hoy", seguimiento por cadencia, y **sincronizacion post-venta automatica con Operam** (webhooks + reconciliacion): pagos, pedido liberado y entrega mueven la tarjeta sin captura doble. Ver `CONTEXT.md` (glosario de dominio) y `PROGRESS.md` (PRD #52).
+2. **Pipeline comercial (CRM)** — tablero unico de oportunidades en 7 etapas (de prospecto a producto entregado) con cola "Hoy", seguimiento por cadencia, y **sincronizacion post-venta automatica con Operam** (webhooks + reconciliacion): pagos, pedido liberado y entrega mueven la tarjeta sin captura doble. Ver `GLOSSARY.md` (glosario de dominio) y `PROGRESS.md` (PRD #52).
 3. **Cliente generico + alta fiscal diferida** — el paso Cliente ofrece dos caminos ("Ya lo conozco" / "Contacto nuevo"); el cliente nace en Operam con RFC generico (`XAXX010101000`/`XEXX010101000`) al generar la primera cotizacion, sin alta manual (PRD #79, ADR-0006). Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta: el sistema actualiza (nunca re-crea) ese cliente generico en Operam ERP, con gate anti-fusion y verificacion post-PUT.
 
 **Produccion:** https://cotizador-peltre.onrender.com
@@ -133,7 +133,7 @@ test/                  # tests de backend (supertest + node:test)
 | POST | `/api/webhooks/operam` | Webhook de Operam (Pago de Cliente / Pedido / Remision -> Nuevo). Auth por header `X-Operam-Webhook-Secret`; log idempotente en Neon con clave propia por aviso (#510) y rastro de los repetidos; responde al instante y reconcilia despues, en fila: el Pedido, la cotizacion de su documento de origen; el Pago, las cotizaciones con pedido de ese cliente; la Remision, las que ya tienen pedido |
 | GET/POST | `/api/admin/sync-operam/barrido` | Barrido del sync post-venta (red de seguridad, #509): `seco: true` responde el plan sin escribir; `aplicar: true` corre en segundo plano (#510: cualquier otro cuerpo, 400) y el GET da la ultima corrida (admin) |
 
-> El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `CONTEXT.md` y el detalle del PRD en `PROGRESS.md`.
+> El resto de rutas del pipeline (prospectos, asignacion, etapas, salidas, seguimiento, decorados) viven en `server.js`; el modelo de dominio esta en `GLOSSARY.md` y el detalle del PRD en `PROGRESS.md`.
 
 ### Alta de clientes y CSF (requieren JWT, igual que el resto)
 

@@ -65,7 +65,7 @@ function cotsFixture() {
       totalPiezas: 50, total: 4000, tier: 'M100',
       data: { cliente: { razonSocial: 'CLIENTE HISTORICO', telefono: '5544443333' }, items: [] },
     },
-    // Celular del prospecto de Ana: Memo no lo ve (Visibilidad, CONTEXT.md).
+    // Celular del prospecto de Ana: Memo no lo ve (Visibilidad, GLOSSARY.md).
     {
       id: 12, fecha: hace(3), vendedor: 'Memo', cliente: 'AJENA SA',
       totalPiezas: 50, total: 4000, tier: 'M100',
@@ -109,7 +109,7 @@ test('GET /api/hoy anota el Origen en las cotizaciones de la cola', async () => 
   assert.equal(prospecto.canal, 'Instagram');
 });
 
-// La llave de identidad es una sola (CONTEXT.md): si la reexpresion browser-safe
+// La llave de identidad es una sola (GLOSSARY.md): si la reexpresion browser-safe
 // de origen-logica.js deriva de ultimos10, la herencia falla en silencio.
 test('llaveCelularOrigen y ultimos10 son la MISMA llave', () => {
   const casos = [

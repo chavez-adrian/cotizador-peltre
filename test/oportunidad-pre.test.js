@@ -1,5 +1,5 @@
 // Nucleo puro de la Oportunidad pre-cotizacion (#343, spec #337, ADR-0016,
-// CONTEXT.md "Oportunidad"): la fila de prospectos queda como Contacto y la
+// GLOSSARY.md "Oportunidad"): la fila de prospectos queda como Contacto y la
 // intencion de compra pasa a vivir en su propio registro. Aqui se prueban la
 // separacion (migracion) y la fusion de lectura, sin IO.
 import { test } from 'node:test';

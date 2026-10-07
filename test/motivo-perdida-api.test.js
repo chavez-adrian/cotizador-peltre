@@ -1,4 +1,4 @@
-// #483 (CONTEXT.md "Perdida"; sugerencia de Alejandro 2026-09-28): cerrar una
+// #483 (GLOSSARY.md "Perdida"; sugerencia de Alejandro 2026-09-28): cerrar una
 // Oportunidad como Perdida pide un Motivo de Perdida de catalogo, igual que No
 // util pide el suyo, para poder medir por que se pierde. Aplica a las rutas que
 // cierran como Perdida -- la de la cotizacion (PATCH estado y resultado de la

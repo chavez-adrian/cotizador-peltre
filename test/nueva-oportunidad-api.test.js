@@ -1,5 +1,5 @@
 // Nueva oportunidad desde la ficha del Contacto (#343, spec #337, ADR-0016,
-// CONTEXT.md "Oportunidad"): un Contacto que ya cotizo vuelve a preguntar. Hasta
+// GLOSSARY.md "Oportunidad"): un Contacto que ya cotizo vuelve a preguntar. Hasta
 // este ticket ese interes no tenia donde vivir -- su celular ya era prospecto y
 // no se podia capturar otra vez.
 import { test, before, after, beforeEach } from 'node:test';

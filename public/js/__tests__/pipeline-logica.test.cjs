@@ -611,7 +611,7 @@ test('#211: la accion de sucursal lleva el id de SU candidato', () => {
   assert.match(html, /marcarSucursalOperam\(7, 12, this\)/);
 });
 
-// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): buildColaHoyHtml itera
+// Cola Hoy fusionada (issue #64, GLOSSARY.md "Cola Hoy"): buildColaHoyHtml itera
 // la cola que ya viene fusionada y ordenada del backend (lib/cola-hoy.js) y
 // delega la pintura por tipo, PRESERVANDO el orden (no reagrupa por tipo). El
 // item de prospecto reusa buildColaProspectosHtml; el de cotizacion lleva su
@@ -808,7 +808,7 @@ test('Q10: oportunidadesActivas excluye las salidas (No util, Perdida) -- misma 
   assert.deepEqual(oportunidadesActivas(null), []);
 });
 
-// Boton + global (issue #54, PRD #52 historias 4-5, CONTEXT.md "Captura de
+// Boton + global (issue #54, PRD #52 historias 4-5, GLOSSARY.md "Captura de
 // prospecto"): visible en todos los destinos del bottom-nav. "Nueva cotizacion"
 // (la vista de cotizar existente), "Nuevo prospecto" (la captura minima existente)
 // y "Nuevo Cliente Operam" (#94: abre la vista Clientes con el alta completa). Logica pura
@@ -831,7 +831,7 @@ test('Q26: buildMenuNuevoHtml pinta un boton por accion con su disparador', () =
 });
 
 // Captura de expo (issue #267): el "+" es la UNICA entrada de la pantalla de
-// captura de expo, y solo con evento activo (CONTEXT.md "Captura de expo").
+// captura de expo, y solo con evento activo (GLOSSARY.md "Captura de expo").
 // Fuera de expo el menu tiene que ser exactamente el de siempre.
 test('Q53: con evento activo el menu + ofrece Nuevo prospecto expo; sin evento es el de siempre', () => {
   const sinEvento = buildMenuNuevoHtml(false);
@@ -1963,7 +1963,7 @@ test('#482: el resultado de una reunion vencida no ofrece Perdida a una cotizaci
   assert.ok(sinPedido.includes("resultadoReunionCotizacion(10, 'perdida')"));
 });
 
-// === #483: Motivo de Perdida (CONTEXT.md "Perdida") ===
+// === #483: Motivo de Perdida (GLOSSARY.md "Perdida") ===
 // La vista de Cerradas dice por que se perdio cada Oportunidad: el motivo con
 // su texto de pantalla y la nota. La Perdida anterior al catalogo se sigue
 // pintando, sin motivo y sin separadores sueltos.
@@ -2014,7 +2014,7 @@ test('#483: la ventana del motivo ofrece el catalogo en su orden y un campo de n
   assert.match(html, /id="motivo-salida-confirmar"/);
 });
 
-// === #484: Cancelada (CONTEXT.md "Cancelada") ===
+// === #484: Cancelada (GLOSSARY.md "Cancelada") ===
 // La unica salida con pedido: solo el admin la ve sobre la tarjeta de una
 // cotizacion con pedido; al vendedor no se le pinta. Sale del tablero activo y
 // vive en Cerradas con etiqueta propia y su motivo libre.

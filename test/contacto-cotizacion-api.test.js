@@ -1,5 +1,5 @@
 // La liga fija Oportunidad -> Contacto por HTTP (#342, spec #337, ADR-0016,
-// CONTEXT.md "Oportunidad"): la cotizacion anota el celular de su Contacto al
+// GLOSSARY.md "Oportunidad"): la cotizacion anota el celular de su Contacto al
 // nacer y ninguna edicion posterior del telefono la mueve a otra persona.
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -198,7 +198,7 @@ test('#342: un celular que no alcanza 10 digitos no liga nada', async () => {
 // AC5: el Contacto que nace de la migracion (fuente 2/3) NO fue capturado por
 // nadie -- existe para que la Oportunidad tenga de quien ser. Sin tarjeta
 // propia: una tarjeta es una Oportunidad, y ese Contacto no tiene ninguna
-// abierta (CONTEXT.md "Oportunidad").
+// abierta (GLOSSARY.md "Oportunidad").
 test('#342: un Contacto nacido de la migracion no genera tarjeta en el tablero', async () => {
   const contactos = readJson(PROSPECTOS_PATH);
   contactos.push({

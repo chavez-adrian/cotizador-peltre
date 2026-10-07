@@ -1,4 +1,4 @@
-// Logica pura del producto decorado / calca (issue #61, CONTEXT.md "Producto
+// Logica pura del producto decorado / calca (issue #61, GLOSSARY.md "Producto
 // decorado (calca)", ADR-0005). Modulo sin efectos de navegador: lo consumen
 // server.js (el checklist), app.js y pipeline-logica.js (la calca en la tarjeta)
 // y los tests .cjs via import() dinamico. Una sola implementacion, cero copias.
@@ -8,7 +8,7 @@
 // NO lo consulta (#535): refleja lo que Operam ya registro, y el checklist
 // incompleto desde Pedido liberado es un aviso (calcaIncompletaAvanzada).
 
-// Los 6 pasos del proceso de autorizaciones de calca, EN ORDEN (CONTEXT.md).
+// Los 6 pasos del proceso de autorizaciones de calca, EN ORDEN (GLOSSARY.md).
 // Cada paso: clave estable (persistencia/server) + label legible (UI).
 export const PASOS_DECORADO = [
   { clave: 'cotizacion_proveedor', label: 'Cotizacion con proveedor de calca' },
@@ -70,7 +70,7 @@ export function esDecorada(cotizacion) {
   return !!(cotizacion.data && cotizacion.data.decorado === true);
 }
 
-// Gate de decorados (CONTEXT.md): una oportunidad NO decorada SIEMPRE puede
+// Gate de decorados (GLOSSARY.md): una oportunidad NO decorada SIEMPRE puede
 // liberarse a produccion (true); una decorada solo si los 6 pasos del checklist
 // estan completos. Acepta una cotizacion/oportunidad (lee data.calcaChecklist) o
 // un checklist crudo (array de pasos). Lo aplicara "Liberar a produccion" (#538).
@@ -83,7 +83,7 @@ export function puedeLiberar(arg) {
   return normalizar(checklist).every(p => p.completo);
 }
 
-// Aviso "Calca incompleta" (#535, CONTEXT.md "Producto decorado (calca)"): la
+// Aviso "Calca incompleta" (#535, GLOSSARY.md "Producto decorado (calca)"): la
 // decorada ya llego a Pedido liberado o despues -- el tablero sigue a Operam --
 // sin los 6 pasos del checklist. Aviso, no candado. Es la UNICA regla que
 // consumen la tarjeta y la lista; acepta la marca y el checklist al tope

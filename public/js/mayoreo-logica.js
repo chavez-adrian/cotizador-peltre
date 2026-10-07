@@ -11,7 +11,7 @@ import { aTitulo } from './titulo-logica.js';
 // Tipo de cliente -> segmento de Operam. El catalogo y su mapeo son UNICOS y
 // viven en el nucleo de prospectos (prospectos-logica.js) desde #261: los tres
 // caminos de captura (manual, publica y de expo) comparten esa sola fuente
-// (CONTEXT.md "Tipo de cliente"). Aqui solo se reexponen con el nombre que ya
+// (GLOSSARY.md "Tipo de cliente"). Aqui solo se reexponen con el nombre que ya
 // usan el formulario publico y sus tests.
 export const TIPOS_PROYECTO = TIPOS_CLIENTE;
 export { segmentoDeTipo };
@@ -19,13 +19,13 @@ export { segmentoDeTipo };
 // Cantidad estimada: los cortes del sistema (PIEZAS_ESTIMADAS) MENOS +6,000. Se
 // DERIVAN, no se copian: si manana cambian los cortes, cambian en un solo lugar
 // y lo que guarda el formulario sigue siendo un valor que el resto del sistema
-// entiende. La omision de +6,000 es deliberada (CONTEXT.md "Captura publica"):
+// entiende. La omision de +6,000 es deliberada (GLOSSARY.md "Captura publica"):
 // ese nivel exige negociacion humana y no debe entrar por autoservicio.
 export const SIN_AUTOSERVICIO = '+6,000';
 export const CANTIDADES = PIEZAS_ESTIMADAS.filter(p => p !== SIN_AUTOSERVICIO);
 
 // "Para cuando lo necesitas": catalogo cerrado de rangos, nunca texto libre ni
-// fecha exacta (CONTEXT.md "Captura publica").
+// fecha exacta (GLOSSARY.md "Captura publica").
 export const CUANDO_OPCIONES = [
   'En las próximas 4 semanas',
   'En los próximos 3 meses',
@@ -165,7 +165,7 @@ export function validarMayoreo(form) {
 // (prospectos-logica.js). El endpoint publico lo fija; nunca lo elige el que envia.
 export const CANAL_MAYOREO = 'Formulario web';
 
-// QR del stand (issue #264, CONTEXT.md "Evento"): el visitante llega a
+// QR del stand (issue #264, GLOSSARY.md "Evento"): el visitante llega a
 // /mayoreo?evento=<nombre> y ese parametro viaja tal cual en el body. Si
 // coincide con el evento activo la captura nace con este canal (del mismo
 // catalogo cerrado de CANALES); si no coincide, o no hay evento activo, se

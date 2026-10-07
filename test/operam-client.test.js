@@ -1094,7 +1094,7 @@ test('actualizarBranchCliente: cuando branchId es null hace GET customer para ob
 // y grupo de impuestos. Operam acepta 200 e ignora campos: se CAPTURA el body del
 // PUT /branches y se afirma el payload completo, no solo que devuelva 200.
 // Fuentes: salesman = operam_id del alta (SOP 10-11); area derivada del pais (SOP 24);
-// location = 40 PT (SOP 21-22); tax_group_id por pais del domicilio (ADR-0002, CONTEXT.md).
+// location = 40 PT (SOP 21-22); tax_group_id por pais del domicilio (ADR-0002, GLOSSARY.md).
 
 test('actualizarBranchCliente: el PUT branch lleva vendedor, area, almacen y tax_group (domicilio MX) (issue #74)', async () => {
   resetSession();

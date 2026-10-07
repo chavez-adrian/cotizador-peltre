@@ -1,4 +1,4 @@
-// Nucleo unico del Resumen de la cotizacion (#307/#312, CONTEXT.md "Resumen de
+// Nucleo unico del Resumen de la cotizacion (#307/#312, GLOSSARY.md "Resumen de
 // la cotizacion"): lo que el cliente recibe por WhatsApp. Modulo puro sin
 // efectos de navegador, mismo patron que origen-logica.js: lo consumen app.js
 // (la cotizacion recien generada), cotizaciones-logica.js (el historial) y los

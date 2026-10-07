@@ -21,7 +21,7 @@ Además, los textos que veía el vendedor mezclaban niveles: nombres de pasos co
 - `darDeAlta(solicitud, deps)` cubre el alta genérica (Cliente Operam sin datos fiscales al subir la cotización) y el alta completa como **una sola operación con distinta riqueza de datos**. Devuelve un resultado, nunca un status HTTP: alta lograda con el reporte de pasos, pregunta al vendedor (candidatos y las opciones entre las que elige), o bloqueo con motivo.
 - `upgradeFiscal(id, csfDatos, deps)` con el gate anti-fusión por RFC (#85) adentro.
 
-**Entrada: una Solicitud de alta** normalizada (término nuevo en `CONTEXT.md`): Contacto, datos fiscales o ninguno, configuración comercial, domicilio de entrega, decisión de dedup si la hubo, y la preferencia sobre el segmento. La subida de cotización la arma desde la cotización; el handler del formulario desde el body. El módulo decide RFC genérico vs real según haya datos fiscales.
+**Entrada: una Solicitud de alta** normalizada (término nuevo en `GLOSSARY.md`): Contacto, datos fiscales o ninguno, configuración comercial, domicilio de entrega, decisión de dedup si la hubo, y la preferencia sobre el segmento. La subida de cotización la arma desde la cotización; el handler del formulario desde el body. El módulo decide RFC genérico vs real según haya datos fiscales.
 
 **Dentro del módulo:** la deduplicación en capas (ADR-0001, #242, #345) para las dos altas — el alta completa gana el guardrail del servidor; el navegador puede seguir pre-consultando pero el servidor decide —; el lock por RFC real para los tres caminos; la auditoría en `clientes_log`; el refresco del padrón de teléfonos; y **una sola secuencia de pasos**: dedup → crear o reutilizar → configuración comercial (solo si hay cambios) → dimensiones → domicilio de entrega (POST solo si no existe uno equivalente; PUT **solo sobre el recién creado**, con una sola bandera interna que decide el módulo, nunca el navegador) → verificar el domicilio releyéndolo, **siempre** → verificar Cel → segmento. Los pasos que no aplican se reportan como omitidos con su motivo.
 
@@ -31,7 +31,7 @@ Además, los textos que veía el vendedor mezclaban niveles: nombres de pasos co
 
 **Segmento:** el alta completa y el upgrade fiscal lo esperan, como hoy. La subida de cotización lo pide **diferido** — la latencia actual de la subida es aceptable y no se apuesta a que esperar lo siga siendo — pero el fallo deja de vivir solo en el log de Render: se anota en `clientes_log` como "segmento pendiente" con su motivo, visible en `/admin`. Es una preferencia explícita de la Solicitud con razón escrita, no un accidente por camino.
 
-**Mensaje en dos capas** (término nuevo en `CONTEXT.md`): cada paso, bloqueo o campo no aplicado lleva un `mensaje` en términos del glosario para el vendedor y un `detalle` técnico para depurar. La pantalla muestra siempre el primero; el segundo va plegado o en el reporte de pasos.
+**Mensaje en dos capas** (término nuevo en `GLOSSARY.md`): cada paso, bloqueo o campo no aplicado lleva un `mensaje` en términos del glosario para el vendedor y un `detalle` técnico para depurar. La pantalla muestra siempre el primero; el segundo va plegado o en el reporte de pasos.
 
 **Tests:** el módulo nace con tests propios contra el adaptador en memoria (una regla, un test). Los supertest actuales quedan como red durante el cambio, tocándose solo la lista de pasos que ahora incluye "verificar domicilio de entrega" en el alta completa. En ticket aparte se reducen a la traducción HTTP y se borra lo que ya cubre el módulo.
 

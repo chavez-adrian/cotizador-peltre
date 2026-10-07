@@ -489,7 +489,7 @@ test('construirCatalogo: en M6001 la fila explicita de la calca gana y el produc
 });
 
 // Las cinco listas de exportacion. La MONEDA no depende de la lista: la manda el
-// cliente (`curr_code`, ADR-0015 y CONTEXT.md "Moneda del cliente"), y el cotizador
+// cliente (`curr_code`, ADR-0015 y GLOSSARY.md "Moneda del cliente"), y el cotizador
 // solo sabe pesos -- los clientes en moneda extranjera estan bloqueados por #297.
 // Para un cliente MXN una lista US es SOLO el factor sobre el precio base en pesos:
 // ningun tipo de cambio entra al catalogo (asi opera Williams-Sonoma, US6000/MXN).
@@ -525,7 +525,7 @@ test('construirCatalogo: las cinco listas US aplican SOLO el factor, en pesos', 
 });
 
 // Las listas sin escalon NO son una tabla en codigo: son las sales_types ACTIVAS de
-// Operam que no son escalon de volumen (ADR-0015 y CONTEXT.md "Lista de precios": "el
+// Operam que no son escalon de volumen (ADR-0015 y GLOSSARY.md "Lista de precios": "el
 // universo de listas es el de Operam, no un catalogo fijo del cotizador"). Por eso una
 // lista nueva en el ERP queda cotizable con solo regenerar el catalogo.
 test('construirCatalogo: una lista nueva de Operam entra sola, preciada por su factor', () => {

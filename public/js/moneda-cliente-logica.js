@@ -1,4 +1,4 @@
-// Nucleo puro de la Moneda del cliente (#297, ADR-0015; CONTEXT.md "Moneda del
+// Nucleo puro de la Moneda del cliente (#297, ADR-0015; GLOSSARY.md "Moneda del
 // cliente"), que es el juicio de BLOQUEO mientras el cotizador no maneje moneda
 // extranjera.
 //

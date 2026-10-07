@@ -12,7 +12,7 @@ El alta de cliente ya había resuelto el mismo problema (ADR-0017): un módulo q
 
 ## Decision
 
-- **Un módulo `lib/subida-quote.js`** con el concepto **Subida del quote** (término nuevo en `CONTEXT.md`). Al terminar las tres tajadas tendrá dos operaciones: `subirQuote` y `actualizarQuote`. La primera tajada entrega `actualizarQuote(id, deps)`.
+- **Un módulo `lib/subida-quote.js`** con el concepto **Subida del quote** (término nuevo en `GLOSSARY.md`). Al terminar las tres tajadas tendrá dos operaciones: `subirQuote` y `actualizarQuote`. La primera tajada entrega `actualizarQuote(id, deps)`.
 - **Devuelve valores, nunca un status HTTP**, y no importa Express ni `server.js`. El handler traduce valor a HTTP con las mismas URLs, status y cuerpos de antes: el navegador no se entera.
 - **El módulo escribe en el registro de la cotización**: el store de cotizaciones entra por `deps`. En ADR-0017 el alta no escribe en la cotización porque eso "es de la subida"; este módulo ES la subida, y el folio, la huella y la marca de quote desactualizado son suyos.
 - **El candado por id de cotización vive en el módulo** (`conCandadoSubida`, antes `subidasOperamEnCurso` en `server.js`). Ocupado no espera: devuelve un valor `OCUPADO` y cada ruta lo traduce al 425 con su texto de siempre. No es reentrante: tomarlo dos veces en la misma petición devuelve ocupado, así que quien ya lo tiene llama a la parte sin candado. Mientras crear siga en `server.js`, su ruta usa este mismo candado: una subida y una actualización de la misma cotización se siguen excluyendo.

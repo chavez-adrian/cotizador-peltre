@@ -74,7 +74,7 @@ function enviar(body) {
   return supertest(app).post('/api/prospectos/publico').send(body);
 }
 
-// QR del stand (issue #264, CONTEXT.md "Evento"): el evento activo vive en
+// QR del stand (issue #264, GLOSSARY.md "Evento"): el evento activo vive en
 // data/config.json, la misma lectura/escritura del panel admin (patron de
 // #261 en test/prospectos-api.test.js). Cada test que lo necesita lo pone y
 // restaura el archivo original al terminar.
@@ -444,7 +444,7 @@ test('T5: si siteverify falla por red (Cloudflare caido), la captura pasa igual 
   }
 });
 
-// --- QR del stand: evento en la liga (issue #264, CONTEXT.md "Evento") ---
+// --- QR del stand: evento en la liga (issue #264, GLOSSARY.md "Evento") ---
 
 test('Q1: con evento coincidente con el activo, la captura nace en No Asignado con canal Feria/Expo y el evento guardado', async () => {
   await conEventoActivo(async () => {

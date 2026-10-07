@@ -1,4 +1,4 @@
-// #485 (CONTEXT.md "Comprobante de pago"): el vendedor sube desde la tarjeta el
+// #485 (GLOSSARY.md "Comprobante de pago"): el vendedor sube desde la tarjeta el
 // comprobante del PRIMER pago y queda archivado en el Dropbox de la empresa por
 // el flujo `pago`. A diferencia de la posicion de calca (#61) la subida NO es
 // fire-and-forget: el comprobante cuenta como subido solo si Dropbox lo

@@ -4,7 +4,7 @@
 // la pantalla (calcula el carrito) y el servidor (enforcement al guardar),
 // patron de descuento-logica.js (#137) -- nunca dos copias.
 //
-// Glosario (CONTEXT.md, "Lista fijada (override)"): la lista fijada manda de
+// Glosario (GLOSSARY.md, "Lista fijada (override)"): la lista fijada manda de
 // forma ABSOLUTA sobre el volumen, en ambas direcciones. #151 acota el permiso
 // a rol admin; #153 lo extiende a vendedores con checkbox; #296 (ADR-0015) lo
 // vuelve una MATRIZ (vendedor, lista): el permiso es "puede fijar ESTA lista".

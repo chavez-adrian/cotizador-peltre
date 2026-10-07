@@ -18,7 +18,7 @@ const path = require('path');
 // nunca llevan espacio. Los comentarios de linea completa (// ...) se
 // excluyen: documentan al desarrollador, no le hablan al vendedor.
 //
-// Compuestos permitidos (ADR-0016 + CONTEXT.md "Cliente Operam"): "Cliente
+// Compuestos permitidos (ADR-0016 + GLOSSARY.md "Cliente Operam"): "Cliente
 // Operam" y "Cliente en linea/línea" (con o sin "en Operam" -- variante ya en
 // uso, ej. el panel de paso Cliente). "Tipo de cliente" (segmento comercial
 // del prospecto, #41/ADR-0004) es un termino de negocio distinto al Cliente

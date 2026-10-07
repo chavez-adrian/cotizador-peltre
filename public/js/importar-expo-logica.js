@@ -1,6 +1,6 @@
 import { escapeHtml } from './prospectos-logica.js';
 
-// Reporte de la importacion del export del evento (issue #265, CONTEXT.md
+// Reporte de la importacion del export del evento (issue #265, GLOSSARY.md
 // "Importacion del export del evento"). Nucleo puro que consume la respuesta de
 // POST /api/admin/prospectos/importar y la pinta en el panel admin: cuantos
 // nacieron, cuantos se enriquecieron, quien se quedo cada uno, que se descarto

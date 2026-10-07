@@ -1,4 +1,4 @@
-// #400: la etiqueta "Ya tiene Cliente Operam, falta cotizar" (CONTEXT.md) la
+// #400: la etiqueta "Ya tiene Cliente Operam, falta cotizar" (GLOSSARY.md) la
 // DERIVA el servidor, en las dos pantallas que la pintan: la lista de Prospectos
 // (GET /api/prospectos) y la cola (GET /api/prospectos/cola, el mismo motor que
 // GET /api/hoy). El navegador no la calcula -- necesitaria las cotizaciones que

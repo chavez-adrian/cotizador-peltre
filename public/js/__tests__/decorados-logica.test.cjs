@@ -2,7 +2,7 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
-// El modulo de decorados (issue #61, CONTEXT.md "Producto decorado (calca)") es
+// El modulo de decorados (issue #61, GLOSSARY.md "Producto decorado (calca)") es
 // puro y browser-safe: lo consumen server.js (el checklist), pipeline-logica.js
 // (la calca en la tarjeta) y este test via import() dinamico. Mismo patron
 // que prospectos-logica.js / pipeline-logica.js: una sola implementacion.

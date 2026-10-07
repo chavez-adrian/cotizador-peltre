@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
 
 // La liga de una cotizacion con su Cliente Operam es FIJA (#394, ADR-0006 /
-// ADR-0016, CONTEXT.md "Oportunidad": en Operam la cotizacion nunca se
+// ADR-0016, GLOSSARY.md "Oportunidad": en Operam la cotizacion nunca se
 // reasigna). Editar un registro ya ligado no puede cambiarle el Cliente Operam:
 // en produccion (cotizacion 1280, id 105) el navegador mando el customerId del
 // cliente de la sesion ANTERIOR -- 529, Gerardo Cardenas -- sobre la cotizacion

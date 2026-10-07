@@ -335,7 +335,7 @@ async function puedePrecioCalcaDeUsuario(user) {
 }
 
 // Permiso de asignacion VIGENTE del usuario autenticado (#156, spec #155,
-// CONTEXT.md "Visibilidad"): ver la columna No Asignado y asignarle dueno a esas
+// GLOSSARY.md "Visibilidad"): ver la columna No Asignado y asignarle dueno a esas
 // tarjetas. Mismo motivo que los dos anteriores para leerlo del registro y no
 // del JWT: el token no se re-emite cuando el admin otorga o quita el checkbox,
 // y este permiso abre visibilidad sobre tarjetas ajenas -- quitarlo tiene que
@@ -571,7 +571,7 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
       return { id: idPrevio, requiereActualizacionOperam, vigencia };
     }
   }
-  // La Oportunidad nace ligada a su Contacto (#342, ADR-0016, CONTEXT.md
+  // La Oportunidad nace ligada a su Contacto (#342, ADR-0016, GLOSSARY.md
   // "Oportunidad"): el celular se anota AQUI, en el unico punto donde una
   // cotizacion nace, y ninguna regeneracion posterior lo recalcula -- el camino
   // de actualizacion de arriba ni siquiera lo menciona. Corregir un telefono mal
@@ -832,7 +832,7 @@ app.get('/api/seguimiento', authMiddleware, async (req, res) => {
   res.json(calcularCola(visibles));
 });
 
-// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): una sola cola del dia
+// Cola Hoy fusionada (issue #64, GLOSSARY.md "Cola Hoy"): una sola cola del dia
 // que mezcla los prospectos en Por Cotizar (horas habiles) y las cotizaciones
 // en Seguimiento (dias naturales), ordenada por urgencia relativa al umbral de
 // cada tipo. Reusa los dos motores via lib/cola-hoy.js; la visibilidad por
@@ -858,7 +858,7 @@ app.get('/api/hoy', authMiddleware, async (req, res) => {
   }
 });
 
-// Endpoint unico de Oportunidades (#340, spec #337, ADR-0016, CONTEXT.md
+// Endpoint unico de Oportunidades (#340, spec #337, ADR-0016, GLOSSARY.md
 // "Oportunidad"): TODAS las tarjetas visibles para quien pregunta, en todas las
 // etapas y con una sola forma. El tablero deja de fusionar dos respuestas en el
 // navegador -- de ahi salia la persona duplicada, con su tarjeta de prospecto
@@ -905,7 +905,7 @@ app.get('/api/oportunidades', authMiddleware, async (req, res) => {
 //
 // NO pide origen (AC2): el Origen es del Contacto y solo de el (#287), y la
 // tarjeta lo hereda como cualquier otra. El unico dato del cuerpo es el celular,
-// que es la identidad del Contacto (CONTEXT.md "Contacto").
+// que es la identidad del Contacto (GLOSSARY.md "Contacto").
 //
 // La visibilidad es la de la captura: sobre el Contacto de otro vendedor no se
 // abre nada, igual que hoy no se puede capturar su celular.
@@ -1002,7 +1002,7 @@ async function cerrarOportunidadesDeLaCotizacion(entry, vendedor, destino, salid
   }
 }
 
-// #483 (CONTEXT.md "Perdida"): cerrar como Perdida pide un Motivo de Perdida de
+// #483 (GLOSSARY.md "Perdida"): cerrar como Perdida pide un Motivo de Perdida de
 // catalogo (y nota si es Otro). Se valida DESPUES del 409 de #482: con pedido la
 // Oportunidad ya no se puede perder y ese es el texto que el vendedor necesita.
 function salidaPerdidaDelCuerpo(body) {
@@ -1011,7 +1011,7 @@ function salidaPerdidaDelCuerpo(body) {
   return error ? { error } : { evento: { motivo, nota: notaLimpia(nota) } };
 }
 
-// #484 (CONTEXT.md "Cancelada"): el motivo es texto libre obligatorio y se guarda
+// #484 (GLOSSARY.md "Cancelada"): el motivo es texto libre obligatorio y se guarda
 // recortado. Sin nota: el motivo ya es el texto.
 function salidaCanceladaDelCuerpo(body) {
   const { motivo } = body || {};
@@ -1055,7 +1055,7 @@ async function cotizacionOperable(req, res) {
   return entry;
 }
 
-// Reunion de diagnostico sobre una COTIZACION en Seguimiento (issue #65, CONTEXT.md
+// Reunion de diagnostico sobre una COTIZACION en Seguimiento (issue #65, GLOSSARY.md
 // "Reunion de diagnostico"): simetrica a la del prospecto. La reunion vive en el
 // array seguimientos como entrada { tipo:'reunion', fecha_reunion, fecha }: una
 // entrada sin `paso` no interfiere con la cadencia. Mientras es futura suprime la
@@ -1159,7 +1159,7 @@ app.post('/api/cotizacion/:id/reunion-resultado', authMiddleware, async (req, re
   res.status(400).json({ error: 'Resultado inválido: avance o perdida' });
 });
 
-// --- Producto decorado / calca (issue #61, CONTEXT.md "Producto decorado (calca)",
+// --- Producto decorado / calca (issue #61, GLOSSARY.md "Producto decorado (calca)",
 // ADR-0005) ---
 // El flag decorado y el checklist de los 6 pasos viven en el data JSONB de la
 // cotizacion (data.decorado / data.calcaChecklist). El dominio puro
@@ -1219,7 +1219,7 @@ function subirCalcaDropbox(entry, archivos) {
   }).catch(err => console.error('[dropbox][calca]', err.message));
 }
 
-// --- Comprobante de pago (#485, CONTEXT.md "Comprobante de pago") ---
+// --- Comprobante de pago (#485, GLOSSARY.md "Comprobante de pago") ---
 // A diferencia de la posicion de calca, la subida SE ESPERA: el comprobante
 // cuenta como subido solo con lo que Dropbox confirmo, y solo eso se guarda. El
 // destino es el flujo `pago` (lib/dropbox-destinos.js); `upload` deja cada
@@ -1314,7 +1314,7 @@ app.post('/api/cotizacion/:id/comprobante-pago/:pago', authMiddleware, async (re
 
 // 409 de colision de captura: el duplicado propio (o visto por admin) muestra el
 // prospecto; el de otro vendedor solo dice quien lo atiende, sin mas datos
-// (CONTEXT.md, Visibilidad de prospectos). Lleva un campo estructurado `tipo`
+// (GLOSSARY.md, Visibilidad de prospectos). Lleva un campo estructurado `tipo`
 // (#82): el frontend decide por el (prospecto_propio -> usar el existente;
 // prospecto_ajeno -> bloquear; cliente -> cotizar sobre el cliente), nunca
 // parseando el string de error.
@@ -1342,7 +1342,7 @@ function respuestaCelularDeCliente(res, cliente) {
   });
 }
 
-// Evento activo y liga del catalogo (issue #261, CONTEXT.md "Evento"): se
+// Evento activo y liga del catalogo (issue #261, GLOSSARY.md "Evento"): se
 // configuran UNA vez desde el panel admin y viven en el store de configuracion
 // (#276), la misma lectura/escritura que ya usa la configuracion del catalogo.
 // Un evento sin nombre no es evento: el resto del sistema pregunta solo "hay
@@ -1401,7 +1401,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const asesor = String(body.asesor == null ? '' : body.asesor).trim();
   const capturaAjena = !!asesor && asesor !== req.user.name;
   if (capturaAjena) {
-    // La excepcion a la auto-asignacion es de la CAPTURA DE EXPO (CONTEXT.md
+    // La excepcion a la auto-asignacion es de la CAPTURA DE EXPO (GLOSSARY.md
     // "Captura de expo"), no de cualquier captura hecha mientras hay expo: sin
     // evento en el cuerpo el prospecto nace del que captura, como siempre. Asi
     // ademas ningun prospecto de otro dueno se queda sin el rastro de quien lo
@@ -1414,7 +1414,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'El asesor debe ser un vendedor del registro' });
     }
   }
-  // Guardrail best effort (CONTEXT.md, Prospecto): un cliente con alta en Operam
+  // Guardrail best effort (GLOSSARY.md, Prospecto): un cliente con alta en Operam
   // nunca vuelve a ser prospecto. Si el indice falla o no esta listo, la
   // clasificacion cae a libre y la captura procede.
   const clasificacion = await clasificarCelular(body.celular);
@@ -1444,7 +1444,7 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   const calificacion = buildCalificacion(body.calificacion);
   if (Object.keys(calificacion).length) data.calificacion = calificacion;
   // Mayusculas corregidas y correo en minusculas en UN solo punto (issue #269,
-  // CONTEXT.md "Prospecto"): lo mismo que aplica la edicion desde la tarjeta, y
+  // GLOSSARY.md "Prospecto"): lo mismo que aplica la edicion desde la tarjeta, y
   // por eso una captura de expo y su complemento posterior no pueden divergir.
   const textos = normalizarTextosProspecto({ nombre: body.nombre, ciudad: body.ciudad, data });
   let id;
@@ -1472,13 +1472,13 @@ app.post('/api/prospectos', authMiddleware, async (req, res) => {
   res.status(201).json({ ok: true, id });
 });
 
-// Alta de prospecto SIN vendedor (issue #57, CONTEXT.md "Etapas del pipeline":
+// Alta de prospecto SIN vendedor (issue #57, GLOSSARY.md "Etapas del pipeline":
 // No Asignado). La tarjeta nace en no_asignado y sin dueno; la asigna luego el
 // admin (PATCH .../asignar) y entonces pasa a Por Cotizar. La consumira el
 // formulario web "Peltre de Mayoreo" (y a futuro un bot), pero exponer esa
 // escritura publica y su auth (token/API key) es una decision de seguridad
 // posterior y fuera de alcance: aqui la ruta es admin-only (solo quien asigna ve
-// No Asignado, CONTEXT.md "Visibilidad"). Reusa los mismos guardrails de
+// No Asignado, GLOSSARY.md "Visibilidad"). Reusa los mismos guardrails de
 // /api/prospectos via clasificarCelular: un celular que ya es prospecto o cliente
 // Operam no se duplica.
 app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (req, res) => {
@@ -1497,7 +1497,7 @@ app.post('/api/prospectos/sin-asignar', authMiddleware, adminMiddleware, async (
     if (body[k] !== undefined && body[k] !== null && body[k] !== '') data[k] = body[k];
   }
   // La misma normalizacion que la captura autenticada (issue #269): la regla es
-  // del PROSPECTO, no de la pantalla que lo captura (CONTEXT.md "Prospecto").
+  // del PROSPECTO, no de la pantalla que lo captura (GLOSSARY.md "Prospecto").
   const textos = normalizarTextosProspecto({ nombre: body.nombre, ciudad: body.ciudad, data });
   let id;
   try {
@@ -1585,7 +1585,7 @@ app.get('/api/cp/:pais/:cp', (req, res) => {
 //     mano) sin duplicarla, sin cambiarle dueno y sin moverla de etapa.
 const HONEYPOT = 'fax';
 
-// Alerta por correo de la captura publica (issue #163; CONTEXT.md "Captura
+// Alerta por correo de la captura publica (issue #163; GLOSSARY.md "Captura
 // publica": "Cada captura publica avisa por correo a quienes tienen el permiso
 // de asignacion"). FIRE-AND-FORGET, mismo contrato que subirCsfDropbox
 // (lib/dropbox.js): la promesa nunca se espera y su fallo nunca llega a la
@@ -1597,7 +1597,7 @@ let _enviarAlertaMayoreo = enviarAlertaMayoreo;
 export function _inyectarAlertaMayoreo(fn) { _enviarAlertaMayoreo = fn ?? enviarAlertaMayoreo; }
 
 // Dispara la alerta para una captura ya validada -- tanto si el prospecto es
-// NUEVO como si ya existia. Decision (issue #163): CONTEXT.md dice "cada
+// NUEVO como si ya existia. Decision (issue #163): GLOSSARY.md dice "cada
 // captura publica avisa", no "cada prospecto nuevo"; el proposito es paridad
 // con la notificacion que daba Bitrix para atencion comercial, y quien tiene el
 // permiso de asignacion debe enterarse de que alguien volvio a levantar la
@@ -1649,7 +1649,7 @@ app.post('/api/prospectos/publico', async (req, res) => {
   if (validarMayoreo(form).length) return res.status(400).json({ error: 'Captura incompleta' });
 
   const fechaCaptura = new Date().toISOString();
-  // QR del stand (issue #264, CONTEXT.md "Evento"): buildCapturaMayoreo compara
+  // QR del stand (issue #264, GLOSSARY.md "Evento"): buildCapturaMayoreo compara
   // form.evento contra el evento activo y solo entonces nace con canal
   // Feria/Expo y data.evento; sin coincidencia, o sin evento activo, la captura
   // es la de siempre.
@@ -1729,7 +1729,7 @@ function oportunidadPrincipalDe(contacto, oportunidades) {
   return principalPorContacto(oportunidadesDeContactos([contacto], oportunidades))[0];
 }
 
-// Visibilidad (CONTEXT.md): cada vendedor ve unicamente sus propias
+// Visibilidad (GLOSSARY.md): cada vendedor ve unicamente sus propias
 // oportunidades; el admin ve todas. Las tarjetas No Asignado no son de nadie: las
 // ve ademas quien tiene el permiso de asignacion (#156), y SOLO esas -- el
 // permiso abre la columna sin dueno, nunca la cartera de otro vendedor.
@@ -1800,7 +1800,7 @@ app.get('/api/prospectos', authMiddleware, async (req, res) => {
   }
 });
 
-// Tabla de prospectos (spec #306, CONTEXT.md "Tabla de prospectos"): una fila
+// Tabla de prospectos (spec #306, GLOSSARY.md "Tabla de prospectos"): una fila
 // por Oportunidad pre-cotizacion visible con los campos derivados que la
 // pantalla NO calcula. Desde #343 la fila es de la INTENCION, no de la persona:
 // un Contacto que volvio a preguntar tiene dos renglones que trabajar.
@@ -1844,7 +1844,7 @@ app.get('/api/prospectos/cola', authMiddleware, async (req, res) => {
 // Pre-clasificacion de celular (issue #46): el frontend la consulta antes de
 // generar la cotizacion para decidir si pide el canal de origen (solo cuando
 // el celular es libre). Devuelve el tipo y datos minimos no sensibles; el
-// detalle del prospecto nunca viaja aqui (visibilidad, CONTEXT.md). Registrada
+// detalle del prospecto nunca viaja aqui (visibilidad, GLOSSARY.md). Registrada
 // antes de cualquier ruta /api/prospectos/:id.
 app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
   const celular = req.query.celular;
@@ -1865,7 +1865,7 @@ app.get('/api/prospectos/clasificar', authMiddleware, async (req, res) => {
 // opera sus prospectos, admin todos.
 
 // `incluyeSinDueno` extiende el acceso a las tarjetas No Asignado para quien
-// tiene el permiso de asignacion (#156, decision del dueno 2026-08-16, CONTEXT.md
+// tiene el permiso de asignacion (#156, decision del dueno 2026-08-16, GLOSSARY.md
 // "Visibilidad"): sin el, una tarjeta sin dueno no es de nadie y solo el admin
 // podria sacarla del tablero. El ALCANCE lo acota el dominio, no un check aparte:
 // desde no_asignado validarTransicion solo admite no_util y perdida, asi que
@@ -1895,7 +1895,7 @@ async function oportunidadOperable(req, res, { incluyeSinDueno = false } = {}) {
   return null;
 }
 
-// Editar/complementar el prospecto desde su tarjeta (issue #66, CONTEXT.md
+// Editar/complementar el prospecto desde su tarjeta (issue #66, GLOSSARY.md
 // "Captura de prospecto"): enriquece nombre, ciudad y los opcionales conforme
 // avanza la conversacion. Permitido en cualquier etapa activa; no en una salida
 // (No util/Perdida viven en historial). Misma visibilidad que las demas
@@ -1921,7 +1921,7 @@ app.patch('/api/prospectos/:id', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Asignar un vendedor a una tarjeta en No Asignado (issue #57, CONTEXT.md
+// Asignar un vendedor a una tarjeta en No Asignado (issue #57, GLOSSARY.md
 // "Etapas del pipeline" + "Visibilidad"): exige el permiso de asignacion, que el
 // admin tiene siempre y un vendedor puede tener por checkbox en /admin (#156 --
 // ya no es admin-only). Quien asigna puede asignar a CUALQUIER vendedor del
@@ -1994,7 +1994,7 @@ app.post('/api/prospectos/:id/toques', authMiddleware, async (req, res) => {
   res.json({ ok: true, eventos });
 });
 
-// Reunion diagnostico (issue #45, CONTEXT.md "Captura de prospecto"): actividad
+// Reunion diagnostico (issue #45, GLOSSARY.md "Captura de prospecto"): actividad
 // con fecha, NO una etapa. Agendar registra el evento; re-agendar agrega otro
 // (la ultima manda). La supresion de cadencia vive en el motor de la cola.
 app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
@@ -2011,7 +2011,7 @@ app.post('/api/prospectos/:id/reunion', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Siguiente contacto (issue #262, #270, spec #260, CONTEXT.md "Siguiente
+// Siguiente contacto (issue #262, #270, spec #260, GLOSSARY.md "Siguiente
 // contacto"): compromiso de canales + fecha con el prospecto ("te escribo el
 // lunes por WhatsApp y te mando el catalogo por correo" es UNO solo, con dos
 // canales). Mismo mecanismo de evento que la reunion y las mismas garantias
@@ -2031,7 +2031,7 @@ app.post('/api/prospectos/:id/siguiente-contacto', authMiddleware, async (req, r
 // Resultado de la reunion pasada: en el pipeline unificado el avance pertinente
 // lo dirige la cotizacion (Por Cotizar -> Seguimiento, otro issue); aqui el
 // unico resultado que cierra el ciclo de la reunion es la salida a No util con
-// motivo del catalogo (CONTEXT.md "Reunion de diagnostico": ya no avanza a
+// motivo del catalogo (GLOSSARY.md "Reunion de diagnostico": ya no avanza a
 // Calificado, etapa eliminada por ADR-0005).
 app.post('/api/prospectos/:id/reunion-resultado', authMiddleware, async (req, res) => {
   const { resultado, motivo } = req.body || {};
@@ -2059,7 +2059,7 @@ app.get('/api/admin/prospectos/no-util', authMiddleware, adminMiddleware, async 
   res.json(contarMotivosNoUtil(todos));
 });
 
-// Enriquecimiento con el export del evento (issue #265, CONTEXT.md "Importacion
+// Enriquecimiento con el export del evento (issue #265, GLOSSARY.md "Importacion
 // del export del evento"): lo capturado en el stand NUNCA se pisa, solo se
 // rellena lo que este vacio. El tipo de cliente y su segmento viajan JUNTOS
 // (poner uno sin el otro dejaria el segmento contradiciendo al texto) y la nota
@@ -2734,7 +2734,7 @@ app.post('/api/admin/bandeja/:folio/aceptar', authMiddleware, adminMiddleware, a
     });
   } catch (e) {
     if (e.code !== '23505') throw e;
-    // Identidad 1 celular = 1 prospecto (CONTEXT.md): el candidato marcado como
+    // Identidad 1 celular = 1 prospecto (GLOSSARY.md): el candidato marcado como
     // posible duplicado se liga al prospecto que ya existe, en vez de crear una
     // tarjeta gemela. Sin celular no hay identidad que ligar: ahi el choque no
     // se puede resolver solo y el candidato se queda pendiente.
@@ -3986,7 +3986,7 @@ function candidatoDeLaPregunta(c) {
 // por eso las tres salidas no vuelven a enumerarse.
 const LLAVE_SALIDA_CANDIDATO = { usar: 'usar', 'otro-domicilio': 'otroDomicilio' };
 
-// Las salidas de la Deduplicacion de cliente (CONTEXT.md) ya serializadas: las que
+// Las salidas de la Deduplicacion de cliente (GLOSSARY.md) ya serializadas: las que
 // van por candidato ("usar este Cliente Operam", "es otro domicilio de este
 // cliente") y la global ("ninguno es el mismo"). Con varios domicilios el
 // navegador le agrega `decision.domicilioId` al cuerpo de `usar` tras elegir.
@@ -4047,7 +4047,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
     const candidatos = alta.candidatos || [];
     return res.status(428).json({
       codigo: 'POSIBLE_DUPLICADO',
-      // Mensaje en dos capas (CONTEXT.md): el vendedor lee `error` y el `detalle`
+      // Mensaje en dos capas (GLOSSARY.md): el vendedor lee `error` y el `detalle`
       // -- de que pool salieron estos candidatos -- va plegado bajo la pregunta.
       error: alta.mensaje,
       detalle: alta.detalle || '',

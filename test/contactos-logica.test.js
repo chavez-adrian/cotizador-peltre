@@ -29,7 +29,7 @@ test('sin celular no hay nada que escribir', () => {
   assert.equal(aFormatoWhatsApp(null), '');
 });
 
-// El nombre visible se lee "Persona - Empresa" (CONTEXT.md "Contacto de
+// El nombre visible se lee "Persona - Empresa" (GLOSSARY.md "Contacto de
 // Google"): WhatsApp muestra SOLO el nombre, nunca la organizacion, y lo corta
 // alrededor de los 25 caracteres, asi que la persona va primero.
 test('el nombre visible pone la persona primero y la empresa despues', () => {

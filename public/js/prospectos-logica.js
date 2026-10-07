@@ -10,7 +10,7 @@ import { filtrarPorCriterio } from './busqueda-logica.js';
 import { origenDe } from './origen-logica.js';
 import { errorMotivoPerdida } from './perdida-logica.js';
 
-// Origen del prospecto -- catalogo cerrado (CONTEXT.md "Origen"; el campo en
+// Origen del prospecto -- catalogo cerrado (GLOSSARY.md "Origen"; el campo en
 // codigo, API y BD se sigue llamando `canal`, solo cambio la palabra visible).
 // "Cliente Actual" se retiro (issue #341, ADR-0016): el celular que vuelve a
 // comprar no llega por ninguna puerta, conserva el origen que ya tenia y abre
@@ -38,7 +38,7 @@ export const PIEZAS_ESTIMADAS = ['+100', '+350', '+550', '+1,500', '+6,000'];
 // armar data y el frontend para armar el payload.
 export const OPCIONALES = ['empresa', 'segmento_id', 'piezas_estimadas', 'correo', 'temperatura', 'notas'];
 
-// Normaliza los textos de una captura de prospecto (issue #269, CONTEXT.md
+// Normaliza los textos de una captura de prospecto (issue #269, GLOSSARY.md
 // "Prospecto"): UNICO punto de la regla, compartido por la creacion (captura
 // manual y de expo) y por la edicion desde la tarjeta. Recibe y devuelve la
 // misma forma con la que hablan el store y buildEdicionProspectoDatos
@@ -78,7 +78,7 @@ export function escapeHtml(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ESCAPES[ch]);
 }
 
-// Chip "Origen" (issue #287, CONTEXT.md "Origen"): UN solo render para toda
+// Chip "Origen" (issue #287, GLOSSARY.md "Origen"): UN solo render para toda
 // tarjeta de prospecto, cotizacion y cliente -- el origen se lee con etiqueta
 // propia y ya no como un segmento mas de la linea gris de metadatos. Recibe el
 // ITEM (prospecto, oportunidad, item de cola, cotizacion del Historial o fila de
@@ -112,7 +112,7 @@ export function validarProspectoBody(body) {
   return null;
 }
 
-// Edicion/complemento del prospecto desde su tarjeta (issue #66, CONTEXT.md
+// Edicion/complemento del prospecto desde su tarjeta (issue #66, GLOSSARY.md
 // "Captura de prospecto"): el vendedor enriquece nombre, ciudad y los opcionales
 // (empresa, tipo de cliente, piezas, correo, temperatura, notas) conforme avanza
 // la conversacion. El celular (llave de identidad) y el canal (origen) no se
@@ -149,7 +149,7 @@ export function buildEdicionProspectoDatos(body) {
 
 // Formulario inline de edicion del prospecto (issue #66): prellena los datos
 // actuales y guarda contra el id del prospecto. Los campos son los de la captura
-// (CONTEXT.md "Captura de prospecto") menos celular (llave de identidad) y canal
+// (GLOSSARY.md "Captura de prospecto") menos celular (llave de identidad) y canal
 // (origen). guardarEdicionProspecto(id) (en app.js) lee estos inputs y llama a
 // PATCH /api/prospectos/:id.
 export function buildEdicionProspectoFormHtml(p) {
@@ -200,7 +200,7 @@ export const ETAPA_LABELS = {
   cancelada: 'Cancelada',
 };
 
-// Salida a No util -- motivo obligatorio de catalogo cerrado (CONTEXT.md,
+// Salida a No util -- motivo obligatorio de catalogo cerrado (GLOSSARY.md,
 // Etapas del pipeline).
 export const MOTIVOS_NO_UTIL = ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta'];
 
@@ -223,7 +223,7 @@ export function siguienteEtapa() {
 // Valida una transicion de etapa solicitada por el vendedor. Transiciones
 // manuales vivas: la salida a No util (con motivo de catalogo) y el avance
 // manual Por Cotizar -> Seguimiento cuando el vendedor cotizo POR FUERA (directo
-// en Operam) -- exige capturar el folio de Operam (issue #56, CONTEXT.md "Etapas
+// en Operam) -- exige capturar el folio de Operam (issue #56, GLOSSARY.md "Etapas
 // del pipeline": "manual solo capturando el numero de cotizacion de Operam; sin
 // folio no avanza"). Sin folio no procede; desde cualquier otra etapa la
 // transicion a Seguimiento sigue siendo invalida (Por Cotizar -> Seguimiento es
@@ -250,7 +250,7 @@ export function validarTransicion(actual, nueva, motivo, folio, nota) {
   return `Transición inválida: ${ETAPA_LABELS[actual] || actual} → ${ETAPA_LABELS[nueva] || nueva}`;
 }
 
-// Reunion diagnostico (issue #45, CONTEXT.md "Captura de prospecto"): actividad
+// Reunion diagnostico (issue #45, GLOSSARY.md "Captura de prospecto"): actividad
 // con fecha sobre el prospecto, NO una etapa. Re-agendar registra otro evento y
 // la ultima reunion manda. Mientras esta en el futuro la cadencia se suprime
 // (el filtro vive en lib/seguimiento-prospectos.js); pasada la fecha, el
@@ -262,7 +262,7 @@ export function validarTransicion(actual, nueva, motivo, folio, nota) {
 // reuniones viven como entradas `{ tipo:'reunion', fecha_reunion, fecha }`). La
 // ultima reunion REGISTRADA manda (por `fecha` de registro, no por la fecha de la
 // cita): re-agendar registra otro evento y ese ultimo gana, aunque su cita sea
-// mas temprana (CONTEXT.md "Reunion de diagnostico"). Cualquier evento con fecha
+// mas temprana (GLOSSARY.md "Reunion de diagnostico"). Cualquier evento con fecha
 // posterior a esa reunion limpia el pendiente de resultado.
 // El ultimo evento REGISTRADO de un tipo (por `fecha` de registro, no por la
 // fecha de la cita ni la del compromiso): la regla "el ultimo manda" que
@@ -307,7 +307,7 @@ export function reunionPendienteResultado(p, ahora) {
   return reunionPendienteResultadoDe(p && p.eventos, ahora);
 }
 
-// Siguiente contacto (issue #262 y #270, spec #260, CONTEXT.md "Siguiente
+// Siguiente contacto (issue #262 y #270, spec #260, GLOSSARY.md "Siguiente
 // contacto"): compromiso acordado con el prospecto sobre CUANDO y POR DONDE lo
 // vamos a contactar. Vive en p.eventos como { tipo:'siguiente_contacto',
 // canales, fecha_contacto, fecha, vendedor }, igual que la reunion, y como ella el
@@ -421,7 +421,7 @@ export function buildEsperaBadgeHtml(item) {
   return `<span class="espera-badge espera-${escapeHtml(item.color)}">${h} h hábiles sin respuesta</span>`;
 }
 
-// Etiqueta del Contacto ya ligado a un Cliente Operam (#46/#347, CONTEXT.md
+// Etiqueta del Contacto ya ligado a un Cliente Operam (#46/#347, GLOSSARY.md
 // "Ya tiene Cliente Operam, falta cotizar"): sigue en Por Cotizar hasta que
 // una cotizacion lo pase a Seguimiento.
 //
@@ -649,7 +649,7 @@ export function buildColaProspectosHtml(cola) {
   }).join('');
 }
 
-// Conteo de pendientes para el badge del destino Hoy (issue #58, CONTEXT.md
+// Conteo de pendientes para el badge del destino Hoy (issue #58, GLOSSARY.md
 // "Cola Hoy"): el badge en nav-hoy refleja cuantos prospectos en Por Cotizar
 // piden atencion hoy. La cola ya llega filtrada (horas habiles, reunion futura
 // suprimida) desde GET /api/prospectos/cola, asi que el conteo es su tamano.
@@ -780,7 +780,7 @@ export function buildProspectoPayload(campos) {
   return payload;
 }
 
-// --- Captura de expo (issue #261, spec #260; CONTEXT.md "Captura de expo",
+// --- Captura de expo (issue #261, spec #260; GLOSSARY.md "Captura de expo",
 // "Evento", "Tipo de cliente") ---
 //
 // Bloque contiguo al final del modulo a proposito: la captura de expo es una
@@ -788,7 +788,7 @@ export function buildProspectoPayload(campos) {
 // modulo nuevo.
 
 // Tipo de cliente -> segmento de Operam. UNICO catalogo y UNICO mapeo del
-// sistema (CONTEXT.md "Tipo de cliente": "la captura de prospecto, la captura
+// sistema (GLOSSARY.md "Tipo de cliente": "la captura de prospecto, la captura
 // publica y la captura de expo comparten este catalogo"). Vivia en
 // mayoreo-logica.js con el nombre retirado "tipo de proyecto"; se movio aqui en
 // #261 y mayoreo-logica lo reexporta para no duplicarlo. Varias opciones caen a
@@ -812,7 +812,7 @@ export function segmentoDeTipo(tipo) {
   return s === undefined ? null : s;
 }
 
-// Nivel de interes -> temperatura del prospecto (CONTEXT.md
+// Nivel de interes -> temperatura del prospecto (GLOSSARY.md
 // "Captura de expo"): con el prospecto enfrente el vendedor no decide entre un
 // 2 y un 3, elige Bajo/Medio/Alto.
 export const NIVELES_INTERES = { Bajo: 1, Medio: 3, Alto: 5 };
@@ -868,7 +868,7 @@ export function mensajeWhatsAppExpo(prospecto, vendedorNombre, ligas) {
 }
 
 // Validacion de la captura de expo: la MISMA de la captura normal (celular,
-// nombre, ciudad, canal) mas el tipo de cliente obligatorio (CONTEXT.md
+// nombre, ciudad, canal) mas el tipo de cliente obligatorio (GLOSSARY.md
 // "Captura de expo": "obligatorios celular, nombre, ciudad y tipo de cliente").
 // La comparten el navegador y el servidor.
 export function validarProspectoExpoBody(body) {
@@ -950,7 +950,7 @@ export function buildChipsHtml(grupo, opciones, seleccion) {
   ).join('');
 }
 
-// --- La calificacion de la captura de expo (issue #263, spec #260; CONTEXT.md
+// --- La calificacion de la captura de expo (issue #263, spec #260; GLOSSARY.md
 // "Captura de expo") ---
 //
 // El bloque opcional de la pantalla de captura: se puede guardar vacio y
@@ -1032,7 +1032,7 @@ export function buildCalificacion(cal) {
   return limpia;
 }
 
-// "Calificacion pendiente" (CONTEXT.md "Captura de expo": la calificacion se
+// "Calificacion pendiente" (GLOSSARY.md "Captura de expo": la calificacion se
 // puede dejar para despues): no existe o no tiene ningun valor.
 export function calificacionVacia(cal) {
   return Object.keys(buildCalificacion(cal)).length === 0;

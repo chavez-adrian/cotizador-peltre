@@ -50,7 +50,7 @@ test('M4: unirNombre junta nombre y apellido en un solo nombre recortado', () =>
 });
 
 // M5: +6,000 NO esta en el formulario publico a proposito (ese nivel exige
-// negociacion humana y no debe entrar por autoservicio, CONTEXT.md).
+// negociacion humana y no debe entrar por autoservicio, GLOSSARY.md).
 test('M5: CANTIDADES omite +6,000 deliberadamente', () => {
   assert.deepEqual(CANTIDADES, ['+100', '+350', '+550', '+1,500']);
   assert.equal(CANTIDADES.includes('+6,000'), false);
@@ -308,7 +308,7 @@ test('M38: buildCapturaMayoreo guarda nombre y empresa ya corregidos de mayuscul
   assert.equal(c.data.empresa, 'Hotel Azul SA de CV');
 });
 
-// --- QR del stand (issue #264, CONTEXT.md "Evento") ---
+// --- QR del stand (issue #264, GLOSSARY.md "Evento") ---
 
 const EVENTO_ACTIVO = { nombre: 'Abastur 2026', fin: '2026-08-28' };
 

@@ -1,4 +1,4 @@
-// Logica pura de la calca en el carrito (issue #91, CONTEXT.md "Calca",
+// Logica pura de la calca en el carrito (issue #91, GLOSSARY.md "Calca",
 // ADR-0010). Modulo sin efectos de navegador: lo consumen app.js (import
 // nativo), lib/calcular-envio.js (cross-import server->public, mismo patron que
 // decorados-logica.js) y calcas-logica.test.cjs.
@@ -54,7 +54,7 @@ export function precioCalca(ficha, tierId) {
   return typeof p === 'number' && p > 0 ? p : null;
 }
 
-// Precio manual de calca (#279, spec #278; CONTEXT.md "Precio manual de calca"):
+// Precio manual de calca (#279, spec #278; GLOSSARY.md "Precio manual de calca"):
 // lo que el proveedor cotizo por ESE diseno, capturado a mano. Solo cuenta como
 // captura un numero mayor que cero: vacio, cero, negativo o basura significan
 // "sin captura", que es como se vacia el campo para regresar a la lista.
@@ -279,7 +279,7 @@ export function hayCalcaEnCarrito(items) {
 }
 
 // Piso de 100 piezas POR PARTIDA (issue #98/#152; supersede el umbral de #91
-// atado al volumen de producto -- ver CONTEXT.md "Calca"). Es una correccion
+// atado al volumen de producto -- ver GLOSSARY.md "Calca"). Es una correccion
 // de captura, no un invariante sostenido del carrito: una linea con 100 o mas
 // se cotiza tal cual; abajo de 100 se sube sola a 100, porque es el minimo
 // real que el proveedor imprime por diseno. Dos disenos de 60 piezas facturan

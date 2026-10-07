@@ -241,7 +241,7 @@ test('P10: buildProspectoExistenteHtml muestra el prospecto propio del 409 y nad
   assert.equal(buildProspectoExistenteHtml(null), '');
 });
 
-test('P7: catalogos cerrados con los valores canonicos de CONTEXT.md', () => {
+test('P7: catalogos cerrados con los valores canonicos de GLOSSARY.md', () => {
   assert.deepEqual(CANALES, [
     'WhatsApp', 'Instagram', 'Facebook/Messenger', 'Meta Ads', 'Formulario web',
     'Correo', 'Referido', 'Bazar Sábado', 'Feria/Expo', 'Relación existente',
@@ -322,7 +322,7 @@ test('ED4: la card de un prospecto en cualquier etapa activa ofrece Editar; en u
 
 // === Issue #43: etapas, toques, No util e historial ===
 
-test('T1: MOTIVOS_NO_UTIL es el catalogo cerrado canonico de CONTEXT.md', () => {
+test('T1: MOTIVOS_NO_UTIL es el catalogo cerrado canonico de GLOSSARY.md', () => {
   assert.deepEqual(MOTIVOS_NO_UTIL, ['menudeo', 'fuera de zona', 'sin presupuesto', 'spam', 'sin respuesta']);
 });
 
@@ -732,7 +732,7 @@ test('RU8: los wrappers de prospecto delegan en el nucleo del array (no rompe #4
 });
 
 test('RU9: re-agendar a una fecha mas temprana: manda la ultima reunion REGISTRADA, no la de cita mas lejana', () => {
-  // CONTEXT.md "Reunion de diagnostico": re-agendar registra otro evento y la
+  // GLOSSARY.md "Reunion de diagnostico": re-agendar registra otro evento y la
   // ultima manda (la ultima accion del vendedor). Si re-agenda de 06-20 a 06-13
   // (cita mas cercana) registrando despues, la activa es la de 06-13, aunque
   // 06-20 sea una fecha de cita posterior.
@@ -1053,7 +1053,7 @@ test('E16: buildChipsHtml marca el chip elegido y no usa onclick inline (#112)',
   assert.equal(buildChipsHtml('tipo', ['Hoteles'], '').includes('chip-activo'), false);
 });
 
-// === Issue #262 (spec #260, CONTEXT.md "Siguiente contacto"): compromiso de
+// === Issue #262 (spec #260, GLOSSARY.md "Siguiente contacto"): compromiso de
 // contacto (canal + fecha) sobre cualquier prospecto. Hermano de la reunion:
 // mientras la fecha es futura suprime la cadencia; pasada la fecha sin toque
 // posterior la tarjeta pide cumplirlo. No tiene resultado que registrar.
@@ -1175,7 +1175,7 @@ test('SC9: el historial nombra el evento del siguiente contacto con su canal y f
   assert.equal(xss.includes('<b>Memo</b>'), false);
 });
 
-// === Issue #270 (CONTEXT.md "Siguiente contacto"): el compromiso es multicanal.
+// === Issue #270 (GLOSSARY.md "Siguiente contacto"): el compromiso es multicanal.
 // "Te escribo por WhatsApp y te mando el catalogo por correo" es UN compromiso
 // con dos canales y una sola fecha; el orden es el que se marco.
 
@@ -1226,7 +1226,7 @@ test('SC12: el chip de la tarjeta, la instruccion de la cola Hoy y el historial 
   );
 });
 
-// === Issue #263 (spec #260, CONTEXT.md "Captura de expo"): paso 2, la
+// === Issue #263 (spec #260, GLOSSARY.md "Captura de expo"): paso 2, la
 // calificacion. Catalogos de chips con CLAVES ESTABLES (la etiqueta humana solo
 // vive en la UI), validacion, orden de `valora` y lectura en la tarjeta.
 
@@ -1417,7 +1417,7 @@ test('C10: la edicion inline de la tarjeta incorpora el paso 2 y dicta las notas
 });
 
 // === Normalizacion de textos de toda captura de prospecto (issue #269,
-// CONTEXT.md "Prospecto", decision 2026-08-25) ===
+// GLOSSARY.md "Prospecto", decision 2026-08-25) ===
 // Un solo punto: lo que se teclea al capturar o al editar se guarda con las
 // mayusculas corregidas y el correo en minusculas. La regla de mayusculas es la
 // del titulador del repo (#293, titulo-logica.js), que aqui NO se redefine.
@@ -1544,7 +1544,7 @@ test('#317: la liga de WhatsApp lleva mensaje solo cuando el prospecto tiene eve
 
 // --- #343: el guardrail de la captura ofrece Nueva oportunidad ---
 //
-// Un celular que ya es Contacto no se vuelve a capturar (CONTEXT.md "Contacto"),
+// Un celular que ya es Contacto no se vuelve a capturar (GLOSSARY.md "Contacto"),
 // pero su interes nuevo ya no se queda sin salida.
 
 test('#343: el 409 de un Contacto propio ofrece abrirle una Nueva oportunidad', () => {
@@ -1563,7 +1563,7 @@ test('#343: el 409 de un Contacto de otro vendedor no ofrece nada', () => {
   assert.equal(buildProspectoExistenteHtml({ tipo: 'prospecto_ajeno' }), '');
 });
 
-// #484 (CONTEXT.md "Cancelada"): la Cancelada es una salida con etiqueta propia;
+// #484 (GLOSSARY.md "Cancelada"): la Cancelada es una salida con etiqueta propia;
 // una Oportunidad Cancelada ya salio del embudo y no se vuelve a cerrar como
 // Perdida, y la ruta de etapa de la Oportunidad pre-cotizacion (que nunca tiene
 // pedido) no la acepta.

@@ -1440,7 +1440,7 @@ test('#263: /api/catalogos trae la fecha prellenada del siguiente contacto del e
 });
 
 // === Issue #269: normalizacion de textos en toda captura de prospecto ===
-// CONTEXT.md "Prospecto" (decision 2026-08-25): lo que se teclea al capturar --
+// GLOSSARY.md "Prospecto" (decision 2026-08-25): lo que se teclea al capturar --
 // nombre, empresa, ciudad -- se guarda con las mayusculas corregidas y el correo
 // en minusculas, venga de donde venga la captura. La regla vive en un solo lugar
 // (normalizarTextosProspecto, prospectos-logica.js) y la aplican la creacion, la

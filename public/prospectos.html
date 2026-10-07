@@ -177,7 +177,7 @@ const ESTADOS = {
   cotizado: { etiqueta: 'Cotizado', corta: 'Cotizado', rango: 3 },
   cliente: { etiqueta: 'Cliente Operam', corta: 'Cliente Operam', rango: 4 },
 };
-// #316: el rango es el orden de CONTEXT.md "Gafete" (RANGO_GAFETE de
+// #316: el rango es el orden de GLOSSARY.md "Gafete" (RANGO_GAFETE de
 // lib/tabla-prospectos.js), no el alfabetico -- los de solo gafete quedan
 // arriba porque son los unicos sin siguiente paso acordado. Desde #458 sale de
 // GAFETES (prospectos-logica.js), las opciones del filtro, en ese mismo orden.
@@ -293,10 +293,10 @@ function pintaCabeceras() {
   }).join('') + '<th>Acciones</th>';
 }
 
-// La liga de WhatsApp NO registra nada (CONTEXT.md "Toque"): abrir el chat con
+// La liga de WhatsApp NO registra nada (GLOSSARY.md "Toque"): abrir el chat con
 // el mensaje prellenado no es un contacto, el envio ocurre en otra app. El
 // toque es el tap aparte del boton Contacte.
-// #323: "Ver en Operam" es complemento, no la respuesta (CONTEXT.md "Que sigue
+// #323: "Ver en Operam" es complemento, no la respuesta (GLOSSARY.md "Que sigue
 // / Que falta") -- solo aparece con cliente ligado y con la base de Operam
 // disponible, para consultar en la web legacy lo que la tabla no modela.
 function celdaAcciones(p) {

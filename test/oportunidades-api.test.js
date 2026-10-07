@@ -1,6 +1,6 @@
 // Endpoint unico de Oportunidades (#340, spec #337, ADR-0016): el tablero deja
 // de fusionar dos respuestas en el navegador y pide UNA sola lista de tarjetas.
-// Toda tarjeta es una Oportunidad (CONTEXT.md "Oportunidad"): el prospecto cuya
+// Toda tarjeta es una Oportunidad (GLOSSARY.md "Oportunidad"): el prospecto cuya
 // Oportunidad ya es una cotizacion no genera tarjeta propia -- por eso Jorge
 // Orea aparecia dos veces.
 import { test, before, after, beforeEach } from 'node:test';
@@ -184,7 +184,7 @@ test('#340: la tarjeta inerte en Por Cotizar de un prospecto ya cotizado tampoco
   assert.equal(cot.etapa, 'seguimiento');
 });
 
-// AC2: la visibilidad es la misma de hoy (CONTEXT.md "Visibilidad"), por las
+// AC2: la visibilidad es la misma de hoy (GLOSSARY.md "Visibilidad"), por las
 // mismas puertas que /api/prospectos y /api/cotizaciones.
 test('#340: el vendedor ve lo suyo y nada mas', async () => {
   const res = await pedir(MEMO_TOKEN);
@@ -224,7 +224,7 @@ test('#340: cada tarjeta viaja con la forma que el tablero pinta', async () => {
 });
 
 // AC5: el chip de Origen se muestra en TODA tarjeta, heredado del Contacto
-// (CONTEXT.md "Origen"): la Oportunidad no tiene origen propio.
+// (GLOSSARY.md "Origen"): la Oportunidad no tiene origen propio.
 test('#340: toda tarjeta trae su Origen, el propio del prospecto o el heredado del Contacto', async () => {
   const res = await pedir(ADMIN_TOKEN);
   const porId = Object.fromEntries(res.body.map(o => [o.id, o.origen]));

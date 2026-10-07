@@ -278,7 +278,7 @@ test('REU5: una cotizacion sin reunion conserva el flujo normal (sin flag de reu
 // --- #319: paso de cadencia compartido ---
 // La cadencia 2/7/21/28 dejo de estar solo dentro de calcularCola: la Tabla de
 // prospectos necesita el MISMO paso para decir "Seguimiento a la N, dia X". Se
-// afirma por dia con un reloj fijo, contra los dias que declara CONTEXT.md
+// afirma por dia con un reloj fijo, contra los dias que declara GLOSSARY.md
 // "Cola Hoy", no contra el calculo del codigo.
 
 function cotEnviada(fecha) {

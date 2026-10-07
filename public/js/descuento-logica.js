@@ -3,7 +3,7 @@
 // cotizacion que rebase el tope del vendedor autenticado). Nunca dos copias --
 // el tope no puede depender de la pantalla.
 //
-// Glosario (CONTEXT.md, "Descuento (comercial)"): el % se aplica sobre el precio
+// Glosario (GLOSSARY.md, "Descuento (comercial)"): el % se aplica sobre el precio
 // de lista del tier vigente y NO mueve el tier. Descontar es permiso, no derecho:
 // 0% mientras el admin no asigne tope; el rol admin no tiene tope.
 

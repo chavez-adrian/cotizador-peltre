@@ -1,5 +1,5 @@
 // #457 (spec #398): el selector "Estado del prospecto" de la vista Prospectos
-// filtra en el navegador, pero el Estado lo DERIVA el servidor (CONTEXT.md
+// filtra en el navegador, pero el Estado lo DERIVA el servidor (GLOSSARY.md
 // "Estado del prospecto"; la pantalla no lo calcula, igual que la Tabla de
 // prospectos). Viaja en las dos puertas que alimentan la vista: la lista
 // (GET /api/prospectos) y la cola "Que toca hoy" (GET /api/prospectos/cola),

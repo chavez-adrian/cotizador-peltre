@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 // para que la palabra no vuelva a colarse en glosario, docs, UI, codigo o tests.
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ALCANCE = ['CONTEXT.md', 'CLAUDE.md', 'docs', 'public', 'lib', 'scripts', 'server.js', 'test'];
+const ALCANCE = ['GLOSSARY.md', 'CLAUDE.md', 'docs', 'public', 'lib', 'scripts', 'server.js', 'test'];
 const EXCLUIR = new Set(['vendor', 'node_modules', 'fonts', 'img']);
 const EXTENSIONES = new Set(['.md', '.js', '.mjs', '.cjs', '.html', '.css']);
 

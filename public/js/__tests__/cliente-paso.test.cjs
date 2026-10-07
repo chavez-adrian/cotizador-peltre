@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 // Logica pura del rediseno del paso Cliente (variante B, issue #82; entrega
 // diferida al paso Envio en #84). Todo lo decisional del paso vive en
 // alta-logica.js y se prueba aqui; el render en app.js es tonto (sin DOM en
-// Node, no se prueba). Ver CONTEXT.md.
+// Node, no se prueba). Ver GLOSSARY.md.
 
 let mezclarResultadosBusqueda, recientesDesdeCotizaciones, chipsCompletitud, contactoAccionable,
   buildClienteDesdeContactoNuevo, clienteDesdeProspecto, accionCelularContactoNuevo,

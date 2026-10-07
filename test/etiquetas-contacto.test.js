@@ -1,5 +1,5 @@
 // Nucleo puro de las etiquetas del Contacto (#344, spec #337, ADR-0016,
-// CONTEXT.md "Contacto"): se DERIVAN, nunca se guardan, se acumulan y no se
+// GLOSSARY.md "Contacto"): se DERIVAN, nunca se guardan, se acumulan y no se
 // quitan -- una Oportunidad Perdida no le quita ninguna.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

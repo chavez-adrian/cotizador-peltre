@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { ETAPAS, SALIDAS, ETAPA_LABELS, esEtapa, esSalida, transicionPorCotizacion, transicionPorAsignacion, esPreCotizacion, etiquetaFolioOperam, documentoBloqueado, LEYENDA_DEDUP_PENDIENTE, MOTIVO_PRE_SIN_LISTA, cotizacionesDedupVencidas, HORAS_VIDA_DEDUP } from '../lib/pipeline.js';
 
-// El vocabulario canonico de las 7 etapas del pipeline unificado (CONTEXT.md
+// El vocabulario canonico de las 7 etapas del pipeline unificado (GLOSSARY.md
 // "Etapas del pipeline", ADR-0005). El orden es el del embudo: del primer
 // interes al producto entregado.
 test('ETAPAS son las 7 etapas canonicas en orden del embudo', () => {
@@ -55,7 +55,7 @@ test('esSalida reconoce solo las dos salidas', () => {
 });
 
 // La regla de dominio de la transicion automatica disparada por una cotizacion
-// (CONTEXT.md "Etapas del pipeline": "La transicion Por Cotizar -> Seguimiento es
+// (GLOSSARY.md "Etapas del pipeline": "La transicion Por Cotizar -> Seguimiento es
 // automatica al generar una pre-cotizacion o cotizacion con el Cotizador, o cuando
 // Operam reporta una cotizacion creada para la tarjeta"). Misma regla para ambos
 // disparadores automaticos. Devuelve la etapa destino, o null si la cotizacion no
@@ -91,7 +91,7 @@ test('transicionPorCotizacion: una etapa desconocida no mueve la tarjeta', () =>
 });
 
 // La regla de dominio de la transicion automatica disparada por asignar un
-// vendedor (issue #57, CONTEXT.md "Etapas del pipeline": "No Asignado [...]
+// vendedor (issue #57, GLOSSARY.md "Etapas del pipeline": "No Asignado [...]
 // Requiere asignar un vendedor; al asignarlo, la tarjeta pasa automaticamente a
 // Por Cotizar"). Simetrica de transicionPorCotizacion: devuelve la etapa destino
 // o null si asignar un vendedor no debe mover la tarjeta desde la etapa actual.
@@ -117,7 +117,7 @@ test('transicionPorAsignacion: una etapa desconocida no mueve la tarjeta', () =>
   assert.equal(transicionPorAsignacion(undefined), null);
 });
 
-// Estado PRE / folio Operam nullable (issue #63, CONTEXT.md "Pre-cotizacion"):
+// Estado PRE / folio Operam nullable (issue #63, GLOSSARY.md "Pre-cotizacion"):
 // una cotizacion sin folio de Operam es una pre-cotizacion (estado "PRE"); la
 // ausencia del folio define el estado. Con folio, la cotizacion esta registrada
 // en Operam y muestra "Cotizacion N". El folio puede valer 0 legitimamente? No:

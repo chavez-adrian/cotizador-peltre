@@ -33,7 +33,7 @@ export function identidadFranja(cliente, campos, folio) {
 
 // -> { vacia, texto, partes: [{ etiqueta, valor }] }. Cada dato sale solo si
 // existe; la parte sin etiqueta se pinta sola (el nombre de un Cliente Operam
-// Sin datos fiscales no es razon social, CONTEXT.md). El nombre corto igual al
+// Sin datos fiscales no es razon social, GLOSSARY.md). El nombre corto igual al
 // nombre no se repite: misma regla que nombreConCorto.
 export function franjaCliente(identidad) {
   const i = identidad || {};

@@ -1,5 +1,5 @@
 // El vocabulario de los dos estados del Cliente Operam (#344, ADR-0016,
-// CONTEXT.md "Cliente Operam"), en UN solo lugar.
+// GLOSSARY.md "Cliente Operam"), en UN solo lugar.
 //
 // Vive en public/js y no en lib/ por la regla de la casa: los modulos de
 // public/js no importan de lib/, pero lib/ SI de public/js. El servidor decide
@@ -34,7 +34,7 @@ export const ETIQUETA_COMERCIAL = {
   [CON_PEDIDO]: 'Ya compr\u00f3',
 };
 
-// Las etiquetas del CONTACTO (#344/#346, ADR-0016, CONTEXT.md "Contacto"), aqui
+// Las etiquetas del CONTACTO (#344/#346, ADR-0016, GLOSSARY.md "Contacto"), aqui
 // por la misma razon: el servidor las deriva (lib/etiquetas-contacto.js las
 // reexporta) y la vista Clientes las pinta. Se acumulan y no se quitan -- una
 // Oportunidad Perdida no le quita ninguna al Contacto -- y el orden es el de la

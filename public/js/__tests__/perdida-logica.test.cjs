@@ -1,5 +1,5 @@
 'use strict';
-// #482 (CONTEXT.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
+// #482 (GLOSSARY.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
 // una Oportunidad que ya tiene pedido en Operam ya se cerro y no se puede
 // perder. "Tiene pedido" es UNA regla: etapa post-venta (Anticipo pagado o
 // posterior) O el espejo de Operam de la cotizacion ya trae pedido -- aunque la
@@ -37,7 +37,7 @@ test('#482: un espejo sin pedido no cuenta', () => {
   assert.equal(tienePedido({ etapa: 'seguimiento', espejoOperam: null }), false);
 });
 
-// #483 (CONTEXT.md "Perdida"; lista final de Adrian 2026-09-30): cerrar como
+// #483 (GLOSSARY.md "Perdida"; lista final de Adrian 2026-09-30): cerrar como
 // Perdida pide un Motivo de Perdida de un catalogo propio, en este orden; Otro
 // exige una nota. El catalogo vive aqui para que servidor y navegador no diverjan.
 test('#483: el catalogo de Motivos de Perdida es la lista final, en su orden y con acentos en pantalla', async () => {

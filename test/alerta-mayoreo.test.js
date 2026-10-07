@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { destinatariosAlertaMayoreo, mensajeAlertaMayoreo, vcardDeProspecto, nombreArchivoVCard } from '../lib/alerta-mayoreo.js';
 
 // Nucleo puro de la alerta por correo de captura publica de mayoreo (issue #163,
-// ADR-0012; CONTEXT.md "Captura publica": "Cada captura publica avisa por correo a
+// ADR-0012; GLOSSARY.md "Captura publica": "Cada captura publica avisa por correo a
 // quienes tienen el permiso de asignacion"). Sin red, sin IO -- solo el armado de
 // destinatarios y del mensaje. Mismo patron que test/sync-operam.test.js.
 

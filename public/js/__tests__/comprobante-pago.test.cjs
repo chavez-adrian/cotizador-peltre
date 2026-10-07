@@ -1,5 +1,5 @@
 'use strict';
-// #485 (CONTEXT.md "Comprobante de pago", decision 2026-09-28): la tarjeta
+// #485 (GLOSSARY.md "Comprobante de pago", decision 2026-09-28): la tarjeta
 // muestra los archivos y la fecha del comprobante del primer pago, ofrece
 // subirlo desde Seguimiento (y despues, para corregir un faltante) y pinta
 // "Falta comprobante" en la que ya paso de Seguimiento sin el. Aviso, no

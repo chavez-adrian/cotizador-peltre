@@ -7,7 +7,7 @@ import { fuenteSegmento, RESULTADO_SEGMENTO_PENDIENTE } from '../lib/segmento-pe
 // Modulo Alta de cliente (#364, ADR-0017). Una regla por test, contra el
 // adaptador de Operam en memoria: ningun test de este archivo sobreescribe
 // globalThis.fetch ni levanta el servidor. El vocabulario de los nombres es el
-// del glosario (CONTEXT.md): Cliente Operam, domicilio de entrega, Contacto.
+// del glosario (GLOSSARY.md): Cliente Operam, domicilio de entrega, Contacto.
 
 const CELULAR = '+52 5588776655';
 

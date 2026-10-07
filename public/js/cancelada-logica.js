@@ -1,4 +1,4 @@
-// Nucleo PURO de la salida Cancelada (#484, CONTEXT.md "Cancelada"; decision de
+// Nucleo PURO de la salida Cancelada (#484, GLOSSARY.md "Cancelada"; decision de
 // Adrian 2026-09-28): la Oportunidad que si llego a pedido y despues se cayo (el
 // Contacto pago y se echo para atras). Es la unica salida posible con pedido
 // (sin pedido, la salida es Perdida), la decide solo el admin y lleva motivo en

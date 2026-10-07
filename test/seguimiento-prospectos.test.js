@@ -164,7 +164,7 @@ test('S11: lista vacia o sin activos devuelve cola vacia', () => {
   assert.deepEqual(calcularColaProspectos([prospecto({ etapa: 'seguimiento' })], AHORA), []);
 });
 
-// === Issue #45: reunion diagnostico (CONTEXT.md, "Captura de prospecto") ===
+// === Issue #45: reunion diagnostico (GLOSSARY.md, "Captura de prospecto") ===
 
 function reunion(fechaReunion, fecha = '2026-06-10T16:30:00Z') {
   return { tipo: 'reunion', fecha_reunion: fechaReunion, fecha, vendedor: 'Memo' };
@@ -222,7 +222,7 @@ test('R4: re-agendar manda la ultima reunion', () => {
   assert.equal(cola[0].fechaReunion, '2026-06-10T17:00:00Z');
 });
 
-// === Issue #262 (spec #260, CONTEXT.md "Siguiente contacto") ===
+// === Issue #262 (spec #260, GLOSSARY.md "Siguiente contacto") ===
 // El compromiso de contacto suprime la cadencia hasta su fecha; llegada la
 // fecha la tarjeta vuelve a la cola con sus canales y fecha, y el reloj corre desde
 // el compromiso -- no desde la captura, que puede ser de hace dias.

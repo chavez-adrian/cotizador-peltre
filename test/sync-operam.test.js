@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { etapaPostVenta, hechosDesdeOperam, pagoSinRegistrar } from '../lib/sync-operam.js';
 
-// Nucleo puro del sync post-venta con Operam (issue #62, AC3; CONTEXT.md
+// Nucleo puro del sync post-venta con Operam (issue #62, AC3; GLOSSARY.md
 // "Sincronizacion post-venta con Operam"). Estos tests prueban la funcion pura
 // hechos -> etapa post-venta destino y la normalizacion de transacciones crudas
 // de Operam a esos hechos (mapeo REAL de peltre-operam.md seccion 12). Sin red,

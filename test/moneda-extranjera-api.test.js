@@ -1,4 +1,4 @@
-// #297 (ADR-0015, CONTEXT.md "Moneda del cliente"): cotizarle a un cliente cuya
+// #297 (ADR-0015, GLOSSARY.md "Moneda del cliente"): cotizarle a un cliente cuya
 // moneda en Operam no es MXN se detiene con un mensaje accionable.
 //
 // El cotizador calcula, imprime y sube PESOS pelones, y Operam los etiqueta con

@@ -595,7 +595,7 @@ test('#221-8: un borrador guardado antes de #221 (sin diseno) sigue siendo valid
 
 // === #282: el precio manual de calca sobrevive al borrador (spec #278) ===
 // Es captura del vendedor, no catalogo -- la unica excepcion a "los precios no
-// reviven con el borrador" (CONTEXT.md "Borrador de cotizacion").
+// reviven con el borrador" (GLOSSARY.md "Borrador de cotizacion").
 const ENTRADA_CALCA_MANUAL = {
   codigo: 'CAL2050S',
   cantidad: 100,

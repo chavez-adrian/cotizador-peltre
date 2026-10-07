@@ -1,5 +1,5 @@
 // Nucleo puro de los dos estados del Cliente Operam (#344, spec #337, ADR-0016,
-// CONTEXT.md "Cliente Operam"): el fiscal sale del RFC, el comercial sale de lo
+// GLOSSARY.md "Cliente Operam"): el fiscal sale del RFC, el comercial sale de lo
 // que Operam registra -- nunca de una captura -- y el hueco conocido de los
 // quotes web no enumerables se DECLARA, no se adivina.
 import { test } from 'node:test';

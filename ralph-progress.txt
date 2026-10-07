@@ -527,7 +527,7 @@ Estado de ACs de #33 a esta altura:
   [ ] npm test completo en verde -- 300/300 SI, pendiente de re-confirmar en iter final
 Siguiente: ITER 4 -- revisar si falta algo del "what to build" punto 1: el issue sugiere (a) como
   ruta canonica y (b) como extension que la reutiliza -- AMBAS YA HECHAS. Posible foco iter 4-6:
-  polish final, verificar que no hay nada mas pendiente, revisar README/CONTEXT.md si documentan
+  polish final, verificar que no hay nada mas pendiente, revisar README/GLOSSARY.md si documentan
   rutas (probablemente no necesitan cambio), doble-check lib/parsear-csf.js intacto con git diff,
   y preparar cierre. Si todo esta cubierto ya en iter 3, las iteraciones 4-6 son polish/verificacion
   exhaustiva + posible ISSUE #33 LISTO PARA CIERRE en iter 6.
@@ -555,7 +555,7 @@ Estado de ACs de #33 (TODOS cumplidos a esta altura):
 Siguiente: ITER 5-6 -- son polish/verificacion exhaustiva. Posibles focos:
   - Re-leer issue #33 completo una vez mas buscando algun detalle perdido (p.ej. nombres exactos
     de campos en la respuesta, formato de mensajes de error)
-  - Verificar que CONTEXT.md / docs no necesiten actualizacion (probablemente CLAUDE.md ya cubre,
+  - Verificar que GLOSSARY.md / docs no necesiten actualizacion (probablemente CLAUDE.md ya cubre,
     pero revisar si hay un doc de rutas API que liste endpoints uno por uno)
   - Confirmar que git diff de lib/parsear-csf.js y test/parsear-csf.test.js sigue vacio (restriccion dura)
   - Si todo verificado y suite verde: iter 6 escribe "ISSUE #33 LISTO PARA CIERRE"
@@ -2297,7 +2297,7 @@ markdown, incluyendo progress Claude readme etc"):
      como acordeon "+ Nuevo cliente" autenticado, contador de tests 160/301 -> 231,
      tabla de rutas CSF marcada como "requieren JWT".
   2. CLAUDE.md -- contador de tests corregido 160 -> 231.
-  3. CONTEXT.md -- glosario de "Vendedor" actualizado: ya no menciona acceso a
+  3. GLOSSARY.md -- glosario de "Vendedor" actualizado: ya no menciona acceso a
      csf-upload.html, ahora describe el acordeon integrado.
   4. docs/adr/0003-unificacion-alta-cliente-en-cotizador.md -- Status anotado como
      "implementado y cerrado"; consecuencias actualizadas para reflejar el estado

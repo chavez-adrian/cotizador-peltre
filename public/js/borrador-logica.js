@@ -1,4 +1,4 @@
-// Nucleo puro del borrador de cotizacion (issue #179, spec #178; CONTEXT.md
+// Nucleo puro del borrador de cotizacion (issue #179, spec #178; GLOSSARY.md
 // "Borrador de cotizacion"). Sin efectos de navegador: aqui vive QUE se guarda,
 // COMO se lee y QUE se restaura; el localStorage, el DOM y el enganche del
 // autosave son pegamento en app.js.
@@ -10,7 +10,7 @@ import { escapeHtml } from './prospectos-logica.js';
 // vendedor sigue siendo una sola.
 export const VERSION_BORRADOR = 1;
 
-// Umbrales de la restauracion (CONTEXT.md "Borrador de cotizacion"): media hora
+// Umbrales de la restauracion (GLOSSARY.md "Borrador de cotizacion"): media hora
 // es la ventana en la que volver es obviamente la misma sesion de trabajo; 30
 // dias es mas que la vigencia de cualquier cotizacion, asi que despues no queda
 // nada que valga la pena resucitar.
@@ -43,7 +43,7 @@ function normalizarLinea(linea) {
   if (Number.isFinite(descuento) && descuento > 0) salida.descuento = descuento;
   const descripcion = typeof linea.descripcion === 'string' ? linea.descripcion.trim() : '';
   if (descripcion) salida.descripcion = descripcion;
-  // Precio manual de calca (#282, spec #278; CONTEXT.md "Precio manual de
+  // Precio manual de calca (#282, spec #278; GLOSSARY.md "Precio manual de
   // calca"): es captura del vendedor, no catalogo -- la UNICA excepcion a "los
   // precios no reviven con el borrador". Misma defensa que descuento: solo un
   // numero finito > 0 sobrevive.
@@ -191,7 +191,7 @@ export function resolverProductoDelCatalogo(codigo, catalogo, numeroDiseno = 1) 
 
 // El carrito del borrador contra el catalogo vigente. Los precios NO salen
 // del borrador: la intencion (que, cuanto, con que descuento y con que texto)
-// es del vendedor y el precio es del catalogo de hoy (CONTEXT.md "Borrador de
+// es del vendedor y el precio es del catalogo de hoy (GLOSSARY.md "Borrador de
 // cotizacion") -- salvo el precio manual de calca (#282), la UNICA excepcion:
 // es captura del vendedor, no catalogo, y viaja tal cual cuando existe. El
 // orden de captura se conserva, invalidas incluidas, para que el carrito
@@ -271,7 +271,7 @@ export function avisoPartidaSinCatalogo(codigos) {
     + 'Quitalas o vuelve a capturarlas: no se puede generar un documento con una partida sin precio.';
 }
 
-// === Prompt Continuar / Descartar (#181, CONTEXT.md "Borrador de cotizacion") ===
+// === Prompt Continuar / Descartar (#181, GLOSSARY.md "Borrador de cotizacion") ===
 // >30 minutos desde el ultimo autosave: en vez de restaurar en silencio, el
 // vendedor decide. Estas funciones arman lo que el prompt necesita mostrar;
 // el overlay y los botones son pegamento en app.js.

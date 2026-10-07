@@ -1,4 +1,4 @@
-// #482 (CONTEXT.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
+// #482 (GLOSSARY.md "Perdida", decision 2026-09-28 a sugerencia de Alejandro):
 // una Oportunidad que ya tiene pedido en Operam ya se cerro y no se puede perder.
 // "Tiene pedido" = etapa post-venta (Anticipo pagado o posterior) O el espejo de
 // Operam de la cotizacion ya trae pedido (aunque la etapa no se haya movido).

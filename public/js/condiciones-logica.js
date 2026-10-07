@@ -4,7 +4,7 @@
 // y el panel /admin.
 //
 // El plazo de la fabrica se llama "Tiempo de produccion" en el documento, para no
-// chocar con el Tiempo de entrega de la paqueteria (CONTEXT.md). Se deriva de las
+// chocar con el Tiempo de entrega de la paqueteria (GLOSSARY.md). Se deriva de las
 // PIEZAS DE PRODUCTO (las de calca no cuentan, como en la lista de precios) por
 // escalones "desde N piezas", y la cotizacion decorada usa su PROPIA tabla.
 

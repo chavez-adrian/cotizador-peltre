@@ -1,5 +1,5 @@
 'use strict';
-// #535 (CONTEXT.md "Producto decorado (calca)", grilling 2026-10-05): el tablero
+// #535 (GLOSSARY.md "Producto decorado (calca)", grilling 2026-10-05): el tablero
 // sigue a Operam y el checklist de calca es AVISO, no candado. Una decorada en
 // Pedido liberado o despues con el checklist incompleto muestra "Calca
 // incompleta" en la tarjeta y en la fila cerrada de la lista, y su plegable de

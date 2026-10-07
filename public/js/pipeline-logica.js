@@ -1,4 +1,4 @@
-// Logica pura del tablero unico del pipeline (issue #53, ADR-0005, CONTEXT.md
+// Logica pura del tablero unico del pipeline (issue #53, ADR-0005, GLOSSARY.md
 // "Tablero del pipeline"): un solo kanban de 7 columnas que reemplaza los dos
 // tableros separados del modelo previo (prospectos y cotizaciones). La unidad
 // que vive en cada tarjeta es la oportunidad: antes de cotizar es el prospecto
@@ -86,7 +86,7 @@ export function modoInicialPipeline(ancho, guardado) {
   return ancho < ANCHO_ESCRITORIO_PIPELINE ? 'lista' : 'tablero';
 }
 
-// Estado PRE / folio Operam (issue #63, CONTEXT.md "Pre-cotizacion"): la
+// Estado PRE / folio Operam (issue #63, GLOSSARY.md "Pre-cotizacion"): la
 // ausencia del folio define el estado "PRE"; con folio la cotizacion muestra
 // "Cotizacion N". Reexpresion browser-safe de lib/pipeline.etiquetaFolioOperam
 // (este modulo no importa de lib/, mismo criterio que el resto del vocabulario).
@@ -351,7 +351,7 @@ export function buildCandidatosAltaHtml(candidatos, mensaje, detalle, opciones) 
     otroDomicilio: dictada('otroDomicilio') ? { texto: 'Es otro domicilio de este Cliente Operam', onclick: (c, i) => `altaPreguntaOtroDomicilio(${i})` } : null,
     ninguno: (porCandidato === null || opciones?.ninguno) ? { texto: 'Ninguno es el mismo', onclick: () => 'altaPreguntaNinguno()' } : null,
   });
-  // Mensaje en dos capas (CONTEXT.md): de que pool salieron estos candidatos se
+  // Mensaje en dos capas (GLOSSARY.md): de que pool salieron estos candidatos se
   // muestra PLEGADO, igual que el detalle de cada paso del alta.
   if (!detalle) return pregunta;
   return `${pregunta}<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(detalle)}</div></details>`;
@@ -562,7 +562,7 @@ export const ACCIONES_NUEVO = [
 ];
 
 // Captura de expo (issue #267): el "+" es su UNICA entrada, y solo con evento
-// activo (CONTEXT.md "Captura de expo"). Va primero porque en expo es LA accion
+// activo (GLOSSARY.md "Captura de expo"). Va primero porque en expo es LA accion
 // del vendedor; fuera de expo el menu queda exactamente como siempre.
 const ACCION_NUEVO_EXPO = { label: 'Nuevo prospecto expo', accion: 'nuevoProspectoExpo' };
 
@@ -816,7 +816,7 @@ export function badgeFolioOperamHtml(cot) {
 }
 
 // Badge de folio de un PROSPECTO movido a mano a Seguimiento (issue #56, AC3,
-// CONTEXT.md "Etapas del pipeline"): el vendedor cotizo POR FUERA, asi que no hay
+// GLOSSARY.md "Etapas del pipeline"): el vendedor cotizo POR FUERA, asi que no hay
 // cotizacion en el sistema y el folio vive en el prospecto (data.folioOperam,
 // mapeado a o.folioOperam por prospectoAOportunidad). Muestra "Cotizacion N" SOLO si
 // hay folio; jamas "PRE" (PRE es un concepto de cotizacion, no de prospecto). Sin
@@ -876,7 +876,7 @@ export function badgePagoSinRegistrarHtml(o) {
   return '<span class="cot-badge badge-impago">Pago sin registrar</span>';
 }
 
-// Badge "Falta comprobante" (#485, CONTEXT.md "Comprobante de pago"): la tarjeta
+// Badge "Falta comprobante" (#485, GLOSSARY.md "Comprobante de pago"): la tarjeta
 // ya paso de Seguimiento sin el comprobante del primer pago. Aviso, no candado:
 // la etapa la sigue moviendo Operam. Convive con "Pago sin registrar" (#77).
 // #486: el del saldo lleva su propio badge, solo en una venta con anticipo.
@@ -957,7 +957,7 @@ export function badgeClienteOperamHtml(o) {
   return badges + pedido;
 }
 
-// Asignar vendedor desde la tarjeta (issue #57, CONTEXT.md "Etapas del pipeline"
+// Asignar vendedor desde la tarjeta (issue #57, GLOSSARY.md "Etapas del pipeline"
 // + "Visibilidad"): la PRIMERA accion de tarjeta del tablero, que hasta ahora era
 // solo-lectura (#53). Solo aplica a una oportunidad en No Asignado (la unica que
 // no tiene dueno). La regla de dominio simetrica vive en lib/pipeline
@@ -966,7 +966,7 @@ export function esAsignable(o) {
   return !!o && o.etapa === 'no_asignado';
 }
 
-// Permiso de asignacion (#156, spec #155, CONTEXT.md "Visibilidad"): ver la
+// Permiso de asignacion (#156, spec #155, GLOSSARY.md "Visibilidad"): ver la
 // columna No Asignado y asignarle dueno a esas tarjetas. El admin lo tiene
 // siempre; un vendedor lo puede tener por checkbox en /admin (el gerente
 // comercial -- el sistema NO modela un rol gerente, decision explicita). Mismo
@@ -985,7 +985,7 @@ export function puedeAsignar(vendedor) {
 // Control de asignacion sobre la tarjeta No Asignado: un selector con los
 // vendedores del catalogo (GET /api/catalogos) + un boton que dispara
 // asignarVendedorTablero(id, this) en app.js (PATCH /api/prospectos/:id/asignar).
-// Solo lo ve quien tiene el permiso de asignacion (CONTEXT.md "Visibilidad"); quien
+// Solo lo ve quien tiene el permiso de asignacion (GLOSSARY.md "Visibilidad"); quien
 // no lo tiene ni siquiera recibe tarjetas No Asignado del servidor. Puede asignar a
 // CUALQUIER vendedor del catalogo, no solo a si mismo. Sin vendedores en el
 // catalogo no se pinta. Funcion pura: el cableado DOM vive en app.js.
@@ -1030,7 +1030,7 @@ export function buildMoverSeguimientoControlHtml(o) {
 }
 
 // Controles de salida del embudo en la tarjeta del tablero (issue #59, Modelo A,
-// CONTEXT.md "Etapas del pipeline"). Solo sobre oportunidades en etapa ACTIVA (las
+// GLOSSARY.md "Etapas del pipeline"). Solo sobre oportunidades en etapa ACTIVA (las
 // que ya salieron no se vuelven a cerrar). Para un PROSPECTO sin cotizar: salida a
 // No util con motivo obligatorio del catalogo (select) -- cancelar el select no
 // llama al servidor (AC4) -- mas Perdida con confirmacion. Para una COTIZACION:
@@ -1113,7 +1113,7 @@ export function buildMotivoSalidaModalHtml({ titulo, catalogo }) {
 }
 
 // Control de producto decorado / calca en la tarjeta de cotizacion (issue #61,
-// CONTEXT.md "Producto decorado (calca)"). Solo aplica a COTIZACIONES (un
+// GLOSSARY.md "Producto decorado (calca)"). Solo aplica a COTIZACIONES (un
 // prospecto sin cotizar no lleva calca). Una cotizacion no decorada ofrece
 // marcarla; una decorada pinta la calca PLEGADA (#532) con su avance en el
 // resumen (p. ej. 3/6). Lo que el vendedor abrio o cerro (plegables, por
@@ -1471,7 +1471,7 @@ export function buildListaPipelineHtml(oportunidades, contexto = {}) {
     </div>`;
 }
 
-// Cola Hoy fusionada (issue #64, CONTEXT.md "Cola Hoy"): la cola del dia mezcla
+// Cola Hoy fusionada (issue #64, GLOSSARY.md "Cola Hoy"): la cola del dia mezcla
 // prospectos por contactar (horas habiles) y cotizaciones por seguir (dias
 // naturales). El backend (lib/cola-hoy.js -> GET /api/hoy) ya la fusiona y
 // ordena por urgencia relativa al umbral de cada tipo, etiquetando cada item con
@@ -1562,7 +1562,7 @@ export function buildColaCotizacionItemHtml(item) {
 // L-V completa (8 h, el umbral rojo de correo y formulario), se lee en dias
 // habiles + horas. El dia habil es la jornada de 8 h: el sabado corto (4 h)
 // cuenta como media jornada, aproximacion aceptada; nunca dias naturales, que son
-// el reloj de la cotizacion (CONTEXT.md "Horas habiles").
+// el reloj de la cotizacion (GLOSSARY.md "Horas habiles").
 const HORAS_JORNADA = 8;
 
 function esperaSinAsignarTexto(horas) {
@@ -1574,7 +1574,7 @@ function esperaSinAsignarTexto(horas) {
   return resto ? `${textoDias} y ${resto} h` : textoDias;
 }
 
-// Item de tarjeta No Asignado en la cola Hoy (#156, spec #155, CONTEXT.md "Cola
+// Item de tarjeta No Asignado en la cola Hoy (#156, spec #155, GLOSSARY.md "Cola
 // Hoy"): un lead sin dueno es un pendiente del dia. Solo llega a quien tiene el
 // permiso de asignacion (lo filtra GET /api/hoy), y su unico pendiente es
 // asignarle vendedor: reusa el MISMO control de la tarjeta del tablero
@@ -1609,7 +1609,7 @@ export function buildColaHoyHtml(cola, { vendedores, puedeAsignar: tienePermiso 
   }).join('');
 }
 
-// Filtro/historial de cerradas (issue #59, AC3, CONTEXT.md "Etapas del pipeline":
+// Filtro/historial de cerradas (issue #59, AC3, GLOSSARY.md "Etapas del pipeline":
 // las salidas viven en filtro/historial, fuera del tablero activo). Lista las
 // oportunidades en salida (No util / Perdida / Cancelada) mostrando su nombre,
 // el tipo de cierre y su motivo (para No util, el del catalogo: o.motivoNoUtil,
@@ -1651,7 +1651,7 @@ export function buildCerradasHtml(oportunidades) {
   }).join('');
 }
 
-// --- Filtro por evento (issue #261, CONTEXT.md "Evento") ---
+// --- Filtro por evento (issue #261, GLOSSARY.md "Evento") ---
 // Despues de la expo el director pregunta cuantos prospectos dejo Abastur y en
 // que etapa quedaron: el evento viaja en la oportunidad del PROSPECTO, que sigue
 // en el tablero despues de cotizar (su etapa avanza a Seguimiento), y el

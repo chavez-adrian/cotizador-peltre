@@ -1,4 +1,4 @@
-// Nucleo puro del borrador de formulario (issue #183, spec #178; CONTEXT.md
+// Nucleo puro del borrador de formulario (issue #183, spec #178; GLOSSARY.md
 // "Borrador de formulario"). Sin efectos de navegador: aqui vive la llave por
 // formulario y vendedor, la serializacion versionada de los campos, la
 // expiracion y el ciclo de vida. El localStorage, el DOM y el enganche de los

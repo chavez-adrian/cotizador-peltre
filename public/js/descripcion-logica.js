@@ -2,7 +2,7 @@
 // pantalla (frena la captura del vendedor), el builder de items del documento y el
 // servidor (rechaza la cotizacion cuyo texto no cabe en Operam).
 //
-// Glosario (CONTEXT.md, "Descripcion de partida"): el texto que describe la partida
+// Glosario (GLOSSARY.md, "Descripcion de partida"): el texto que describe la partida
 // en el documento del cliente y en el quote del ERP. Precargado con el del catalogo;
 // el vendedor puede reescribirlo para hablarle al cliente en sus terminos.
 

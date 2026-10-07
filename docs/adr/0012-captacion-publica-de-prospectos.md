@@ -1,7 +1,7 @@
 # ADR-0012: Captación pública de prospectos (formulario de mayoreo)
 
 - **Estado:** Aprobado (2026-08-15). Decisión de Adrián.
-- **Antecedentes:** #57 (alta de prospecto sin vendedor, `POST /api/prospectos/sin-asignar`, que dejó la exposición pública como decisión posterior — este ADR es esa decisión), ADR-0004 (CRM mínimo de prospectos), #153 (permiso por checkbox de vendedor, patrón que reusa el permiso de asignación), CONTEXT.md §"Captura pública (formulario de mayoreo)".
+- **Antecedentes:** #57 (alta de prospecto sin vendedor, `POST /api/prospectos/sin-asignar`, que dejó la exposición pública como decisión posterior — este ADR es esa decisión), ADR-0004 (CRM mínimo de prospectos), #153 (permiso por checkbox de vendedor, patrón que reusa el permiso de asignación), GLOSSARY.md §"Captura pública (formulario de mayoreo)".
 - **Investigación de soporte:** `docs/research/formulario-mayoreo-captura.md` (2026-08-15).
 
 ## Contexto

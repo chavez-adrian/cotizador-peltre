@@ -1163,7 +1163,7 @@ export function mensajeBusquedaCelular(clasificacion) {
 // Toda la logica decisional del rediseno del paso Cliente vive aqui (el render de
 // app.js es tonto): mezcla de busqueda Operam+prospectos, derivacion de recientes,
 // estado de chips (tri-estado de Entrega, #84), payload del contacto nuevo y
-// guardrails del celular. Ver CONTEXT.md.
+// guardrails del celular. Ver GLOSSARY.md.
 
 const RFC_GENERICOS_BROWSER = new Set(['XAXX010101000', 'XEXX010101000']);
 
@@ -1551,7 +1551,7 @@ export function contactoAccionable(cliente) {
 }
 
 // Decide que hacer cuando, en el camino "Contacto nuevo", se clasifica el celular
-// (GET /api/prospectos/clasificar) al blur (AC3/AC4, #69, CONTEXT.md "Visibilidad"):
+// (GET /api/prospectos/clasificar) al blur (AC3/AC4, #69, GLOSSARY.md "Visibilidad"):
 //  - cliente Operam  -> cotizar sobre ese cliente (se busca por nombre en Operam).
 //  - prospecto propio -> usar ese prospecto (no se duplica; 1 celular = 1 prospecto).
 //  - prospecto ajeno  -> bloquear la captura indicando quien lo atiende.
@@ -2168,7 +2168,7 @@ function preguntaDeDuplicado(d) {
 // Sin cuerpo dictado devuelve null: no se inventa una decision.
 const LLAVE_OPCION_CANDIDATO = { usar: 'usar', 'otro-domicilio': 'otroDomicilio' };
 
-// LAS salidas de la Deduplicacion de cliente (CONTEXT.md), en el orden en que se
+// LAS salidas de la Deduplicacion de cliente (GLOSSARY.md), en el orden en que se
 // pintan, en UN solo lugar: las decide el modulo del alta (`lib/alta-cliente.js`
 // las cross-importa) y las pinta el navegador (`pipeline-logica.js`), y con una
 // copia en cada lado la lista podria divergir sin que nada avisara. CUALES se

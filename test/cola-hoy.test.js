@@ -108,7 +108,7 @@ test('H7: el prospecto expone su accion (registrar contacto: id y celular)', () 
 
 // === Issue #156 (spec #155): la cola Hoy adopta las tarjetas No Asignado ===
 // Un lead sin dueno es un pendiente del dia, no un detalle del tablero
-// (CONTEXT.md "Cola Hoy"). QUIEN las ve (admin o vendedor con permiso de
+// (GLOSSARY.md "Cola Hoy"). QUIEN las ve (admin o vendedor con permiso de
 // asignacion) lo decide la ruta; el nucleo solo las incorpora si llegan.
 function sinDueno(extra = {}) {
   return prospecto({ vendedor: null, etapa: 'no_asignado', canal: 'Formulario web', ...extra });

@@ -174,7 +174,7 @@ test('#156: el vendedor SIN permiso no ve tarjetas No Asignado en la cola Hoy', 
   assert.equal(gerente.body.some(i => i.tipo === 'no_asignado'), false);
 });
 
-// === Issue #262 (spec #260, CONTEXT.md "Siguiente contacto") ===
+// === Issue #262 (spec #260, GLOSSARY.md "Siguiente contacto") ===
 // El compromiso de contacto con el prospecto manda sobre la cola del dia:
 // mientras la fecha es futura la tarjeta no aparece (el jueves de una expo la
 // cola no es una pared roja); llegada la fecha vuelve con la instruccion.
