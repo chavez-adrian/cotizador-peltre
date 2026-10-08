@@ -391,12 +391,14 @@ body {
 
 .historial-fechas label {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-light);
 }
 
 .historial-fechas input[type="date"] {
   display: block;
+  min-width: 0;
   margin-top: 2px;
 }
 

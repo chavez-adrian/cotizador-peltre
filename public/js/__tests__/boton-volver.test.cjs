@@ -30,8 +30,8 @@ function cuerpoDeFuncionApp(nombre) {
 function reglaCss(selector) {
   const limpio = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const esc = selector.replace(/[.*+?^${}()|[\]\\:]/g, '\\$&');
-  const m = limpio.match(new RegExp('(?:^|[}\\s])' + esc + '\\s*\\{([^}]*)\\}', 'm'));
-  return m ? m[1].replace(/\s+/g, ' ') : null;
+  const bloques = [...limpio.matchAll(new RegExp('(?:^|[}\\s])' + esc + '\\s*\\{([^}]*)\\}', 'gm'))];
+  return bloques.length ? bloques.map(m => m[1]).join(';').replace(/\s+/g, ' ') : null;
 }
 
 test('V1: el helper arma la pastilla del paso con flecha SVG, texto y onclick', () => {
@@ -101,4 +101,12 @@ test('V7: pastilla de 30 px con area tactil de 44 y barra que no crece', () => {
   assert.ok((reglaCss('.historial-header.con-volver') || '').includes('padding: 9px 16px 9px 10px'), '9 + 30 + 9 = 48 px');
   assert.ok((reglaCss('.volver-barra') || '').includes('background: rgba(255,255,255,0.15)'));
   assert.ok((reglaCss('.volver-paso') || '').includes('background: var(--white)'));
+});
+
+test('V8: a 320 px los filtros Desde/Hasta se encogen en vez de desbordar la vista (#200)', () => {
+  // El verificador en produccion (2026-10-08) midio Hoy, Prospectos, Rescatados e
+  // Historial en 334-338 px a 320: el label es flex:1 pero sin min-width:0, asi
+  // que el input de fecha no bajaba de su ancho natural (~155 px).
+  assert.ok((reglaCss('.historial-fechas label') || '').includes('min-width: 0'));
+  assert.ok((reglaCss('.historial-fechas input[type="date"]') || '').includes('min-width: 0'));
 });
