@@ -180,6 +180,16 @@ test('#544: el caso limpiarDedup vacia y oculta el bloque de la dedup y no toca 
     'la lectura aplica su transicion, que devuelve limpiarDedup');
 });
 
+// Cerrar la actualizacion vacia su superficie (#546): QUE transicion lo pide y cuando es
+// del modulo (modo-alta-logica.test.cjs MP6); aqui el caso del ejecutor, por el UNICO
+// camino de vaciado y sin tocar el borrador.
+test('#546: el caso vaciarSuperficie vacia la superficie de la accion con vaciarCamposSuperficie y no toca su borrador', () => {
+  const caso = casoDelEjecutor(fuenteApp(), 'vaciarSuperficie');
+  assert.ok(caso.includes('vaciarCamposSuperficie(accion.formId)'), 'vacia la superficie que nombra la accion');
+  assert.ok(!caso.includes('matarBorradorFormulario') && !caso.includes('cerrarFormularioBorrador'),
+    'vaciar no toca el borrador');
+});
+
 // --- La constancia en memoria al abrir el alta (#491) ------------------------
 // altaCsfState es UNO para el alta y el upgrade fiscal (el panel es el mismo nodo,
 // #376). Tras un upgrade con constancia, "+ > Nuevo Cliente Operam" en la misma

@@ -8557,6 +8557,11 @@ function ejecutarAccionAlta(accion) {
     case 'cerrarBorrador':
       cerrarFormularioBorrador(accion.formId, null);
       return;
+    // Cerrar la actualizacion vacia su superficie (#546). Sin eventos `input`, asi que su
+    // borrador no se reescribe vacio.
+    case 'vaciarSuperficie':
+      vaciarCamposSuperficie(accion.formId);
+      return;
     // "Dar de alta" existe solo en modo alta (#376): el boton vive en el mismo panel
     // que el upgrade fiscal.
     case 'botonDarDeAlta': {

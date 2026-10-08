@@ -33,6 +33,7 @@ import { constanciaAlAbrirAlta, sinConstancia, estadoTrasErrorLectura, lecturaVi
 // Los tipos que entiende el ejecutor de app.js. Un tipo fuera de esta lista lo hace lanzar.
 // - recogerPanel: oculta #panel-alta-cliente y lo devuelve a su casa (#412, #489).
 // - cerrarBorrador { formId }: deja de autoguardar esa superficie sin matar su borrador (#185).
+// - vaciarSuperficie { formId }: campos de esa superficie a su valor por defecto, sin tocar su borrador (#546).
 // - botonDarDeAlta { habilitado }: "Dar de alta" existe solo en modo alta (#376).
 // - banner { cliente }: { id, nombre, rfc } lo muestra; null lo vacia y lo oculta (#94).
 // - candarSecciones: Secciones 3 y 4 a su candado y la 3 a modo captura (#376, #371).
@@ -40,7 +41,7 @@ import { constanciaAlAbrirAlta, sinConstancia, estadoTrasErrorLectura, lecturaVi
 // - limpiarDedup: vacia y oculta #alta-dedup-resultado (#544); NO toca
 //   #alta-celular-candidatos, que es de la Seccion 2 y no depende de la constancia.
 export const ACCIONES_MODO = Object.freeze([
-  'recogerPanel', 'cerrarBorrador', 'botonDarDeAlta', 'banner', 'candarSecciones', 'limpiarProgreso',
+  'recogerPanel', 'cerrarBorrador', 'vaciarSuperficie', 'botonDarDeAlta', 'banner', 'candarSecciones', 'limpiarProgreso',
   'limpiarDedup',
 ]);
 
@@ -165,11 +166,20 @@ export function alCrearNuevoCandidato(m) {
 
 // Recoger el panel (antes devolverPanelACasa; cinco llamadores): el modo vuelve a alta y
 // suelta la precarga (#542). El borrador del upgrade se nombra con el id del estado
-// ANTERIOR y solo si habia actualizacion; el del alta se cierra siempre.
+// ANTERIOR y solo si habia actualizacion; el del alta se cierra siempre. La actualizacion
+// que abrio pcAbrirUpgradeFiscal (precarga objeto, o null si fallo) ademas vacia su
+// superficie antes de cerrarla (#546, el orden de cerrarSuperficiesBorradorAbiertas): lo
+// tecleado para ese cliente se quedaba en la Seccion 1 del alta. El candidato de
+// "Actualizar este" (precarga undefined, la marca de #544) no vacia: esa Seccion 1 es la
+// del alta a medias, que conserva su avance (#185, #491).
 export function alCerrarPanel(m) {
   const estado = { ...m, clienteId: null, origen: null, comercialPrecargado: undefined };
   const acciones = [{ tipo: 'recogerPanel' }, { tipo: 'cerrarBorrador', formId: 'alta-completa' }];
-  if (m.clienteId != null) acciones.push({ tipo: 'cerrarBorrador', formId: `upgrade-fiscal-${m.clienteId}` });
+  if (m.clienteId != null) {
+    const formId = `upgrade-fiscal-${m.clienteId}`;
+    if (m.comercialPrecargado !== undefined) acciones.push({ tipo: 'vaciarSuperficie', formId });
+    acciones.push({ tipo: 'cerrarBorrador', formId });
+  }
   acciones.push(boton(estado), { tipo: 'banner', cliente: null });
   return { estado, acciones };
 }

@@ -470,22 +470,43 @@ test('MP5: el banner tolera abrir la actualizacion sin nombre ni RFC', () => {
 });
 
 // Sustituta de #489-3 (comportamiento): cerrar recoge el panel, los borradores, el boton y el banner.
-test('MP6: cerrar recoge el panel y cierra el borrador del upgrade solo si habia actualizacion', () => {
+// #546: la actualizacion abierta por pcAbrirUpgradeFiscal (precarga objeto, o null si
+// fallo) vacia su superficie ANTES de cerrar su borrador (el orden de
+// cerrarSuperficiesBorradorAbiertas): lo tecleado para el cliente B no se queda en la
+// Seccion 1 del alta. El alta y el candidato de "Actualizar este" (precarga undefined)
+// no se vacian: esa Seccion 1 es la del alta a medias (#185, #491).
+test('MP6: cerrar recoge el panel y vacia y cierra la superficie del upgrade solo si la actualizacion estaba abierta', () => {
   assert.deepStrictEqual(M.alCerrarPanel(EN_ACTUALIZACION).acciones, [
     { tipo: 'recogerPanel' },
     { tipo: 'cerrarBorrador', formId: 'alta-completa' },
+    { tipo: 'vaciarSuperficie', formId: 'upgrade-fiscal-15' },
     { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-15' },
     BOTON_ON,
     BANNER_FUERA,
   ]);
-  assert.deepStrictEqual(M.alCerrarPanel(MODO_ALTA_INICIAL).acciones, [
+  const deAlta = M.alCerrarPanel(MODO_ALTA_INICIAL).acciones;
+  assert.deepStrictEqual(deAlta, [
     { tipo: 'recogerPanel' },
     { tipo: 'cerrarBorrador', formId: 'alta-completa' },
     BOTON_ON,
     BANNER_FUERA,
   ]);
-  assert.deepStrictEqual(M.alCerrarPanel({ ...MODO_ALTA_INICIAL, clienteId: 0 }).acciones[2],
-    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-0' }, 'el 0 sigue siendo id');
+  const precargaFallida = M.alCerrarPanel({ ...MODO_ALTA_INICIAL, clienteId: 7, comercialPrecargado: null }).acciones;
+  const vaciar = precargaFallida.findIndex(a => a.tipo === 'vaciarSuperficie' && a.formId === 'upgrade-fiscal-7');
+  const cerrar = precargaFallida.findIndex(a => a.tipo === 'cerrarBorrador' && a.formId === 'upgrade-fiscal-7');
+  assert.ok(vaciar >= 0 && vaciar < cerrar, 'con la precarga fallida tambien se vacia, antes de cerrar ese borrador');
+  assert.deepStrictEqual(M.alCerrarPanel({ ...MODO_ALTA_INICIAL, clienteId: 0, comercialPrecargado: null }).acciones.slice(2, 4), [
+    { tipo: 'vaciarSuperficie', formId: 'upgrade-fiscal-0' },
+    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-0' },
+  ], 'el 0 sigue siendo id');
+  const candidato = M.alCerrarPanel(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77).estado).acciones;
+  assert.deepStrictEqual(candidato, [
+    { tipo: 'recogerPanel' },
+    { tipo: 'cerrarBorrador', formId: 'alta-completa' },
+    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-77' },
+    BOTON_ON,
+    BANNER_FUERA,
+  ], 'el candidato de "Actualizar este" no vacia la Seccion 1 del alta a medias');
 });
 
 test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende (asimetrias 3 y 5)', () => {
