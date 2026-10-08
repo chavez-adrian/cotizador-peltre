@@ -1065,6 +1065,64 @@ test('el segmento elegido se escribe aunque el Cliente Operam ya tuviera otro, y
   assert.match(auditoria[6], /5 -> 3/);
 });
 
+// #548: "Actualizar este" (#78) entra al upgrade con la Seccion 2 sin confirmar.
+// En produccion el vacio nunca llega a Operam (sinCamposCoercionables), asi que
+// el eco no lo trae: ignoraCliente reproduce eso sobre el adaptador en memoria.
+test('el segmento vacio no viaja en el PUT ni se reporta como no guardado: se conserva el que tenia', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales({ segmento: { id: '9' } })],
+    ignoraCliente: ['segmento_id'],
+  });
+  const res = await upgradeFiscal(500, { ...CSF, segmentoId: '' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal('segmento_id' in operam.pedidos('actualizarClienteDirecto')[0].args[1], false);
+  assert.equal(paso(res, 'segmento').status, 'omitido');
+  assert.equal(paso(res, 'verificar fiscal').status, 'ok');
+  assert.equal(res.camposNoAplicados.find(c => c.campo === 'segmento_id'), undefined);
+  assert.deepEqual(res.segmento, { anterior: '9', actual: '9' });
+});
+
+test('la lista de precios vacia no viaja en el PUT: el Cliente Operam conserva la suya y el paso lo dice', async () => {
+  const operam = operamEnMemoria({
+    clientes: [sinDatosFiscales({ sales_type: 15 })],
+    ignoraCliente: ['sales_type'],
+  });
+  const res = await upgradeFiscal(500, { ...CSF, salesType: '' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal('sales_type' in operam.pedidos('actualizarClienteDirecto')[0].args[1], false);
+  assert.equal(operam.cliente(500).sales_type, 15);
+  const pasoLista = paso(res, 'lista de precios');
+  assert.equal(pasoLista.status, 'omitido');
+  assert.match(pasoLista.mensaje, /se conserva/);
+  assert.match(pasoLista.detalle, /15/);
+  assert.equal(paso(res, 'verificar fiscal').status, 'ok');
+  assert.deepEqual(res.camposNoAplicados, []);
+});
+
+test('el email de facturacion vacio no viaja en el PUT y sale como paso omitido', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales()] });
+  const res = await upgradeFiscal(500, { ...CSF, invoiceEmail: '' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal('invoice_email' in operam.pedidos('actualizarClienteDirecto')[0].args[1], false);
+  assert.equal(paso(res, 'email de facturacion').status, 'omitido');
+  assert.equal(paso(res, 'verificar fiscal').status, 'ok');
+});
+
+test('con la configuracion comercial capturada no sale ningun paso de campo comercial omitido', async () => {
+  const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ sales_type: 12 })] });
+  const res = await upgradeFiscal(500, { ...CSF, salesType: '15', invoiceEmail: 'fact@hotelazul.mx' }, operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const cuerpo = operam.pedidos('actualizarClienteDirecto')[0].args[1];
+  assert.equal(cuerpo.sales_type, '15');
+  assert.equal(cuerpo.invoice_email, 'fact@hotelazul.mx');
+  assert.equal(paso(res, 'lista de precios'), undefined);
+  assert.equal(paso(res, 'email de facturacion'), undefined);
+});
+
 // #360: el nombre corto es el nombre comercial del cliente, no su razon social.
 test('el upgrade fiscal no toca el nombre corto propio del Cliente Operam', async () => {
   const operam = operamEnMemoria({ clientes: [sinDatosFiscales({ cust_ref: 'Azulito' })] });
