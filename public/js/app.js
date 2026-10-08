@@ -80,6 +80,7 @@ import {
   alActualizarCandidato,
   alCrearNuevoCandidato,
   alCerrarPanel,
+  alCancelarActualizacion,
   aperturaDelAlta,
   alReiniciarAlta,
   alEmpezarLectura,
@@ -6243,8 +6244,10 @@ window.cvRenderTarjeta = cvRenderTarjeta;
 // sale del panel, asi que se recoge (apaga el modo de actualizacion) antes de repintar. No vive en
 // cvRenderTarjeta porque el exito del upgrade la repinta y DESPUES inserta su reporte
 // junto al panel (#407): devolverlo a casa ahi mandaria el reporte al paso Cliente.
+// Salir a proposito CANCELA la actualizacion (#545): su borrador muere y al reabrir no
+// sale el aviso de "quedo a medias", que queda para las salidas involuntarias.
 function cvVolverATarjeta() {
-  aplicarModoAlta(alCerrarPanel);
+  aplicarModoAlta(alCancelarActualizacion);
   cvRenderTarjeta();
 }
 window.cvVolverATarjeta = cvVolverATarjeta;
@@ -8599,10 +8602,11 @@ function ejecutarAccionAlta(accion) {
       else parent.appendChild(panel);
       return;
     }
-    // Recoger el panel no es un cancelar explicito (#185): el borrador sobrevive,
-    // mismo patron que plegar la captura de prospecto.
+    // Recoger el panel no es un cancelar explicito (#185): sin evento el borrador
+    // sobrevive, mismo patron que plegar la captura de prospecto. "Volver al cliente" /
+    // "Volver al Contacto" si cancelan la actualizacion y mandan 'cancelado' (#545).
     case 'cerrarBorrador':
-      cerrarFormularioBorrador(accion.formId, null);
+      cerrarFormularioBorrador(accion.formId, accion.evento === 'cancelado' ? EVENTOS_BORRADOR_FORM.CANCELADO : null);
       return;
     // Cerrar la actualizacion vacia su superficie (#546). Sin eventos `input`, asi que su
     // borrador no se reescribe vacio.

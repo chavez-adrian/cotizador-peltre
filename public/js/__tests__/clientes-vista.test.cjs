@@ -651,19 +651,32 @@ test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al
 // ANTERIOR. app.js no se importa en Node: el ancla es la etiqueta del boton, no el
 // nombre del handler, para que renombrarlo no deje el test cuidando nada. Desde #541
 // recoger es aplicar alCerrarPanel; que hace esa transicion lo cuida el modulo
-// (modo-alta-logica.test.cjs MP6) y aqui queda el cableado.
-const SALIDAS_DEL_CLIENTE = ['Cambiar de cliente', 'Volver al cliente', 'Volver al Contacto', 'Buscar otro'];
+// (modo-alta-logica.test.cjs MP6) y aqui queda el cableado. Desde #545 "Volver al
+// cliente" y "Volver al Contacto" CANCELAN la actualizacion (alCancelarActualizacion,
+// MP14: recoge igual y ademas mata su borrador); las otras dos siguen siendo cerrar.
+const SALIDAS_QUE_CIERRAN = ['Cambiar de cliente', 'Buscar otro'];
+const SALIDAS_QUE_CANCELAN = ['Volver al cliente', 'Volver al Contacto'];
 
-test('#489-1: cada boton que saca al vendedor del cliente recoge el panel con alCerrarPanel', () => {
+test('#489-1: cada boton que saca al vendedor del cliente recoge el panel; volver a la ficha cancela la actualizacion (#545)', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
-  for (const etiqueta of SALIDAS_DEL_CLIENTE) {
+  const handler = etiqueta => {
     const m = src.match(new RegExp(`onclick="(\\w+)\\(\\)">&lsaquo; ${etiqueta}<`));
     assert.ok(m, `el boton "${etiqueta}" debe seguir existiendo: si no, este test ya no cuida nada`);
-    const cuerpo = cuerpoDeFuncionApp(`function ${m[1]}(`);
+    return { nombre: m[1], cuerpo: cuerpoDeFuncionApp(`function ${m[1]}(`) };
+  };
+  for (const etiqueta of SALIDAS_QUE_CIERRAN) {
+    const { nombre, cuerpo } = handler(etiqueta);
     assert.ok(cuerpo.includes('aplicarModoAlta(alCerrarPanel)'),
-      `"${etiqueta}" (${m[1]}) tiene que recoger el panel del alta/upgrade (#489)`);
+      `"${etiqueta}" (${nombre}) tiene que recoger el panel del alta/upgrade (#489)`);
+    assert.ok(!cuerpo.includes('alCancelarActualizacion'), `"${etiqueta}" (${nombre}) cierra, no cancela (#545)`);
+  }
+  for (const etiqueta of SALIDAS_QUE_CANCELAN) {
+    const { nombre, cuerpo } = handler(etiqueta);
+    assert.ok(cuerpo.includes('aplicarModoAlta(alCancelarActualizacion)'),
+      `"${etiqueta}" (${nombre}) cancela la actualizacion: recoge el panel y mata su borrador (#545)`);
+    assert.ok(!cuerpo.includes('alCerrarPanel'), `"${etiqueta}" (${nombre}) no puede solo cerrar: el aviso de #545 volveria`);
   }
 });
 

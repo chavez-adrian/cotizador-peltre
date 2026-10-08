@@ -160,6 +160,7 @@ test('MA9: ninguna transicion muta el estado recibido', () => {
     alActualizarCandidato(recibido, 77),
     alCrearNuevoCandidato(recibido),
     alCerrarPanel(recibido),
+    M.alCancelarActualizacion(recibido).estado,
     alReiniciarAlta(recibido),
     alEmpezarLectura(recibido),
     alLeerConstancia(recibido, 3, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'JVBERi0xLjQK' }),
@@ -521,6 +522,24 @@ test('MP6: cerrar recoge el panel y vacia y cierra la superficie del upgrade sol
   ], 'el candidato de "Actualizar este" no vacia la Seccion 1 del alta a medias');
 });
 
+// #545: "Volver al cliente" y "Volver al Contacto" CANCELAN la actualizacion. Su borrador
+// nunca prellena (#352), solo avisa que quedo a medias: salir a proposito lo mata. El del
+// alta nunca se cancela por esta via; sin actualizacion abierta es cerrar el panel.
+test('MP14: cancelar la actualizacion mata su borrador y cierra el del alta sin matarlo', () => {
+  assert.deepStrictEqual(M.alCancelarActualizacion({ ...MODO_ALTA_INICIAL, clienteId: 7, comercialPrecargado: null }).acciones, [
+    { tipo: 'recogerPanel' },
+    { tipo: 'cerrarBorrador', formId: 'alta-completa' },
+    { tipo: 'vaciarSuperficie', formId: 'upgrade-fiscal-7' },
+    { tipo: 'cerrarBorrador', formId: 'upgrade-fiscal-7', evento: 'cancelado' },
+    BOTON_ON,
+    BANNER_FUERA,
+  ]);
+  assert.deepStrictEqual(M.alCancelarActualizacion(EN_ACTUALIZACION).estado, M.alCerrarPanel(EN_ACTUALIZACION).estado,
+    'cancelar deja el mismo estado que cerrar');
+  assert.deepStrictEqual(M.alCancelarActualizacion(MODO_ALTA_INICIAL), M.alCerrarPanel(MODO_ALTA_INICIAL),
+    'sin actualizacion abierta, cancelar es cerrar el panel');
+});
+
 test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende (asimetrias 3 y 5)', () => {
   assert.deepStrictEqual(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77).acciones, [BOTON_OFF]);
   assert.deepStrictEqual(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77, { enVistaClientes: true }).acciones, [BOTON_OFF]);
@@ -557,7 +576,8 @@ test('MP9: toda accion que emite una transicion es de un tipo que el ejecutor co
   const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso', { nombre: 'A', rfc: 'B' }).estado;
   const salidas = [
     M.alAbrirAlta(abierta), M.alReiniciarAlta(MODO_ALTA_INICIAL), M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso'),
-    M.alCerrarPanel(abierta), M.alActualizarCandidato(MODO_ALTA_INICIAL, 7), M.alCrearNuevoCandidato(abierta),
+    M.alCerrarPanel(abierta), M.alCancelarActualizacion(abierta), M.alActualizarCandidato(MODO_ALTA_INICIAL, 7),
+    M.alCrearNuevoCandidato(abierta),
     M.alLograrActualizacion(abierta, 15), M.alEmpezarLectura(MODO_ALTA_INICIAL),
   ];
   const emitidos = new Set(salidas.flatMap(s => s.acciones.map(a => a.tipo)));

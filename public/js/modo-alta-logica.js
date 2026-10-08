@@ -34,7 +34,8 @@ import { constanciaAlAbrirAlta, sinConstancia, estadoTrasErrorLectura, lecturaVi
 
 // Los tipos que entiende el ejecutor de app.js. Un tipo fuera de esta lista lo hace lanzar.
 // - recogerPanel: oculta #panel-alta-cliente y lo devuelve a su casa (#412, #489).
-// - cerrarBorrador { formId }: deja de autoguardar esa superficie sin matar su borrador (#185).
+// - cerrarBorrador { formId, evento? }: deja de autoguardar esa superficie; sin `evento` (o
+//   null) su borrador sobrevive (#185), con 'cancelado' muere (#545).
 // - vaciarSuperficie { formId }: campos de esa superficie a su valor por defecto, sin tocar su borrador (#546).
 // - botonDarDeAlta { habilitado }: "Dar de alta" existe solo en modo alta (#376).
 // - banner { cliente }: { id, nombre, rfc } lo muestra; null lo vacia y lo oculta (#94).
@@ -177,12 +178,24 @@ export function alCrearNuevoCandidato(m) {
 // "Actualizar este" (precarga undefined, la marca de #544) no vacia: esa Seccion 1 es la
 // del alta a medias, que conserva su avance (#185, #491).
 export function alCerrarPanel(m) {
+  return cierre(m, { cancelar: false });
+}
+
+// "Volver al cliente" / "Volver al Contacto" (#545): salir a proposito CANCELA la
+// actualizacion. Mismo estado y mismas acciones que alCerrarPanel, salvo que el borrador
+// del upgrade muere (evento 'cancelado'): nunca prellena (#352), solo avisaba que quedo a
+// medias. El del alta jamas se cancela por aqui; sin actualizacion es cerrar el panel.
+export function alCancelarActualizacion(m) {
+  return cierre(m, { cancelar: true });
+}
+
+function cierre(m, { cancelar }) {
   const estado = { ...m, clienteId: null, origen: null, comercialPrecargado: undefined };
   const acciones = [{ tipo: 'recogerPanel' }, { tipo: 'cerrarBorrador', formId: 'alta-completa' }];
   if (m.clienteId != null) {
     const formId = `upgrade-fiscal-${m.clienteId}`;
     if (m.comercialPrecargado !== undefined) acciones.push({ tipo: 'vaciarSuperficie', formId });
-    acciones.push({ tipo: 'cerrarBorrador', formId });
+    acciones.push(cancelar ? { tipo: 'cerrarBorrador', formId, evento: 'cancelado' } : { tipo: 'cerrarBorrador', formId });
   }
   acciones.push(boton(estado), { tipo: 'banner', cliente: null });
   return { estado, acciones };

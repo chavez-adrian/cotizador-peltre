@@ -190,6 +190,16 @@ test('#546: el caso vaciarSuperficie vacia la superficie de la accion con vaciar
     'vaciar no toca el borrador');
 });
 
+// "Volver al cliente" / "Volver al Contacto" cancelan la actualizacion (#545): QUE
+// borrador muere es del modulo (modo-alta-logica.test.cjs MP14); aqui el caso del
+// ejecutor, que traduce el evento 'cancelado' y sin evento cierra sin matar (#185).
+test('#545: el caso cerrarBorrador traduce el evento cancelado a EVENTOS_BORRADOR_FORM.CANCELADO y sin el cierra sin matar', () => {
+  const caso = casoDelEjecutor(fuenteApp(), 'cerrarBorrador');
+  assert.ok(caso.includes(
+    "cerrarFormularioBorrador(accion.formId, accion.evento === 'cancelado' ? EVENTOS_BORRADOR_FORM.CANCELADO : null)"),
+  'cancelado mata el borrador; cualquier otro valor es cerrar sin matar');
+});
+
 // --- La constancia en memoria al abrir el alta (#491) ------------------------
 // altaCsfState es UNO para el alta y el upgrade fiscal (el panel es el mismo nodo,
 // #376). Tras un upgrade con constancia, "+ > Nuevo Cliente Operam" en la misma
