@@ -322,3 +322,30 @@ test('#442: nada fijo o sticky con estilo en linea del index queda debajo de la 
   const debajo = estilosInline(html).filter((e) => tapaLaBarra(e.decl)).map((e) => e.etiqueta);
   assert.deepEqual(debajo, []);
 });
+
+// #547 (reabierto 2026-10-08): en la vista Clientes a 360x740 la barra tapaba 49
+// de los 67 px de la fila "+ Dar de alta Cliente Operam completo" (la ultima de
+// la lista) y el toque en su centro abria el menu "+" (#nav-add). Mismo patron
+// que #442: lo que el vendedor tiene que poder tocar se apoya ARRIBA de la barra.
+test('#547: la fila "Dar de alta Cliente Operam completo" se apoya arriba de la barra inferior', async () => {
+  const { filaCrearClienteHtml } = await import('../pipeline-logica.js');
+  for (const q of ['', 'yazmin']) {
+    const fila = /^<button[^>]*>/.exec(filaCrearClienteHtml(q))[0];
+    const bottom = px(reglaPegadaDe(fila).decl.get('bottom'));
+    assert.ok(bottom >= ALTO_BARRA, `fila de alta (q='${q}'): bottom ${bottom}px, la barra mide ${ALTO_BARRA}px`);
+  }
+});
+
+// El sintoma original de #547: "Cotizar ahora" / "Terminar" tras un alta lograda
+// pueden quedar al fondo del panel, debajo de la barra (y en el paso Cliente,
+// debajo del total del carrito).
+test('#547: "Cotizar ahora" y "Terminar" del alta lograda se apoyan arriba de la barra y del total', () => {
+  const fila = padreDe('id="alta-btn-cotizar"');
+  assert.ok(fila.includes('id="alta-btns-exito"'), `el padre de Cotizar ahora no es #alta-btns-exito: ${fila}`);
+  const regla = reglaPegadaDe(fila);
+  assert.ok(px(regla.decl.get('bottom')) >= ALTO_BARRA, `bottom ${regla.decl.get('bottom')}`);
+  const total = reglaDe('.cart-summary');
+  const techoDelTotal = px(total.decl.get('bottom'), VARS_CON_TOTAL) + px(total.decl.get('height'), VARS_CON_TOTAL);
+  assert.ok(px(regla.decl.get('bottom'), VARS_CON_TOTAL) >= techoDelTotal, 'con el total a la vista se enciman');
+  assert.match(fila, /background:\s*var\(--bg\)/, 'pegada encima del contenido necesita fondo opaco');
+});

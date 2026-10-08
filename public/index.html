@@ -543,8 +543,9 @@
               <button class="btn btn-primary" id="alta-btn-dar-alta" style="width:100%;margin-bottom:8px" onclick="altaDarDeAlta()">
                 Dar de alta
               </button>
-              <!-- Botones post-exito (ocultos hasta completar) -->
-              <div id="alta-btns-exito" style="display:none;gap:8px;margin-top:8px">
+              <!-- Botones post-exito (ocultos hasta completar). #547: pegados
+                   arriba de la barra inferior y del total, como los de #442. -->
+              <div id="alta-btns-exito" class="accion-fija" style="display:none;gap:8px;margin-top:8px;background:var(--bg)">
                 <button class="btn btn-primary" style="flex:1" id="alta-btn-cotizar" onclick="altaCotizarAhora()">
                   Cotizar ahora
                 </button>

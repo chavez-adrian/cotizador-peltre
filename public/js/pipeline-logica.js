@@ -680,10 +680,12 @@ export function filaResultadoClienteHtml(r, i) {
 // no un prospecto minimo como en el paso Cliente (#94, pieza 3). Desde #190 tambien
 // se pinta en el estado inicial de la vista Clientes, con el buscador vacio: sin
 // query no hay nombre que entrecomillar y las comillas se omiten enteras.
+// #547: es la ULTIMA fila de la lista y la barra inferior la tapaba; con
+// accion-fija se apoya arriba de ella (#442).
 export function filaCrearClienteHtml(query) {
   const q = String(query || '').trim();
   const conQuery = q ? ' &laquo;' + escapeHtml(q) + '&raquo;' : '';
-  return '<button type="button" class="pc-res-row pc-crear" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
+  return '<button type="button" class="pc-res-row pc-crear accion-fija" onclick="cvCaminoAlta(' + JSON.stringify(q).replace(/"/g, '&quot;') + ')">' +
     '<span class="pc-res-ini">+</span>' +
     '<span class="pc-res-main"><span class="pc-res-nombre">Dar de alta Cliente Operam completo' + conQuery + '</span>' +
     '<span class="pc-res-sub">Con datos fiscales, comerciales y domicilio &mdash; sin cotizacion</span></span></button>';
