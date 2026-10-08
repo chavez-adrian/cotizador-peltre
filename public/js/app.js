@@ -4449,7 +4449,8 @@ async function pcAbrirUpgradeFiscal(customerId, banner, origen) {
     document.getElementById('app-view').style.display = 'block';
     switchTab('cliente');
   }
-  // Origen del upgrade ('paso' | 'clientes' | 'resumen'): decide si cl-email-factura
+  // Origen del upgrade ('paso' | 'clientes' | 'resumen'; "Actualizar este" no pasa por
+  // aqui y deja null o 'clientes-alta', #549): decide si cl-email-factura
   // es confiable (ver emailFacturaParaUpgrade en alta-logica.js).
   // Lo que se cargue en este panel desde aqui es del upgrade (#491): la transicion marca
   // la constancia como suya y deja huerfana la lectura que habia empezado el alta.
@@ -4762,6 +4763,13 @@ async function pcEjecutarUpgradeFiscal(datos) {
     // pinta. El reporte va DESPUES del repintado y sobrevive a los dos: se inserta
     // junto a #panel-alta-cliente, que vive fuera de la zona que cada vista reescribe.
     const destino = destinoTrasUpgradeLogrado(origen, vista);
+    // "Actualizar este" desde el alta de la vista Clientes (#549): no hay cliente elegido
+    // que repintar; la ficha y el reporte los pinta cvMostrarClienteOperamActualizado. El
+    // RFC es el que Operam SI guardo; si no lo guardo, el capturado sirve solo para buscar.
+    if (destino.pantalla === 'clientes-operam') {
+      await cvMostrarClienteOperamActualizado(customerId, cambios.rfc || datos?.rfc, destino.confirmacion, vista);
+      return;
+    }
     if (destino.pantalla === 'clientes') {
       cvAdoptarUpgradeFiscal(customerId, cambios);
       cvRenderTarjeta(destino.confirmacion);
@@ -6162,14 +6170,52 @@ function cvElegirResultado(i) {
     cvRenderTarjeta();
     return;
   }
+  cvState.seleccion = cvSeleccionDeFilaOperam(r);
+  cvRenderTarjeta();
+}
+window.cvElegirResultado = cvElegirResultado;
+
+function cvSeleccionDeFilaOperam(r) {
   const base = { ...r.raw, tipo: 'operam', pais: r.raw?.pais || 'MX' };
   // El Origen de la tarjeta es el que ya resolvio la fila (#287): la tarjeta se
   // arma desde `raw`, que no lo trae.
   const card = { ...base, origen: r.origen };
-  cvState.seleccion = { tipo: r.tipo, card, raw: r.raw };
-  cvRenderTarjeta();
+  return { tipo: r.tipo, card, raw: r.raw };
 }
-window.cvElegirResultado = cvElegirResultado;
+
+// "Actualizar este" logrado desde el alta de la vista Clientes (#549): el alta no tiene
+// cliente elegido (cvCaminoAlta), asi que se busca al Cliente Operam actualizado por su
+// RFC y se pinta su ficha con la confirmacion; el panel sigue oculto en
+// #clientes-panel-slot, el reporte de #407 queda encima y "Cerrar" deja la ficha. Si la
+// fila no llega (sin RFC guardado, o el Cliente Operam cuelga de un Contacto), la
+// busqueda prellenada con ese RFC: cvRenderBusqueda recoge el panel y quita el reporte,
+// asi que el mensaje de la actualizacion va arriba como aviso. Si en la espera el
+// vendedor ya salio del alta (el panel se recogio), no se pinta nada.
+async function cvMostrarClienteOperamActualizado(customerId, rfcNuevo, confirmacion, vista) {
+  const rfc = String(rfcNuevo || '').trim();
+  const rows = await cvBuscarContactos(rfc);
+  if (!altaPanelEnVistaClientes()) return;
+  const fila = rows.find(r => r.tipo === 'operam' && String(r.id) === String(customerId));
+  if (fila) {
+    cvResultadosCache = rows;
+    cvState.seleccion = cvSeleccionDeFilaOperam(fila);
+    cvRenderTarjeta(confirmacion);
+    pcRenderReporteUpgrade(vista);
+    return;
+  }
+  cvRenderBusqueda();
+  const root = cvRoot();
+  if (root) {
+    const campos = (vista.campos || []).map(c =>
+      '<li><strong>' + escapeHtml(c.label) + ':</strong> ' + escapeHtml(c.mensaje) + '</li>').join('');
+    root.insertAdjacentHTML('afterbegin',
+      '<div class="alert alert-success" style="margin:0 0 12px">' + escapeHtml(vista.mensaje) +
+      (campos ? '<ul style="margin:6px 0 0">' + campos + '</ul>' : '') + '</div>');
+  }
+  const input = document.getElementById('cv-q');
+  if (input) input.value = rfc;
+  await cvBuscar();
+}
 
 // `aviso` (#407): la confirmacion de una escritura que acaba de pasar en esta vista
 // -- hoy el upgrade fiscal logrado. Es un argumento y no estado de cvState porque
@@ -9309,7 +9355,9 @@ async function altaCandidatoActualizar(clienteId) {
   // tiene que viajar (#193). La transicion deja la linea base en undefined = "no hay
   // panel comercial que podar" (#197), distinto de null, que significa "la precarga fallo".
   // La transicion apaga "Dar de alta": mientras el upgrade decide, el alta no corre (#376).
-  aplicarModoAlta(alActualizarCandidato, clienteId);
+  // Si el alta esta prestada a la vista Clientes, el origen es 'clientes-alta' y la lograda
+  // pinta ahi la ficha del Cliente Operam (#549); el DOM dice donde esta el panel (#412).
+  aplicarModoAlta(alActualizarCandidato, clienteId, { enVistaClientes: altaPanelEnVistaClientes() });
   await pcEjecutarUpgradeFiscal(altaState.datos);
 }
 window.altaCandidatoActualizar = altaCandidatoActualizar;

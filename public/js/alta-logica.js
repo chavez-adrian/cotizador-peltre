@@ -725,14 +725,19 @@ export function interpretarRespuestaUpgrade(status, body) {
 // La confirmacion explicita solo se pide cuando el reporte no va a salir: con campos
 // pendientes su propio titulo (UPGRADE_TITULO_PENDIENTES) ya dice que paso, y dos
 // avisos encimados dirian cosas distintas del mismo PUT.
+//
+// 'clientes-alta' (#549): "Actualizar este" desde el alta de la vista Clientes, que no
+// tiene cliente elegido -- la pantalla es la ficha del Cliente Operam actualizado
+// ('clientes-operam'), con la misma regla de confirmacion.
 export function destinoTrasUpgradeLogrado(origen, vista) {
-  const enClientes = origen === 'clientes';
+  const desdeAlta = origen === 'clientes-alta';
+  const enClientes = origen === 'clientes' || desdeAlta;
   // La confirmacion se ata a la vista LOGRADA, no solo a que no haya campos: una
   // vista de error o de fusion tambien llega sin campos, y su mensaje bajo el verde
   // de exito diria lo contrario de lo que paso.
   const lograda = !!vista && vista.tipo === 'lograda' && ((vista.campos || []).length === 0);
   return {
-    pantalla: enClientes ? 'clientes' : 'paso',
+    pantalla: desdeAlta ? 'clientes-operam' : (enClientes ? 'clientes' : 'paso'),
     confirmacion: enClientes && lograda ? vista.mensaje : null,
   };
 }

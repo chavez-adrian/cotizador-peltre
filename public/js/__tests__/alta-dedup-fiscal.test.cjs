@@ -605,6 +605,9 @@ test('R-FIX2: emailFacturaParaUpgrade solo incluye el email cuando el upgrade se
   assert.equal(emailFacturaParaUpgrade('clientes', 'fact@otro.mx'), undefined,
     'desde la vista Clientes el campo cl-email-factura puede traer el email de OTRO cliente (fuga de contexto)');
   assert.equal(emailFacturaParaUpgrade(null, 'fact@otro.mx'), undefined);
+  // #549: "Actualizar este" deja null desde el paso Cliente y 'clientes-alta' desde la
+  // vista Clientes; ninguno de los dos empieza a mandar el correo de facturacion.
+  assert.equal(emailFacturaParaUpgrade('clientes-alta', 'fact@otro.mx'), undefined);
   assert.equal(emailFacturaParaUpgrade('paso', '  '), undefined);
 });
 

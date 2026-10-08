@@ -104,6 +104,18 @@ test('MA5: "Actualizar este" del duplicado deja el cliente, el origen en null y 
     { clienteId: 77, origen: null, comercialPrecargado: undefined });
 });
 
+// #549: "Actualizar este" desde la vista Clientes recuerda que el alta se abrio ahi, para
+// que la lograda pinte la ficha del Cliente Operam. Desde el paso Cliente el origen sigue
+// en null: con 'paso' empezaria a viajar cl-email-factura (emailFacturaParaUpgrade).
+test('MA5b: "Actualizar este" desde la vista Clientes deja el origen clientes-alta; desde el paso, null', () => {
+  assert.equal(alActualizarCandidato(MODO_ALTA_INICIAL, 77, { enVistaClientes: true }).origen, 'clientes-alta');
+  assert.equal(alActualizarCandidato(MODO_ALTA_INICIAL, 77, { enVistaClientes: false }).origen, null);
+  assert.equal(alActualizarCandidato(MODO_ALTA_INICIAL, 77, {}).origen, null);
+  assert.equal(alActualizarCandidato(MODO_ALTA_INICIAL, 77).origen, null);
+  assert.deepStrictEqual(alActualizarCandidato(EN_ACTUALIZACION, 77, { enVistaClientes: true }),
+    { clienteId: 77, origen: 'clientes-alta', comercialPrecargado: undefined });
+});
+
 // Fila 10 de #542: "Crear nuevo" suelta la precarga.
 test('MA6: "Crear nuevo" del duplicado vuelve a alta y deja la precarga en undefined', () => {
   const m = alCrearNuevoCandidato(EN_ACTUALIZACION);
@@ -511,6 +523,7 @@ test('MP6: cerrar recoge el panel y vacia y cierra la superficie del upgrade sol
 
 test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende (asimetrias 3 y 5)', () => {
   assert.deepStrictEqual(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77).acciones, [BOTON_OFF]);
+  assert.deepStrictEqual(M.alActualizarCandidato(MODO_ALTA_INICIAL, 77, { enVistaClientes: true }).acciones, [BOTON_OFF]);
   assert.deepStrictEqual(M.alCrearNuevoCandidato({ ...MODO_ALTA_INICIAL, clienteId: 77 }).acciones, [BOTON_ON]);
 });
 

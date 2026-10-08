@@ -6,6 +6,8 @@
 // - clienteId: el customer_id del Cliente Operam cuya actualizacion fiscal esta abierta,
 //   o null (alta). Es la PRESENCIA del id la que decide el modo: el 0 sigue siendo id.
 // - origen: desde donde se abrio la actualizacion ('paso' | 'clientes' | 'resumen'), o null.
+//   "Actualizar este" deja null desde el paso Cliente y 'clientes-alta' si el alta estaba
+//   prestada a la vista Clientes (#549): la lograda pinta ahi la ficha del Cliente Operam.
 // - comercialPrecargado: la linea base de la Seccion 2 (#197). undefined = no hay panel
 //   comercial (los datos viajan tal cual, camino de "Actualizar este"); null = la
 //   precarga fallo o no ha llegado (no viaja nada comercial); objeto = la precarga.
@@ -153,8 +155,10 @@ export function alLograrActualizacion(m, clienteId, lectura = null) {
 // la precarga en undefined, porque el segmento que se capturo en el alta SI tiene que
 // viajar (#193). Pantalla: solo apaga el boton (declarado en #542: el alta sigue siendo el
 // alta y la marca de la constancia llega solo si el PUT se logra).
-export function alActualizarCandidato(m, clienteId) {
-  const estado = { ...m, clienteId, origen: null, comercialPrecargado: undefined };
+// Desde el paso Cliente el origen se queda en null y NO en 'paso': con 'paso' viajaria
+// cl-email-factura (emailFacturaParaUpgrade). Desde la vista Clientes es 'clientes-alta' (#549).
+export function alActualizarCandidato(m, clienteId, { enVistaClientes } = {}) {
+  const estado = { ...m, clienteId, origen: enVistaClientes ? 'clientes-alta' : null, comercialPrecargado: undefined };
   return { estado, acciones: [boton(estado)] };
 }
 

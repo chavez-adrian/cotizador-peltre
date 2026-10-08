@@ -532,6 +532,25 @@ test('UD5: una vista que NO se logro no lleva confirmacion, aunque venga sin cam
   assert.equal(destinoTrasUpgradeLogrado('clientes', undefined).confirmacion, null);
 });
 
+// #549: "Actualizar este" desde el alta de la vista Clientes. Ahi no hay cliente elegido
+// (cvCaminoAlta deja la seleccion en null) y repintar la tarjeta del paso Cliente no se
+// ve: la lograda pinta la ficha del Cliente Operam actualizado, con la MISMA regla de
+// confirmacion que el origen 'clientes'.
+test('UD6: origen clientes-alta -> la ficha del Cliente Operam, con confirmacion solo si todo pego', () => {
+  const logrado = interpretarRespuestaUpgrade(200, { ok: true, camposNoActualizados: [] });
+  const conPendientes = interpretarRespuestaUpgrade(200, {
+    ok: true,
+    camposNoActualizados: [{ campo: 'tax_id', label: 'RFC', mensaje: 'Operam no lo guardo' }],
+  });
+  assert.deepEqual(destinoTrasUpgradeLogrado('clientes-alta', logrado),
+    { pantalla: 'clientes-operam', confirmacion: UPGRADE_TITULO_LOGRADO });
+  assert.deepEqual(destinoTrasUpgradeLogrado('clientes-alta', conPendientes),
+    { pantalla: 'clientes-operam', confirmacion: null });
+  assert.equal(destinoTrasUpgradeLogrado('clientes-alta', interpretarRespuestaUpgrade(409, { fusion: true })).confirmacion, null);
+  assert.deepEqual(destinoTrasUpgradeLogrado('clientes', logrado), { pantalla: 'clientes', confirmacion: UPGRADE_TITULO_LOGRADO });
+  assert.deepEqual(destinoTrasUpgradeLogrado(null, logrado), { pantalla: 'paso', confirmacion: null });
+});
+
 // === A donde va el vendedor tras los dos botones post-exito del alta (#412) ===
 // El panel del alta es un nodo UNICO que viaja (#376): la vista Clientes lo toma
 // prestado con moverPanelA y hasta #412 "Cotizar ahora" solo lo escondia con
@@ -643,6 +662,43 @@ test('#489-2: la vuelta a la busqueda sin cliente elegido tambien recoge el pane
   // reporte se iria al paso Cliente. Por eso recogen los botones, no la tarjeta.
   assert.ok(!tarjeta.includes('aplicarModoAlta(alCerrarPanel)'),
     'cvRenderTarjeta no recoge el panel: lo hace el handler de "Volver al cliente"/"Volver al Contacto"');
+});
+
+// === "Actualizar este" logrado desde el alta de la vista Clientes (#549) ===
+// La lograda ocultaba el panel y repintaba la tarjeta del paso Cliente, que no esta a la
+// vista: al cerrar el reporte quedaba "Nuevo cliente" con solo "Cancelar". De donde se
+// abrio el alta lo dice el DOM (#412) y la pantalla la decide destinoTrasUpgradeLogrado
+// (UD6); aqui queda el cableado, porque app.js no se importa en Node.
+test('#549-1: "Actualizar este" le dice a la transicion si el alta esta en la vista Clientes', () => {
+  const cuerpo = cuerpoDeFuncionApp('async function altaCandidatoActualizar(');
+  assert.ok(cuerpo.includes('aplicarModoAlta(alActualizarCandidato, clienteId, { enVistaClientes: altaPanelEnVistaClientes() })'),
+    'el origen clientes-alta sale de donde esta el panel, no de una bandera suelta');
+});
+
+test('#549-2: la lograda con destino clientes-operam pinta la ficha y despues el reporte', () => {
+  const ejecutar = cuerpoDeFuncionApp('async function pcEjecutarUpgradeFiscal(');
+  assert.ok(ejecutar.includes("destino.pantalla === 'clientes-operam'"), 'pcEjecutarUpgradeFiscal tiene la rama clientes-operam');
+  assert.ok(ejecutar.includes('await cvMostrarClienteOperamActualizado(customerId, cambios.rfc || datos?.rfc, destino.confirmacion, vista)'),
+    'la rama busca por el RFC que Operam guardo y, si no lo guardo, por el capturado');
+  const ficha = cuerpoDeFuncionApp('async function cvMostrarClienteOperamActualizado(');
+  assert.ok(ficha.includes('cvBuscarContactos(rfc)'), 'la ficha sale de la busqueda de la vista por el RFC nuevo');
+  assert.ok(ficha.includes("r.tipo === 'operam' && String(r.id) === String(customerId)"),
+    'la fila es la del Cliente Operam actualizado, comparando el id como texto');
+  const tarjeta = ficha.indexOf('cvRenderTarjeta(confirmacion)');
+  const reporte = ficha.indexOf('pcRenderReporteUpgrade(vista)');
+  assert.ok(tarjeta > 0 && reporte > tarjeta, 'la ficha se pinta ANTES del reporte, que queda encima y "Cerrar" la deja');
+});
+
+test('#549-3: sin la fila, la busqueda prellenada con el RFC y el aviso arriba, sin el reporte', () => {
+  const ficha = cuerpoDeFuncionApp('async function cvMostrarClienteOperamActualizado(');
+  const respaldo = ficha.slice(ficha.indexOf('cvRenderBusqueda()'));
+  assert.ok(ficha.indexOf('cvRenderBusqueda()') > ficha.indexOf('cvRenderTarjeta(confirmacion)'),
+    'el respaldo va despues del camino con fila');
+  assert.ok(respaldo.includes("getElementById('cv-q')") && respaldo.includes('await cvBuscar()'),
+    'el respaldo prellena la caja y busca');
+  assert.ok(respaldo.includes('alert alert-success'), 'el aviso lleva el estilo del banner de cvRenderTarjeta');
+  // cvRenderBusqueda recoge el panel: un reporte insertado despues saldria en el paso Cliente.
+  assert.ok(!respaldo.includes('pcRenderReporteUpgrade('), 'el respaldo no inserta el reporte junto al panel recogido');
 });
 
 // Que cerrar apague la actualizacion y devuelva recogerPanel, los borradores, el boton y
