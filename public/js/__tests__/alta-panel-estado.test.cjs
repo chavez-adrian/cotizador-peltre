@@ -572,3 +572,22 @@ test('#550: Crear nuevo confirma la Seccion 1 y abre la 2 solo si el candidato v
   assert.ok(cuerpoDeFuncion(src, 'async function altaBuscarCelular(')
     .includes("buildCandidatosRfcGenericoHtml(resultado2.candidatos, { desde: 'seccion2' })"), 'los candidatos por celular son de la Seccion 2');
 });
+
+// El aviso de la constancia vacia del alta culpaba al borrador (#553), pero abrir la
+// actualizacion fiscal de otro cliente tambien la descarta (#491): el texto nombra las
+// dos causas. El del upgrade si es cierto (#352) y no cambia.
+test('#553: el aviso del alta nombra las dos causas y no culpa solo al borrador; el del upgrade sigue igual', () => {
+  const src = fuenteApp().replace(/'\s*\n\s*\+\s*'/g, '');
+  const inicio = src.indexOf('[AVISO_CONSTANCIA.ALTA]:');
+  const medio = src.indexOf('[AVISO_CONSTANCIA.UPGRADE]:', inicio);
+  assert.ok(inicio > 0 && medio > inicio, 'TEXTO_AVISO_CONSTANCIA tiene el aviso del alta y luego el del upgrade');
+  const alta = src.slice(inicio, medio);
+  const upgrade = src.slice(medio, src.indexOf('\n', medio));
+  assert.ok(!alta.includes('no se guarda en el borrador'), 'el aviso del alta no afirma que la causa es el borrador');
+  assert.ok(alta.includes('al recargar la p&aacute;gina'), 'nombra recargar la pagina');
+  assert.ok(alta.includes('al abrir la actualizaci&oacute;n de otro cliente'), 'nombra abrir la actualizacion de otro cliente');
+  assert.ok(alta.includes('Vuelve a cargar el PDF de la CSF para continuar'), 'conserva la accion del vendedor');
+  assert.ok(/^[\x00-\x7F]*$/.test(alta), 'los acentos van con entidades HTML');
+  assert.ok(upgrade.includes('no se guarda en el borrador, as&iacute; que los datos fiscales no se prellenan'),
+    'el aviso del upgrade no cambia');
+});

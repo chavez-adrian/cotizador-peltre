@@ -5770,9 +5770,10 @@ function pintarMarcaBorrador(formId, visible) {
 // arriba de todo (insertBefore firstChild, igual que la marca) para que quede
 // primero en el cuerpo.
 const TEXTO_AVISO_CONSTANCIA = {
-  [AVISO_CONSTANCIA.ALTA]: 'La constancia no se guarda en el borrador: los datos fiscales quedaron'
-    + ' vac&iacute;os. Vuelve a cargar el PDF de la CSF para continuar (lo comercial y el'
-    + ' domicilio de entrega siguen aqu&iacute;).',
+  [AVISO_CONSTANCIA.ALTA]: 'Los datos fiscales de la Secci&oacute;n 1 quedaron vac&iacute;os: la constancia'
+    + ' no se conserva al recargar la p&aacute;gina ni al abrir la actualizaci&oacute;n de otro'
+    + ' cliente. Vuelve a cargar el PDF de la CSF para continuar (lo comercial y el domicilio'
+    + ' de entrega siguen aqu&iacute;).',
   [AVISO_CONSTANCIA.UPGRADE]: 'Este upgrade fiscal hab&iacute;a quedado a medias. La constancia'
     + ' no se guarda en el borrador, as&iacute; que los datos fiscales no se prellenan: vuelve a'
     + ' cargar el PDF de la CSF (o captura los datos a mano) para continuar.',
