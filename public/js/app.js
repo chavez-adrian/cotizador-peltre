@@ -8600,6 +8600,12 @@ function ejecutarAccionAlta(accion) {
         if (dot) { dot.classList.remove('done'); dot.textContent = ''; }
       });
       return;
+    // La dedup por RFC habla de la constancia que la corrio: soltar otra la invalida (#544).
+    case 'limpiarDedup': {
+      const dedupDiv = document.getElementById('alta-dedup-resultado');
+      if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
+      return;
+    }
     default:
       throw new Error(`Accion del Modo del alta desconocida: ${accion.tipo}`);
   }

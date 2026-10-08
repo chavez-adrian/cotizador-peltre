@@ -166,6 +166,20 @@ test('#541: el ejecutor de app.js tiene un caso por cada tipo de ACCIONES_MODO y
     'aplicarModoAlta ejecuta las acciones de cada transicion');
 });
 
+// Soltar otra constancia invalida la dedup por RFC de la anterior (#544): QUE transicion
+// la limpia es del modulo (modo-alta-logica.test.cjs MP11-MP13); aqui el caso del ejecutor.
+// Los candidatos por celular son de la Seccion 2 y no dependen de la constancia.
+test('#544: el caso limpiarDedup vacia y oculta el bloque de la dedup y no toca los candidatos por celular', () => {
+  const src = fuenteApp();
+  const caso = casoDelEjecutor(src, 'limpiarDedup');
+  assert.ok(caso.includes("getElementById('alta-dedup-resultado')"), 'limpia el bloque de la dedup por RFC');
+  assert.ok(caso.includes("innerHTML = ''"), 'lo vacia');
+  assert.ok(caso.includes("style.display = 'none'"), 'lo oculta');
+  assert.ok(!caso.includes('alta-celular-candidatos'), 'los candidatos por celular no son de la constancia');
+  assert.ok(cuerpoDeFuncion(src, 'async function altaCsfProcesarArchivo(').includes('aplicarModoAlta(alEmpezarLectura)'),
+    'la lectura aplica su transicion, que devuelve limpiarDedup');
+});
+
 // --- La constancia en memoria al abrir el alta (#491) ------------------------
 // altaCsfState es UNO para el alta y el upgrade fiscal (el panel es el mismo nodo,
 // #376). Tras un upgrade con constancia, "+ > Nuevo Cliente Operam" en la misma

@@ -37,8 +37,11 @@ import { constanciaAlAbrirAlta, sinConstancia, estadoTrasErrorLectura, lecturaVi
 // - banner { cliente }: { id, nombre, rfc } lo muestra; null lo vacia y lo oculta (#94).
 // - candarSecciones: Secciones 3 y 4 a su candado y la 3 a modo captura (#376, #371).
 // - limpiarProgreso: las palomas de "Progreso del alta" a vacio (#432).
+// - limpiarDedup: vacia y oculta #alta-dedup-resultado (#544); NO toca
+//   #alta-celular-candidatos, que es de la Seccion 2 y no depende de la constancia.
 export const ACCIONES_MODO = Object.freeze([
   'recogerPanel', 'cerrarBorrador', 'botonDarDeAlta', 'banner', 'candarSecciones', 'limpiarProgreso',
+  'limpiarDedup',
 ]);
 
 // El boton se deriva del estado YA cambiado, nunca es literal (como lo hacia
@@ -173,9 +176,18 @@ export function alCerrarPanel(m) {
 
 // altaCsfProcesarArchivo, al empezar: la lectura nueva es la vigente. Los datos y el PDF
 // anteriores siguen en memoria hasta que termine (asimetria 7 de la constancia).
+// Pantalla (#544): la dedup por RFC hablaba de la constancia anterior y se limpia al
+// EMPEZAR; si la lectura falla tampoco reaparece (#516 ya descarto la anterior). Con el
+// candidato de "Actualizar este" (id con precarga undefined) el modo vuelve a alta, como
+// alCrearNuevoCandidato; una actualizacion abierta (precarga null u objeto) no cambia.
 export function alEmpezarLectura(m) {
   const lectura = (m.lecturas || 0) + 1;
-  return sinPantalla({ ...m, lecturas: lectura, lectura, status: 'loading' });
+  const estado = { ...m, lecturas: lectura, lectura, status: 'loading' };
+  if (m.clienteId == null || m.comercialPrecargado !== undefined) {
+    return { estado, acciones: [{ tipo: 'limpiarDedup' }] };
+  }
+  const enAlta = { ...estado, clienteId: null, origen: null };
+  return { estado: enAlta, acciones: [{ tipo: 'limpiarDedup' }, boton(enAlta)] };
 }
 
 // altaCsfProcesarArchivo, con el PDF leido. Una lectura que ya no es la vigente no

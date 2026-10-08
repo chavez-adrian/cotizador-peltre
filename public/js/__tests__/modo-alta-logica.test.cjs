@@ -241,7 +241,8 @@ test('MC4: abrir la actualizacion y lograrla deja la constancia marcada y la lec
 
 // Sustituta de #491-7 y #491-12 (la marca al lograrse, tambien por "Actualizar este").
 test('MC5: lograr la actualizacion marca la constancia y NO anula la lectura en curso (asimetria 2)', () => {
-  const porCandidato = alEmpezarLectura(alActualizarCandidato({ ...CONSTANCIA_LEIDA }, 77));
+  // La lectura empieza ANTES del "Actualizar este": empezarla despues suelta el candidato (#544, MP12).
+  const porCandidato = alActualizarCandidato(alEmpezarLectura({ ...CONSTANCIA_LEIDA }), 77);
   assert.strictEqual(porCandidato.constanciaDeUpgrade, null, '"Actualizar este" no la marca (asimetria 3)');
   assert.deepStrictEqual(alLograrActualizacion(porCandidato, 77), {
     clienteId: null, origen: null, comercialPrecargado: undefined,
@@ -492,12 +493,12 @@ test('MP7: "Actualizar este" solo apaga el boton y "Crear nuevo" solo lo prende 
   assert.deepStrictEqual(M.alCrearNuevoCandidato({ ...MODO_ALTA_INICIAL, clienteId: 77 }).acciones, [BOTON_ON]);
 });
 
-test('MP8: la precarga y la constancia no devuelven acciones', () => {
+// #544: empezar una lectura si devuelve una (MP11-MP13); las demas de la constancia no.
+test('MP8: la precarga y la constancia, salvo empezar la lectura, no devuelven acciones', () => {
   const abierta = M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso').estado;
   const leyendo = M.alEmpezarLectura(MODO_ALTA_INICIAL).estado;
   const salidas = [
     M.alPrecargarComercial(abierta, 15, PRECARGA),
-    M.alEmpezarLectura(MODO_ALTA_INICIAL),
     M.alLeerConstancia(leyendo, 1, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x' }),
     M.alLeerConstancia(leyendo, 9, { status: 'success', datos: { rfc: 'OGA140604560' }, pdfBase64: 'x' }),
     M.alFallarLectura(leyendo, 1),
@@ -523,9 +524,50 @@ test('MP9: toda accion que emite una transicion es de un tipo que el ejecutor co
   const salidas = [
     M.alAbrirAlta(abierta), M.alReiniciarAlta(MODO_ALTA_INICIAL), M.alAbrirActualizacion(MODO_ALTA_INICIAL, 15, 'paso'),
     M.alCerrarPanel(abierta), M.alActualizarCandidato(MODO_ALTA_INICIAL, 7), M.alCrearNuevoCandidato(abierta),
-    M.alLograrActualizacion(abierta, 15),
+    M.alLograrActualizacion(abierta, 15), M.alEmpezarLectura(MODO_ALTA_INICIAL),
   ];
   const emitidos = new Set(salidas.flatMap(s => s.acciones.map(a => a.tipo)));
   for (const tipo of emitidos) assert.ok(ACCIONES_MODO.includes(tipo), `${tipo} no esta en ACCIONES_MODO`);
   assert.deepStrictEqual([...emitidos].sort(), [...ACCIONES_MODO].sort(), 'cada tipo de la lista lo emite alguna transicion');
+});
+
+// --- Otra constancia invalida la dedup anterior (#544) -----------------------
+// Con el bloque de la dedup a la vista, soltar OTRA CSF dejaba vivo "Actualizar este"
+// sobre el Cliente Operam que encontro la constancia anterior.
+const LIMPIAR_DEDUP = { tipo: 'limpiarDedup' };
+
+test('MP11: empezar una lectura en el alta limpia la dedup y deja el estado de siempre', () => {
+  const r = M.alEmpezarLectura({ ...MODO_ALTA_INICIAL, ...CONSTANCIA_LEIDA });
+  assert.deepStrictEqual(r.acciones, [LIMPIAR_DEDUP]);
+  assert.deepStrictEqual(r.estado, {
+    clienteId: null, origen: null, comercialPrecargado: undefined,
+    status: 'loading', rfc: 'OGA140604560',
+    datos: { rfc: 'OGA140604560', razonSocial: 'OPERADORA GASTRONOMICA', regimenFiscal: '605' },
+    pdfBase64: 'JVBERi0xLjQK', regimenesDetectados: { rfc: 'OGA140604560', codigos: ['605', '611'] },
+    constanciaDeUpgrade: null, lectura: 5, lecturas: 5,
+  });
+});
+
+// Un "Actualizar este" que fallo deja el modo en el candidato (precarga undefined): la
+// constancia nueva no es la que lo encontro, asi que el modo vuelve a alta, como "Crear nuevo".
+test('MP12: empezar una lectura con el candidato de "Actualizar este" vuelve a alta y prende el boton', () => {
+  const r = M.alEmpezarLectura({ ...MODO_ALTA_INICIAL, ...CONSTANCIA_LEIDA, clienteId: 15, comercialPrecargado: undefined });
+  assert.strictEqual(r.estado.clienteId, null);
+  assert.strictEqual(r.estado.origen, null);
+  assert.ok('comercialPrecargado' in r.estado && r.estado.comercialPrecargado === undefined);
+  assert.strictEqual(r.estado.status, 'loading');
+  assert.strictEqual(r.estado.lectura, 5);
+  assert.deepStrictEqual(r.acciones, [LIMPIAR_DEDUP, BOTON_ON]);
+});
+
+// Abierta por el chip o la vista Clientes, la precarga es null (no ha llegado) u objeto:
+// soltar un PDF es el flujo normal de la actualizacion y no cambia de modo.
+test('MP13: empezar una lectura en una actualizacion abierta conserva cliente y origen y solo limpia la dedup', () => {
+  for (const comercialPrecargado of [null, PRECARGA]) {
+    const r = M.alEmpezarLectura({ ...MODO_ALTA_INICIAL, ...CONSTANCIA_LEIDA, clienteId: 15, origen: 'clientes', comercialPrecargado });
+    assert.strictEqual(r.estado.clienteId, 15);
+    assert.strictEqual(r.estado.origen, 'clientes');
+    assert.strictEqual(r.estado.comercialPrecargado, comercialPrecargado);
+    assert.deepStrictEqual(r.acciones, [LIMPIAR_DEDUP]);
+  }
 });
