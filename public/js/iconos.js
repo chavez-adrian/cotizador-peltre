@@ -13,3 +13,6 @@ export const ICONO_CAMION = '<svg aria-hidden="true" focusable="false" viewBox="
 export const ICONO_TRES_PUNTOS = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="5" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/></svg>';
 
 export const ICONO_CORREO = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.8 7l8.2 6 8.2-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// #200: la flecha del boton Volver (pastilla unica, volver-logica.js).
+export const ICONO_VOLVER = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/></svg>';

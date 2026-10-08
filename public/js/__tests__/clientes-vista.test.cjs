@@ -655,14 +655,14 @@ test('AD7: el cierre devuelve el panel a su casa en las dos pantallas y lleva al
 // cliente" y "Volver al Contacto" CANCELAN la actualizacion (alCancelarActualizacion,
 // MP14: recoge igual y ademas mata su borrador); las otras dos siguen siendo cerrar.
 const SALIDAS_QUE_CIERRAN = ['Cambiar de cliente', 'Buscar otro'];
-const SALIDAS_QUE_CANCELAN = ['Volver al cliente', 'Volver al Contacto'];
+const SALIDAS_QUE_CANCELAN = ['Volver al cliente', 'Volver al contacto'];
 
 test('#489-1: cada boton que saca al vendedor del cliente recoge el panel; volver a la ficha cancela la actualizacion (#545)', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
   const handler = etiqueta => {
-    const m = src.match(new RegExp(`onclick="(\\w+)\\(\\)">&lsaquo; ${etiqueta}<`));
+    const m = src.match(new RegExp(`botonVolverHtml\\(\\{ texto: '${etiqueta}', onclick: '(\\w+)\\(\\)' \\}\\)`));
     assert.ok(m, `el boton "${etiqueta}" debe seguir existiendo: si no, este test ya no cuida nada`);
     return { nombre: m[1], cuerpo: cuerpoDeFuncionApp(`function ${m[1]}(`) };
   };

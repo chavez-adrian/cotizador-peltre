@@ -135,6 +135,8 @@ import {
   BUSCABLES_PROSPECTO,
   chipOrigenHtml,
 } from './prospectos-logica.js';
+import { botonVolverHtml } from './volver-logica.js';
+import { ICONO_VOLVER } from './iconos.js';
 // Origen heredado (#287): el pipeline y los buscadores de cliente cargan los
 // prospectos junto con lo demas, asi que la herencia se resuelve aqui mismo.
 import { indiceOrigenPorCelular, anotarOrigen } from './origen-logica.js';
@@ -3712,11 +3714,11 @@ let pcBuscarTimer = null;
 async function pcCaminoBuscar() {
   const root = pcEl();
   root.innerHTML =
+    botonVolverHtml({ texto: 'Volver', onclick: 'pcRenderInicio()' }) +
     '<div class="pc-pregunta">Buscar cliente<small>Operam y prospectos en una sola busqueda.</small></div>' +
     '<div class="pc-search"><input type="text" id="pc-q" class="pc-input-lg" ' +
     'placeholder="Nombre, empresa, RFC o celular..." autocomplete="off"></div>' +
-    '<div id="pc-zona"></div>' +
-    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+    '<div id="pc-zona"></div>';
   const input = document.getElementById('pc-q');
   input.addEventListener('input', () => {
     clearTimeout(pcBuscarTimer);
@@ -3916,6 +3918,7 @@ function pcCaminoNuevo(prefill, restore) {
   const nombre = typeof prefill === 'string' ? prefill : '';
   const canales = CANALES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
   root.innerHTML =
+    botonVolverHtml({ texto: 'Volver', onclick: 'pcRenderInicio()' }) +
     '<div class="pc-pregunta">Contacto nuevo<small>Lo minimo para cotizar. Queda guardado como prospecto.</small></div>' +
     `<div class="form-group"><label>Nombre *</label>` +
     `<input type="text" id="pc-nombre" value="${escapeHtml(nombre)}" placeholder="Nombre (se acepta sin apellido)" autocomplete="off"></div>` +
@@ -3929,8 +3932,7 @@ function pcCaminoNuevo(prefill, restore) {
     '<div class="form-group"><label>Segmento <span style="font-size:11px;color:var(--text-light)">(opcional)</span></label>' +
     '<select id="pc-segmento"><option value="">-- Selecciona --</option></select></div>' +
     '<div id="pc-nuevo-error" class="pc-error" style="display:none"></div>' +
-    '<button type="button" class="btn btn-primary btn-block" id="pc-guardar" onclick="pcGuardarContactoNuevo()">Guardar y continuar</button>' +
-    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Volver</button>';
+    '<button type="button" class="btn btn-primary btn-block" id="pc-guardar" onclick="pcGuardarContactoNuevo()">Guardar y continuar</button>';
   let sugTimer;
   document.getElementById('pc-nombre').addEventListener('input', () => {
     clearTimeout(sugTimer);
@@ -4170,6 +4172,7 @@ function pcRenderTarjeta() {
   // #196: nombre corto (c.ref) entre parentesis, formato unico (nombreConCorto).
   const nombreTarjeta = nombreConCorto(c.name || c.ref || 'Sin nombre', c.ref);
   root.innerHTML =
+    botonVolverHtml({ texto: 'Cambiar de cliente', onclick: 'pcRenderInicio()' }) +
     '<div class="pc-pregunta">Cliente seleccionado</div>' +
     '<div class="pc-cli-card">' +
     `<div class="pc-cli-nombre">${escapeHtml(nombreTarjeta)}</div>` +
@@ -4179,8 +4182,7 @@ function pcRenderTarjeta() {
     (bloqueoMoneda
       ? `<div class="pc-cli-bloqueo">${escapeHtml(bloqueoMoneda.mensaje)}</div>`
       : '<button type="button" class="btn btn-primary btn-block" style="margin-top:16px" onclick="pcContinuar()">Continuar a Productos &rsaquo;</button>') +
-    '</div>' +
-    '<button type="button" class="pc-back" onclick="pcRenderInicio()">&lsaquo; Cambiar de cliente</button>';
+    '</div>';
 
   pcMostrarCapturaTelefono(contactoAccionable(c));
   pcRenderDomSelect();
@@ -6236,8 +6238,7 @@ function cvRenderTarjeta(aviso) {
   const cuerpo = sel.tipo === 'contacto'
     ? '<div class="pc-pregunta">Contacto</div>' + fichaContactoHtml(sel.contacto)
     : '<div class="pc-pregunta">Cliente Operam</div>' + cardClienteHtml(sel.card);
-  root.innerHTML = banner + cuerpo +
-    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Buscar otro</button>';
+  root.innerHTML = botonVolverHtml({ texto: 'Buscar otro', onclick: 'cvRenderBusqueda()' }) + banner + cuerpo;
 }
 window.cvRenderTarjeta = cvRenderTarjeta;
 
@@ -6285,8 +6286,8 @@ function cvUpgradeClienteOperam(id) {
   const root = cvRoot();
   if (root) {
     root.innerHTML =
-      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(false)) + '</div>' +
-      '<button type="button" class="pc-back" onclick="cvVolverATarjeta()">&lsaquo; Volver al Contacto</button>';
+      botonVolverHtml({ texto: 'Volver al contacto', onclick: 'cvVolverATarjeta()' }) +
+      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(false)) + '</div>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
   pcAbrirUpgradeFiscal(cliente.id, { nombre: cliente.name || cliente.ref || '', rfc: cliente.rfc || '' }, 'clientes');
@@ -6301,9 +6302,9 @@ function cvCaminoAlta(query) {
   cvState.seleccion = null;
   const q = typeof query === 'string' ? query.trim() : '';
   root.innerHTML =
+    botonVolverHtml({ texto: 'Cancelar', onclick: 'cvRenderBusqueda()' }) +
     '<div class="pc-pregunta">Nuevo cliente<small>Alta completa en Operam, sin cotizacion.' +
-    (q ? ' (' + escapeHtml(q) + ')' : '') + '</small></div>' +
-    '<button type="button" class="pc-back" onclick="cvRenderBusqueda()">&lsaquo; Cancelar</button>';
+    (q ? ' (' + escapeHtml(q) + ')' : '') + '</small></div>';
   moverPanelA(document.getElementById('clientes-panel-slot'));
   abrirAcordeonAlta();
 }
@@ -6324,8 +6325,8 @@ function cvAbrirUpgrade(editar) {
   const root = cvRoot();
   if (root) {
     root.innerHTML =
-      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(editar)) + '</div>' +
-      '<button type="button" class="pc-back" onclick="cvVolverATarjeta()">&lsaquo; Volver al cliente</button>';
+      botonVolverHtml({ texto: 'Volver al cliente', onclick: 'cvVolverATarjeta()' }) +
+      '<div class="pc-pregunta">' + escapeHtml(rotuloPanelUpgrade(editar)) + '</div>';
   }
   moverPanelA(document.getElementById('clientes-panel-slot'));
   pcAbrirUpgradeFiscal(id, { nombre: c.name || c.ref || '', rfc: c.rfc || '' }, 'clientes');
@@ -9946,6 +9947,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files[0];
     if (file) altaCsfProcesarArchivo(file);
   });
+});
+
+// Los 6 Volver de barra (#200) nacen en index.html con solo su texto: la flecha
+// sale del mismo modulo que la del paso, para que el componente sea uno.
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('button.volver').forEach(b => b.insertAdjacentHTML('afterbegin', ICONO_VOLVER));
 });
 
 // Wiring de busqueda por celular en el primer formulario (issue #69 AC3).

@@ -216,15 +216,13 @@ body {
   margin-top: 1px;
 }
 
-.app-header .btn-secondary,
-.historial-header .btn-secondary {
+.app-header .btn-secondary {
   background: rgba(255,255,255,0.15);
   color: var(--white);
   border-color: rgba(255,255,255,0.4);
 }
 
-.app-header .btn-secondary:hover,
-.historial-header .btn-secondary:hover {
+.app-header .btn-secondary:hover {
   background: rgba(255,255,255,0.28);
 }
 
@@ -957,6 +955,39 @@ body {
   justify-content: space-between;
 }
 .historial-header h1 { font-size: 15px; font-weight: 700; }
+
+/* Boton Volver unico (#200): pastilla con flecha + texto, a la izquierda y ANTES
+   del titulo. Barra: 9 + 30 + 9 = 48 px; el titulo largo se corta en un renglon. */
+.historial-header.con-volver { justify-content: flex-start; gap: 10px; padding: 9px 16px 9px 10px; }
+.historial-header.con-volver h1 { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.volver {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 1px;
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px 0 5px;
+  border-radius: var(--radius-input);
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms cubic-bezier(0.25, 1, 0.5, 1), transform 150ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+/* Area tactil de 44 px aunque la pastilla visible mida 30 */
+.volver::before { content: ""; position: absolute; inset: -7px -4px; }
+.volver svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.volver:active { transform: scale(0.97); }
+.volver:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* Superficie oscura: barra azul de la vista */
+.volver-barra { color: var(--white); background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); }
+.volver-barra:hover { background: rgba(255,255,255,0.28); }
+.volver-barra:active { background: rgba(255,255,255,0.34); }
+
+/* Superficie clara: arriba de un paso */
+.volver-paso { color: var(--primary-dark); background: var(--white); border: 1px solid var(--border); margin-bottom: 14px; }
+.volver-paso:hover,
+.volver-paso:active { background: var(--primary-light); }
 
 .cot-card {
   background: var(--white);
@@ -2417,7 +2448,6 @@ body {
 .pc-dom { margin-top: 14px; }
 
 /* Volver / cambiar cliente */
-.pc-back { background: none; border: none; color: var(--primary-dark); font-size: 14px; font-weight: 600; min-height: 44px; padding: 10px 4px; cursor: pointer; margin-top: 6px; }
 
 /* Bloque de domicilio de entrega en el paso Envio (#84; antes revelado inline
    bajo la tarjeta del paso Cliente, #82) */
