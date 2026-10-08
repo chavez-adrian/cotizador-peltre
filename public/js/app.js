@@ -8414,6 +8414,7 @@ function abrirAcordeonAlta() {
 // candarSecciones del ejecutor del Modo del alta.
 const ALTA_SECCIONES_BLOQUEADAS_AL_INICIO = [3, 4];
 const ALTA_ICO_CANDADO = '\u{1F512}';
+const ALTA_ICO_PALOMA = '\u2713';
 
 // El reinicio (#192): su transicion prende "Dar de alta", limpia las palomas y canda las
 // Secciones 3 y 4 -- sin el candado el vendedor saltaria a "Dar de alta" sin pasar por
@@ -8533,7 +8534,7 @@ function altaAbrirSeccion(n) {
 function altaReponerProgreso({ palomas, desbloquear }) {
   for (const n of palomas) {
     const dot = document.getElementById(`chkdot-${n}`);
-    if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+    if (dot) { dot.classList.add('done'); dot.textContent = ALTA_ICO_PALOMA; }
   }
   for (const n of desbloquear) {
     const sec = document.getElementById(`alta-sec-${n}`);
@@ -9107,7 +9108,7 @@ window.altaDiffFiscalDescartar = altaDiffFiscalDescartar;
 
 function altaDedupDesbloquear() {
   const dot = document.getElementById('chkdot-1');
-  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+  if (dot) { dot.classList.add('done'); dot.textContent = ALTA_ICO_PALOMA; }
   const sec2 = document.getElementById('alta-sec-2');
   if (sec2) {
     sec2.classList.remove('alta-seccion-bloqueada');
@@ -9461,7 +9462,7 @@ async function altaConfirmarComercial() {
   // actualizacion, y esa no es avance del alta a medias.
   if (modoAlta.clienteId == null) altaState.comercialConfirmado = true;
   const dot = document.getElementById('chkdot-2');
-  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+  if (dot) { dot.classList.add('done'); dot.textContent = ALTA_ICO_PALOMA; }
 
   const sec3 = document.getElementById('alta-sec-3');
   if (sec3) {
@@ -9541,7 +9542,7 @@ async function altaConfirmarDomicilio() {
 // domicilio reutilizado (#371): un solo lugar decide la paloma y el desbloqueo.
 function altaDomicilioConfirmado() {
   const dot = document.getElementById('chkdot-3');
-  if (dot) { dot.classList.add('done'); dot.textContent = 'v'; }
+  if (dot) { dot.classList.add('done'); dot.textContent = ALTA_ICO_PALOMA; }
 
   const sec4 = document.getElementById('alta-sec-4');
   if (sec4) {

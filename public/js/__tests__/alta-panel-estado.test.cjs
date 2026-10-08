@@ -152,6 +152,27 @@ test('#432-3: las palomas se limpian en un solo lugar, y el reinicio aplica su t
     'las palomas se limpian en un solo lugar');
 });
 
+// Los circulos de "Progreso del alta" se marcaban con la letra v (#551): todos pasan por
+// una sola constante, declarada con escape Unicode para no meter literales no ASCII.
+test('#551: los circulos de Progreso del alta se marcan con la paloma de ALTA_ICO_PALOMA, no con una v', () => {
+  const src = fuenteApp();
+  assert.ok(!src.includes("textContent = 'v'"), 'ningun circulo se marca con la letra v');
+  const decl = src.match(/^const ALTA_ICO_PALOMA = '(\\u[0-9a-fA-F]{4})';$/m);
+  assert.ok(decl, 'ALTA_ICO_PALOMA se declara con un escape Unicode, no con el literal');
+  assert.strictEqual(JSON.parse(`"${decl[1]}"`), String.fromCharCode(0x2713), 'el escape es la paloma U+2713');
+  const sitios = [
+    'function altaReponerProgreso(',
+    'function altaDedupDesbloquear(',
+    'function altaConfirmarComercial(',
+    'function altaDomicilioConfirmado(',
+  ];
+  for (const firma of sitios) {
+    assert.ok(cuerpoDeFuncion(src, firma).includes('dot.textContent = ALTA_ICO_PALOMA'), `${firma} marca su circulo con ALTA_ICO_PALOMA`);
+  }
+  assert.strictEqual((src.match(/dot\.textContent = ALTA_ICO_PALOMA/g) || []).length, sitios.length,
+    'los cuatro sitios y ninguno mas marcan circulos con la paloma');
+});
+
 // Un tipo que el ejecutor no conoce fallaria en silencio en el navegador: cada tipo de
 // ACCIONES_MODO tiene su caso, no hay casos de mas, y el default lanza (#541).
 test('#541: el ejecutor de app.js tiene un caso por cada tipo de ACCIONES_MODO y el default lanza', async () => {
