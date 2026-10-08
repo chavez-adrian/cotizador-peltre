@@ -534,3 +534,20 @@ test('#542-10: la lograda tardia mata su borrador, aplica su transicion y no toc
   }
   assert.ok(tardia.includes('return;'));
 });
+
+// "Crear nuevo" desde la dedup (#550): la Seccion 2 nunca nace candada, asi que el
+// candado no decia de donde vino el candidato y la Seccion 1 no se confirmaba. El origen
+// viaja en el onclick (alta-dedup-fiscal.test.cjs V3); aqui el cableado de app.js.
+test('#550: Crear nuevo confirma la Seccion 1 y abre la 2 solo si el candidato vino de la Seccion 1', () => {
+  const src = fuenteApp();
+  const crear = cuerpoDeFuncion(src, 'function altaCandidatoCrearNuevo(desde)');
+  assert.ok(!crear.includes('alta-seccion-bloqueada'), 'el candado no es la senal del origen');
+  assert.ok(crear.includes("if (desde === 'seccion1') altaDedupDesbloquear();"),
+    'solo desde la Seccion 1; sin origen se trata como la 2 (no alterna la seccion)');
+  assert.ok(crear.indexOf('aplicarModoAlta(alCrearNuevoCandidato)') < crear.indexOf('altaDedupDesbloquear()'));
+  assert.ok(src.includes('}\nwindow.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;\n'), 'expuesta a window junto a su declaracion (#112)');
+  assert.ok(cuerpoDeFuncion(src, 'async function altaDedupCorrer(')
+    .includes("buildCandidatosRfcGenericoHtml(resultado.candidatos, { desde: 'seccion1' })"), 'la dedup tras la CSF es la Seccion 1');
+  assert.ok(cuerpoDeFuncion(src, 'async function altaBuscarCelular(')
+    .includes("buildCandidatosRfcGenericoHtml(resultado2.candidatos, { desde: 'seccion2' })"), 'los candidatos por celular son de la Seccion 2');
+});

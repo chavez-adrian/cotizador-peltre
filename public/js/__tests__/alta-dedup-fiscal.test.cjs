@@ -560,10 +560,21 @@ test('V2: buildCandidatosRfcGenericoHtml incluye boton "Actualizar este" por can
   assert.ok(html.includes('altaCandidatoActualizar(40)'), 'debe ligar el boton al id del candidato 40');
 });
 
-test('V3: buildCandidatosRfcGenericoHtml SI ofrece crear nuevo cliente (a diferencia de la rama generica de ADR-0001)', () => {
+// #550: "Crear nuevo" lleva de que seccion vino el candidato; el DOM no lo dice
+// (la Seccion 2 nunca nace candada) y solo desde la Seccion 1 se confirma y se abre la 2.
+test('V3: buildCandidatosRfcGenericoHtml SI ofrece crear nuevo cliente, ligado a altaCandidatoCrearNuevo con su origen', () => {
   const html = buildCandidatosRfcGenericoHtml(candidatosGenericos);
   assert.ok(/crear nuevo/i.test(html), 'debe ofrecer crear nuevo cliente');
-  assert.ok(html.includes('altaCandidatoCrearNuevo()'), 'debe ligar la accion a altaCandidatoCrearNuevo');
+  assert.ok(html.includes('onclick="altaCandidatoCrearNuevo()"'), 'sin origen la accion queda sin argumento');
+  const s1 = buildCandidatosRfcGenericoHtml(candidatosGenericos, { desde: 'seccion1' });
+  assert.ok(s1.includes(`onclick="altaCandidatoCrearNuevo('seccion1')"`), 'desde la Seccion 1');
+  assert.ok(!s1.includes('altaCandidatoCrearNuevo()'));
+  const s2 = buildCandidatosRfcGenericoHtml(candidatosGenericos, { desde: 'seccion2' });
+  assert.ok(s2.includes(`onclick="altaCandidatoCrearNuevo('seccion2')"`), 'desde la Seccion 2');
+  assert.ok(!s2.includes('altaCandidatoCrearNuevo()'));
+  for (const h of [s1, s2]) {
+    assert.ok(h.includes('altaCandidatoActualizar(30)') && h.includes('altaCandidatoActualizar(40)'), '"Actualizar este" no cambia');
+  }
 });
 
 test('V4: buildCandidatosRfcGenericoHtml distingue la senal de telefono de la de nombre', () => {

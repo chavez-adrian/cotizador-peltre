@@ -9172,7 +9172,7 @@ async function altaDedupCorrer(rfc, razonSocial, telefono) {
           '</label>' +
           '</div>';
       } else {
-        dedupDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado.candidatos);
+        dedupDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado.candidatos, { desde: 'seccion1' });
       }
       return;
     }
@@ -9368,11 +9368,12 @@ async function altaCandidatoActualizar(clienteId) {
 window.altaCandidatoActualizar = altaCandidatoActualizar;
 
 // "Crear nuevo" descarta el candidato y continua el camino de creacion (POST)
-// que ya estaba en curso. Si el candidato aparecio en la Seccion 1 (justo tras
-// parsear la CSF) la Seccion 2 sigue bloqueada y hay que desbloquearla; si
-// aparecio en la Seccion 2 (disparado por altaBuscarCelular, con la Seccion 2
-// ya abierta) no se debe re-alternar la seccion o quedaria colapsada.
-function altaCandidatoCrearNuevo() {
+// que ya estaba en curso. `desde` lo pone quien pinto el bloque (#550): desde la
+// Seccion 1 (altaDedupCorrer, tras la CSF) se confirma la Seccion 1 y se abre la 2,
+// igual que con la dedup libre; desde la Seccion 2 (altaBuscarCelular, ya abierta) o
+// sin origen solo se quita el bloque, porque alternar la seccion la colapsaria. El
+// candado no sirve de senal: la Seccion 2 nunca nace candada.
+function altaCandidatoCrearNuevo(desde) {
   const dedupDiv = document.getElementById('alta-dedup-resultado');
   if (dedupDiv) { dedupDiv.innerHTML = ''; dedupDiv.style.display = 'none'; }
   const candDiv = document.getElementById('alta-celular-candidatos');
@@ -9381,8 +9382,7 @@ function altaCandidatoCrearNuevo() {
   // candidato es justamente decir que ese cliente no era, asi que el modo se apaga y el
   // alta vuelve a ser posible. Sin esto la guardia de altaDarDeAlta no tendria salida.
   aplicarModoAlta(alCrearNuevoCandidato);
-  const sec2 = document.getElementById('alta-sec-2');
-  if (sec2 && sec2.classList.contains('alta-seccion-bloqueada')) altaDedupDesbloquear();
+  if (desde === 'seccion1') altaDedupDesbloquear();
 }
 window.altaCandidatoCrearNuevo = altaCandidatoCrearNuevo;
 
@@ -9430,7 +9430,7 @@ async function altaBuscarCelular() {
       const res2 = await api('/api/buscar-cliente-duplicado?' + params.toString());
       const resultado2 = await res2.json();
       if (resultado2.tipo === 'candidatos') {
-        candDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado2.candidatos);
+        candDiv.innerHTML = buildCandidatosRfcGenericoHtml(resultado2.candidatos, { desde: 'seccion2' });
         candDiv.style.display = 'block';
       }
     } catch {

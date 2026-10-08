@@ -1102,8 +1102,11 @@ export function buildDedupExactoConDiffHtml(cliente, csfDatos) {
 // "Crear nuevo" es un camino legitimo si el candidato resulta ser otra empresa.
 // "Actualizar este" dispara el upgrade fiscal existente de #85 sobre ese
 // customer_id con los datos de la CSF ya parseada.
-export function buildCandidatosRfcGenericoHtml(candidatos) {
+// `desde` ('seccion1' | 'seccion2') es la seccion que pinta el bloque y viaja en
+// el onclick de "Crear nuevo" (#550): solo desde la Seccion 1 se confirma y se abre la 2.
+export function buildCandidatosRfcGenericoHtml(candidatos, { desde } = {}) {
   if (!Array.isArray(candidatos) || candidatos.length === 0) return '';
+  const crearNuevo = desde ? "altaCandidatoCrearNuevo('" + desde + "')" : 'altaCandidatoCrearNuevo()';
   const filas = candidatos.map(c => {
     const nombre = c.CustName || c.cust_ref || 'Sin nombre';
     const senal = c._telefonoMatch ? 'telefono coincide' : 'nombre similar';
@@ -1111,7 +1114,7 @@ export function buildCandidatosRfcGenericoHtml(candidatos) {
       '<div class="candidato-generico-fila">' +
       '<p><strong>' + nombreConCorto(nombre, c.cust_ref) + '</strong> &middot; ' + senal + '</p>' +
       '<button type="button" class="btn btn-secondary" onclick="altaCandidatoActualizar(' + c.id + ')">Actualizar este</button> ' +
-      '<button type="button" class="btn btn-secondary" onclick="altaCandidatoCrearNuevo()">Crear nuevo</button>' +
+      '<button type="button" class="btn btn-secondary" onclick="' + crearNuevo + '">Crear nuevo</button>' +
       '</div>'
     );
   }).join('');
