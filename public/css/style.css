@@ -2447,8 +2447,6 @@ body {
 .pc-chip-btn .pc-chip.pend { border: 1px dashed oklch(0.82 0.03 262); }
 .pc-dom { margin-top: 14px; }
 
-/* Volver / cambiar cliente */
-
 /* Bloque de domicilio de entrega en el paso Envio (#84; antes revelado inline
    bajo la tarjeta del paso Cliente, #82) */
 .pc-entrega-inline { margin-top: 16px; margin-bottom: 16px; padding: 16px; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--white); }

@@ -42,9 +42,8 @@ test('V1: el helper arma la pastilla del paso con flecha SVG, texto y onclick', 
   assert.ok(!b.includes('&lsaquo;'), 'la flecha es el SVG, ya no el caracter');
 });
 
-test('V2: la superficie barra cambia el modificador; el texto se escapa', () => {
-  const b = VOLVER.botonVolverHtml({ texto: 'A & <b>', onclick: 'x()', superficie: 'barra' });
-  assert.match(b, /class="volver volver-barra"/);
+test('V2: el texto se escapa', () => {
+  const b = VOLVER.botonVolverHtml({ texto: 'A & <b>', onclick: 'x()' });
   assert.ok(b.includes('A &amp; &lt;b&gt;</button>'));
 });
 
