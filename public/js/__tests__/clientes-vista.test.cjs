@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 
 let esRfcGenerico, customerIdFiscal, mostrarBotonCsf;
 let destinoTrasUpgradeLogrado, destinoTrasAltaLograda, camposClienteOperamTrasUpgrade,
-  interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO;
+  interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO, filaClienteOperamEnResultados;
 let tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
   bannerUpgradeHtml, chipsClienteViewHtml, cardClienteHtml, rotuloPanelUpgrade,
   filaContactoHtml, fichaContactoHtml;
@@ -20,7 +20,7 @@ before(async () => {
   ({
     esRfcGenerico, customerIdFiscal, mostrarBotonCsf,
     destinoTrasUpgradeLogrado, destinoTrasAltaLograda, camposClienteOperamTrasUpgrade,
-    interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO,
+    interpretarRespuestaUpgrade, UPGRADE_TITULO_LOGRADO, filaClienteOperamEnResultados,
   } = await import('../alta-logica.js'));
   ({
     tagResultadoClienteHtml, tagPedidoClienteHtml, filaResultadoClienteHtml, filaCrearClienteHtml,
@@ -551,6 +551,22 @@ test('UD6: origen clientes-alta -> la ficha del Cliente Operam, con confirmacion
   assert.deepEqual(destinoTrasUpgradeLogrado(null, logrado), { pantalla: 'paso', confirmacion: null });
 });
 
+// #549 (HITL en produccion): el Cliente Operam 15 esta ligado a un Contacto, asi que
+// GET /api/contactos/buscar lo devuelve ANIDADO en clientesOperam y no como fila suelta
+// (filasBuscadorClientes, #346); buscar solo las sueltas caia siempre al respaldo.
+test('UD7: la fila del Cliente Operam actualizado se encuentra suelta o anidada bajo su Contacto', () => {
+  const op15 = { tipo: 'operam', id: 15, nombre: 'ADRIAN CHAVEZ ROSETE', rfc: 'CARA830713D53', raw: { id: 15 } };
+  const op7 = { tipo: 'operam', id: 7, nombre: 'OTRO', rfc: 'CARA830713D53', raw: { id: 7 } };
+  const contacto = { tipo: 'contacto', id: 263, nombre: 'Adrian Chavez Rosete', clientesOperam: [op7, op15] };
+  assert.equal(filaClienteOperamEnResultados([contacto], 15), op15, 'anidada bajo su Contacto');
+  assert.equal(filaClienteOperamEnResultados([contacto], '15'), op15, 'el id se compara como texto');
+  const suelta = { ...op15, raw: { id: 15, suelta: true } };
+  assert.equal(filaClienteOperamEnResultados([contacto, suelta], 15), suelta, 'la suelta gana');
+  assert.equal(filaClienteOperamEnResultados([contacto], 99), null);
+  assert.equal(filaClienteOperamEnResultados([{ tipo: 'contacto', id: 1 }], 15), null, 'Contacto sin ligas');
+  assert.equal(filaClienteOperamEnResultados(null, 15), null);
+});
+
 // === A donde va el vendedor tras los dos botones post-exito del alta (#412) ===
 // El panel del alta es un nodo UNICO que viaja (#376): la vista Clientes lo toma
 // prestado con moverPanelA y hasta #412 "Cotizar ahora" solo lo escondia con
@@ -682,8 +698,8 @@ test('#549-2: la lograda con destino clientes-operam pinta la ficha y despues el
     'la rama busca por el RFC que Operam guardo y, si no lo guardo, por el capturado');
   const ficha = cuerpoDeFuncionApp('async function cvMostrarClienteOperamActualizado(');
   assert.ok(ficha.includes('cvBuscarContactos(rfc)'), 'la ficha sale de la busqueda de la vista por el RFC nuevo');
-  assert.ok(ficha.includes("r.tipo === 'operam' && String(r.id) === String(customerId)"),
-    'la fila es la del Cliente Operam actualizado, comparando el id como texto');
+  assert.ok(ficha.includes('filaClienteOperamEnResultados(rows, customerId)'),
+    'la fila es la del Cliente Operam actualizado, suelta o anidada bajo su Contacto (UD7)');
   const tarjeta = ficha.indexOf('cvRenderTarjeta(confirmacion)');
   const reporte = ficha.indexOf('pcRenderReporteUpgrade(vista)');
   assert.ok(tarjeta > 0 && reporte > tarjeta, 'la ficha se pinta ANTES del reporte, que queda encima y "Cerrar" la deja');

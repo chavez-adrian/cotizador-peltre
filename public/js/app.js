@@ -61,6 +61,7 @@ import {
   seccionAltaAbierta,
   interpretarRespuestaUpgrade,
   destinoTrasUpgradeLogrado,
+  filaClienteOperamEnResultados,
   destinoTrasAltaLograda,
   camposClienteOperamTrasUpgrade,
   altaReutilizaDomicilio,
@@ -6187,7 +6188,7 @@ function cvSeleccionDeFilaOperam(r) {
 // cliente elegido (cvCaminoAlta), asi que se busca al Cliente Operam actualizado por su
 // RFC y se pinta su ficha con la confirmacion; el panel sigue oculto en
 // #clientes-panel-slot, el reporte de #407 queda encima y "Cerrar" deja la ficha. Si la
-// fila no llega (sin RFC guardado, o el Cliente Operam cuelga de un Contacto), la
+// fila no llega (sin RFC guardado; la anidada bajo su Contacto SI cuenta), la
 // busqueda prellenada con ese RFC: cvRenderBusqueda recoge el panel y quita el reporte,
 // asi que el mensaje de la actualizacion va arriba como aviso. Si en la espera el
 // vendedor ya salio del alta (el panel se recogio), no se pinta nada.
@@ -6195,7 +6196,7 @@ async function cvMostrarClienteOperamActualizado(customerId, rfcNuevo, confirmac
   const rfc = String(rfcNuevo || '').trim();
   const rows = await cvBuscarContactos(rfc);
   if (!altaPanelEnVistaClientes()) return;
-  const fila = rows.find(r => r.tipo === 'operam' && String(r.id) === String(customerId));
+  const fila = filaClienteOperamEnResultados(rows, customerId);
   if (fila) {
     cvResultadosCache = rows;
     cvState.seleccion = cvSeleccionDeFilaOperam(fila);

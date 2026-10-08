@@ -742,6 +742,18 @@ export function destinoTrasUpgradeLogrado(origen, vista) {
   };
 }
 
+// La fila del Cliente Operam actualizado entre los resultados de la vista Clientes
+// (#549): suelta, o ANIDADA en `clientesOperam` del Contacto que la liga -- un Cliente
+// Operam con Contacto ya no sale como fila suelta (#346), y asi estaba el 15 en el HITL.
+export function filaClienteOperamEnResultados(rows, customerId) {
+  const esElCliente = r => r?.tipo === 'operam' && String(r.id) === String(customerId);
+  const lista = Array.isArray(rows) ? rows : [];
+  return lista.find(esElCliente)
+    || lista.flatMap(r => (r?.tipo === 'contacto' && Array.isArray(r.clientesOperam) ? r.clientesOperam : []))
+      .find(esElCliente)
+    || null;
+}
+
 // A donde va el vendedor cuando el alta completa SI se logro y pulsa uno de los dos
 // botones post-exito, "Cotizar ahora" o "Terminar" (#412). El panel del alta es un
 // nodo UNICO que viaja (#376): la vista Clientes lo toma prestado (moverPanelA) y
