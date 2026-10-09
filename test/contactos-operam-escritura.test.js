@@ -484,13 +484,18 @@ test('CE28: la persona elegida que no es General pregunta una sola vez por sus d
   assert.deepEqual(r.noAplicados, []);
 });
 
-test('CE29: una persona elegida que no esta en el domicilio (del Cliente Operam) se escribe como antes: persona nueva', async () => {
+// La persona del Cliente Operam se copia (#564, CE32 en adelante); la que no esta ni en
+// el domicilio ni en el Cliente Operam se escribe como sin person_id.
+test('CE29: una persona elegida que no esta ni en el domicilio ni en el Cliente Operam se escribe como antes: persona nueva sin liga', async () => {
   const op = operam();
-  const r = await escribirContactoEntrega(solicitud({ contacto: { ...LUCIA, personId: '61' } }), op.deps);
+  const r = await escribirContactoEntrega(solicitud({ contacto: { ...LUCIA, personId: '999' } }), op.deps);
   assert.equal(r.tipo, 'lograda');
-  assert.notEqual(r.personId, '61');
+  assert.equal(r.escrito, true);
+  assert.equal(r.copiaDe, undefined);
+  assert.deepEqual(enOperam(op, r.personId).nombre, 'Lucia Recibe Almacen');
   assert.equal(op.pedidos('crear').length, 1);
   assert.equal(op.pedidos('editar').length, 0);
+  assert.equal(op.estado.copias.size, 0);
   assert.equal(op.estado.personas.get('61').phone, '+52 55 3466 7682');
 });
 
@@ -515,4 +520,139 @@ test('CE31: a la edicion solo viajan las casillas que cambian', async () => {
   const [{ args: [, , cambios] }] = op.pedidos('editar');
   assert.deepEqual(cambios.casillas, { cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678' });
   assert.deepEqual([enOperam(op, '1249').secundario, enOperam(op, '1249').correo], ['55 7777 0000', 'LUCIA@example.com']);
+});
+
+// --- Copia en el domicilio de la persona del Cliente Operam (#564, ADR-0024 regla 6) ---
+// Operam no liga una persona existente a un domicilio (medido: "Clonar" tambien crea
+// otra), asi que la persona elegida que solo esta en el Cliente Operam se COPIA al
+// domicilio con sus datos y el cotizador guarda la liga copia -> origen. La original
+// no se toca; las siguientes cotizaciones al mismo domicilio van a la copia.
+
+const ORIGEN_61 = {
+  personId: '61', name: 'Adrian Cliente Nombre', name2: 'Chavez', ref: 'Adrian Cliente Referencia',
+  phone: '+52 55 3466 7682', email: 'compras@example.com', notes: 'compradora general',
+};
+const ELEGIDA_61 = { nombre: 'Adrian Cliente Nombre', telefono: '+52 55 3466 7682', correo: '', personId: '61' };
+
+function conOrigen(extra = {}) {
+  return operam({ personas: [ORIGEN_61, PERSONAS[1]], ...extra });
+}
+
+const crudo = (op, personId) => ({ ...op.estado.personas.get(String(personId)) });
+const renglonesDe = (op, personId) => op.estado.renglones.filter(r => r.personId === String(personId)).map(r => `${r.tipo}:${r.entidad}:${r.rol}`);
+
+test('CE32: la persona elegida que solo esta en el Cliente Operam se copia al domicilio con sus datos, como General y Entrega; la original queda igual', async () => {
+  const op = conOrigen();
+  const antes61 = { crudo: crudo(op, '61'), renglones: renglonesDe(op, '61') };
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.notEqual(r.personId, '61');
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.equal(op.pedidos('editar').length, 0);
+  const copia = crudo(op, r.personId);
+  assert.deepEqual(
+    { name: copia.name, name2: copia.name2, ref: copia.ref, fax: copia.fax, phone: copia.phone, phone2: copia.phone2, email: copia.email },
+    { name: 'Adrian Cliente Nombre', name2: 'Chavez', ref: 'Adrian Cliente Referencia', fax: '+52 55 3466 7682', phone: '+52 55 3466 7682', phone2: '', email: 'compras@example.com' },
+  );
+  assert.deepEqual(enOperam(op, r.personId).roles, ['general', 'delivery']);
+  assert.deepEqual({ crudo: crudo(op, '61'), renglones: renglonesDe(op, '61') }, antes61);
+  assert.deepEqual(r.noAplicados, []);
+  assert.equal(r.pasos[0].status, 'ok');
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+});
+
+test('CE33: el cotizador guarda la liga entre la copia y la persona de origen, por domicilio', async () => {
+  const op = conOrigen();
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.copiaDe, '61');
+  assert.deepEqual(op.estado.copias.get('564:61'), { clienteId: '15', domicilioId: '564', origenPersonId: '61', copiaPersonId: r.personId });
+  assert.match(r.pasos[0].detalle, new RegExp(`persona ${r.personId} creada como copia de la persona 61 del Cliente Operam`));
+});
+
+test('CE34: una segunda cotizacion al mismo domicilio con la misma persona reutiliza la copia y no crea otra', async () => {
+  const op = conOrigen();
+  const primera = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  const segunda = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.equal(segunda.tipo, 'lograda');
+  assert.equal(segunda.motivo, 'sin-cambios');
+  const personasEn564 = new Set(op.estado.renglones.filter(r => r.tipo === 'cust_branch' && r.entidad === '564').map(r => r.personId));
+  assert.deepEqual([...personasEn564].sort(), ['1249', primera.personId].sort());
+});
+
+test('CE35: las siguientes ediciones van a la copia; la persona de origen no se toca', async () => {
+  const op = conOrigen();
+  const primera = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  const antes61 = crudo(op, '61');
+  const r = await escribirContactoEntrega(solicitud({ contacto: { ...ELEGIDA_61, correo: 'almacen@example.com' } }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.equal(r.motivo, 'pisa-datos');
+  assert.deepEqual(r.persona, { personId: primera.personId, nombre: 'Adrian Cliente Nombre Chavez' });
+  const confirmada = await escribirContactoEntrega(solicitud({ contacto: { ...ELEGIDA_61, correo: 'almacen@example.com' }, ...decisionDe(r) }), op.deps);
+  assert.equal(confirmada.tipo, 'lograda');
+  assert.equal(confirmada.personId, primera.personId);
+  assert.equal(confirmada.copiaDe, '61');
+  assert.equal(crudo(op, primera.personId).email, 'almacen@example.com');
+  assert.deepEqual(op.pedidos('editar').map(l => l.args[1]), [primera.personId]);
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.deepEqual(crudo(op, '61'), antes61);
+});
+
+test('CE36: si la copia ya no esta en el domicilio (la borraron en Operam), se crea otra y la liga apunta a la nueva', async () => {
+  const op = conOrigen({ copias: [{ clienteId: '15', domicilioId: '564', origenPersonId: '61', copiaPersonId: '1290' }] });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.notEqual(r.personId, '1290');
+  assert.equal(op.estado.copias.get('564:61').copiaPersonId, r.personId);
+});
+
+test('CE37: la copia con otro numero capturado lleva ese numero en Cel y Telefono y el de la persona de origen en Secundario, sin preguntar', async () => {
+  const op = conOrigen();
+  const r = await escribirContactoEntrega(solicitud({ contacto: { ...ELEGIDA_61, telefono: '55 1234 5678', correo: 'lucia@example.com' } }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  const copia = crudo(op, r.personId);
+  assert.deepEqual([copia.fax, copia.phone, copia.phone2, copia.email], ['55 1234 5678', '55 1234 5678', '+52 55 3466 7682', 'lucia@example.com']);
+  assert.equal(crudo(op, '61').phone, '+52 55 3466 7682');
+  assert.equal(crudo(op, '61').email, 'compras@example.com');
+});
+
+test('CE38: con un General en el domicilio la copia pregunta por desplazarlo, nombrando a la persona de origen; al confirmar queda como unico General', async () => {
+  const op = conOrigen({
+    renglones: [...RENGLONES, { id: '3470', personId: '1249', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
+  });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.equal(r.motivo, 'general-existente');
+  assert.deepEqual(r.persona, { personId: '61', nombre: 'Adrian Cliente Nombre Chavez' });
+  assert.deepEqual(r.desplazados.map(x => x.personId), ['1249']);
+  assert.match(r.mensaje, /^Adrian Cliente Nombre Chavez queda como contacto General/);
+  assert.equal(op.pedidos('crear').length, 0);
+  const ok = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61, ...CONFIRMADA, decision: { desplazar: ['1249'] } }), op.deps);
+  assert.equal(ok.tipo, 'lograda');
+  assert.equal(ok.copiaDe, '61');
+  assert.deepEqual(generalesDe(op), [ok.personId]);
+  assert.equal(op.estado.copias.get('564:61').copiaPersonId, ok.personId);
+});
+
+test('CE39: si no se puede leer la liga, no escribe nada y lo reporta como bloqueo antes de escribir', async () => {
+  const op = conOrigen({ falla: { buscarCopia: 'Neon caido' } });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.pasos[0].status, 'error');
+  assert.match(r.detalle, /registro de copias del cotizador: Neon caido/);
+  assert.equal(op.pedidos('crear').length, 0);
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+});
+
+test('CE40: si no se puede guardar la liga, la copia queda creada y el paso avisa', async () => {
+  const op = conOrigen({ falla: { guardarCopia: 'Neon caido' } });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_61 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.equal(r.pasos[0].status, 'warn');
+  assert.match(r.pasos[0].mensaje, /no pudo anotar que es la copia/);
+  assert.match(r.pasos[0].detalle, /Neon caido/);
 });

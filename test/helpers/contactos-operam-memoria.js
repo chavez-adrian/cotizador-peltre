@@ -41,6 +41,13 @@
 // `falla: { abrirDomicilioWeb | leer | crear: 'mensaje' }` hace lanzar a esa llamada;
 // `falla.releer` solo a la lectura que sigue a una escritura (crear o editar);
 // `falla.leerPersona` y `falla.editar` a esas llamadas.
+//
+// La liga copia -> origen (#564) es dato del COTIZADOR, no de Operam:
+// `buscarCopia(domicilioId, origenPersonId)` -> `{ copiaPersonId, ... }` o null y
+// `guardarCopia({ clienteId, domicilioId, origenPersonId, copiaPersonId })` (reemplaza
+// la liga anterior del mismo domicilio y origen), sobre `estado.copias` (Map
+// `domicilio:origen` -> liga). `copias` siembra ligas previas; `falla.buscarCopia` y
+// `falla.guardarCopia` hacen lanzar a esas llamadas.
 
 const CASILLAS = ['name', 'name2', 'ref', 'phone', 'phone2', 'fax', 'email', 'notes'];
 
@@ -55,6 +62,7 @@ export function contactosOperamEnMemoria({
   renglonesGeneralVacios = [],
   ignoraAlCrear = [],
   ignoraAlEditar = [],
+  copias = [],
   falla = {},
 } = {}) {
   const estado = {
@@ -63,6 +71,7 @@ export function contactosOperamEnMemoria({
     renglones: renglones.map((r, i) => ({ id: String(r.id ?? 5000 + i), personId: String(r.personId), tipo: r.tipo, entidad: String(r.entidad), rol: r.rol })),
     padronDomicilios,
     sesiones: [],
+    copias: new Map(copias.map(c => [`${c.domicilioId}:${c.origenPersonId}`, { ...c, domicilioId: String(c.domicilioId), origenPersonId: String(c.origenPersonId), copiaPersonId: String(c.copiaPersonId) }])),
   };
   const llamadas = [];
   const registrar = (nombre, ...args) => {
@@ -79,6 +88,14 @@ export function contactosOperamEnMemoria({
   };
 
   const deps = {
+    async buscarCopia(domicilioId, origenPersonId) {
+      registrar('buscarCopia', domicilioId, origenPersonId);
+      return estado.copias.get(`${domicilioId}:${origenPersonId}`) || null;
+    },
+    async guardarCopia(liga) {
+      registrar('guardarCopia', liga);
+      estado.copias.set(`${liga.domicilioId}:${liga.origenPersonId}`, { ...liga });
+    },
     async obtenerCliente(id) {
       registrar('obtenerCliente', id);
       const c = estado.clientes.find(x => x.customer_id === String(id));

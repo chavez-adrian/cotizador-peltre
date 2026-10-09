@@ -10,6 +10,7 @@ data/contactos-google.json
 data/contactos-google-barridos.json
 data/pedidos-shopify.json
 data/contactos-excluidos.json
+data/copias-contacto.json
 backups/
 .temporales/
 data/export-bitrix/
