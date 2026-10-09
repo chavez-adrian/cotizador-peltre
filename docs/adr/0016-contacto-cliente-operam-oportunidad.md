@@ -40,3 +40,7 @@ Sesión de `grill-with-docs` + `domain-modeling` con Adrián, 2026-09-03 a 2026-
 - Deuda inmediata y medible: el índice de teléfonos no lee la casilla Cel (`fax`) ni en personas ni en sucursales; 68 celulares de 65 Clientes Operam son invisibles hoy (382 cubiertos). Leerla y escribir el celular en Cel al dar de alta son el primer ticket.
 - Tickets derivados: tablero solo de Oportunidades con "Nueva oportunidad"; buscador y vista Clientes por Contacto una sola vez; el 409 del celular ligado como pregunta; renombres de etiquetas y del origen; estado comercial del Cliente Operam derivado de quotes y pedidos (con el hueco aceptado de los quotes web no enumerables por la API). Nada de esto se implementa antes de que existan sus tickets.
 - La clasificación de un celular y la precedencia de la libreta de Google (ADR-0013) siguen funcionando: solo cambia el nombre de lo que muestran (Cliente Operam en vez de "cliente").
+
+## Enmienda (2026-10-09, ADR-0024)
+
+"Cambiar de número es otro Contacto" sigue valiendo, con una excepción: cuando el vendedor cambia desde el cotizador el número de un **Contacto en Operam** (identificado por su `person_id`, que no cambia al editarlo), el cotizador sabe que es la misma persona y **funde solo** el Contacto del número viejo en el del nuevo, con su historial, Oportunidades y etiquetas. Un número nuevo sin `person_id` detrás sigue siendo otro Contacto y se funde a mano. Motivo: una persona sí cambia de celular, y el `person_id` de Operam da la trazabilidad que el número solo no da.
