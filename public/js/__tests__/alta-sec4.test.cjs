@@ -603,3 +603,24 @@ test('K3: un upgrade bloqueado (fusion, 409, 503) no queda logrado y la guardia 
     assert.ok(errorAltaEnModoUpgrade(15), `tras el ${status} el panel sigue sin camino a "Dar de alta"`);
   }
 });
+
+// #566: el alta deja a la persona que crea Operam como el Contacto de entrega, y ese
+// paso tiene su propia fila en el panel: su aviso no se pierde entre los demas.
+test('J-566: el paso del Contacto de entrega tiene fila propia en el panel del alta, con su aviso en dos capas', () => {
+  const r = interpretarRespuestaAlta({
+    ok: true,
+    steps: [
+      { name: 'POST customer', status: 'ok', mensaje: 'Se creo el Cliente Operam', detalle: 'POST /customers -> cliente 900' },
+      { name: 'verificar Cel', status: 'ok', mensaje: 'El celular del Contacto quedo guardado en la casilla Cel de Operam', detalle: 'GET /customers/900 campo fax' },
+      { name: 'contacto de entrega', status: 'warn', mensaje: 'Hoteles Azules quedo en Operam en el domicilio de entrega, pero revisa su contacto: el correo no quedo como se capturo.', detalle: 'domicilio 800 del cliente 900: correo se esperaba "a@b.mx" y se leyo ""' },
+    ],
+  });
+  const fila = r.filas.find(f => f.fila === ALTA_PASO_FILA['contacto de entrega']);
+  assert.ok(fila, 'el paso tiene fila');
+  assert.notStrictEqual(ALTA_PASO_FILA['contacto de entrega'], ALTA_PASO_FILA['verificar Cel'], 'no comparte la fila del Cel');
+  assert.strictEqual(fila.status, 'warn');
+  assert.match(fila.msg, /revisa su contacto/);
+  assert.match(fila.detalle, /domicilio 800/);
+  assert.strictEqual(r.exito, true);
+  assert.strictEqual(r.mensajeError, null, 'un aviso del contacto no es un fallo del alta');
+});

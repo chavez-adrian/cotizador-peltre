@@ -2117,6 +2117,9 @@ export const ALTA_PASO_FILA = {
   'PUT branch (domicilio)': 4,
   'verificar branch': 4,
   'verificar Cel': 6,
+  // La persona que crea Operam con el Cliente Operam queda como el Contacto de
+  // entrega (#566): fila propia, porque su aviso es otro que el del Cel.
+  'contacto de entrega': 8,
   // A quien quedo el domicilio NUEVO de un Cliente Operam existente (#414, #433):
   // fila propia, porque en la del domicilio la verificacion lo taparia.
   'vendedor branch': 7,

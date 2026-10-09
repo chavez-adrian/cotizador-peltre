@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { darDeAlta, upgradeFiscal, vendedorDeCartera } from '../lib/alta-cliente.js';
 import { operamEnMemoria } from './helpers/operam-memoria.js';
+import { contactosOperamEnMemoria } from './helpers/contactos-operam-memoria.js';
+import { contactoEntregaDelAlta } from '../lib/contactos-operam.js';
 import { fuenteSegmento, RESULTADO_SEGMENTO_PENDIENTE } from '../lib/segmento-pendiente.js';
 
 // Modulo Alta de cliente (#364, ADR-0017). Una regla por test, contra el
@@ -630,54 +632,6 @@ test('un campo que Operam ignora del domicilio de entrega recien creado sale com
   assert.equal(verificacion.mensaje, 'El domicilio de entrega no quedo completo en Operam');
   assert.match(verificacion.detalle, /addr_interior/);
   assert.deepEqual(verificacion.camposNoActualizados.map(x => x.campo), ['addr_interior']);
-});
-
-// #431: el GET /branches/:code no expone el telefono ni el correo del domicilio
-// (el adaptador lo modela como Operam); quien los trae es `branches[]` de
-// GET /customers/:id. El alta del Cliente Operam 530 salia con "Operam ignoro
-// phone" sobre un telefono que SI quedo guardado.
-test('el telefono del domicilio de entrega se verifica contra GET /customers/:id, que si lo expone (#431)', async () => {
-  const operam = operamEnMemoria();
-  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
-
-  assert.equal(res.tipo, 'lograda');
-  assert.equal(operam.pedidos('obtenerClientePorId').length, 1, 'la verificacion del Cel reusa la misma relectura del cliente');
-  const releido = await operam.deps.obtenerBranch(res.domicilioId);
-  assert.equal(releido.phone, undefined, 'GET /branches/:code no trae phone');
-  const enCliente = (await operam.deps.obtenerClientePorId(res.clienteId)).branches
-    .find(b => String(b.branch_code) === String(res.domicilioId));
-  assert.equal(enCliente.phone, DOMICILIO.telefono, 'GET /customers/:id si lo trae');
-  const verificacion = paso(res, 'verificar branch');
-  assert.equal(verificacion.status, 'ok');
-  assert.equal(verificacion.mensaje, 'El domicilio de entrega quedo guardado en Operam');
-});
-
-test('un telefono del domicilio de entrega que Operam de verdad no guardo sigue saliendo como aviso (#431)', async () => {
-  const operam = operamEnMemoria({ ignoraBranch: ['phone'] });
-  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
-
-  assert.equal(res.tipo, 'lograda');
-  const verificacion = paso(res, 'verificar branch');
-  assert.equal(verificacion.status, 'warn');
-  assert.equal(verificacion.mensaje, 'El domicilio de entrega no quedo completo en Operam');
-  assert.deepEqual(verificacion.camposNoActualizados.map(x => [x.campo, x.nuevo]), [['phone', DOMICILIO.telefono]]);
-  assert.match(verificacion.detalle, /Operam ignoro phone/);
-});
-
-// Sin GET /customers/:id el telefono y el correo no se pudieron leer: salen de la
-// comparacion (patron noLegible de #373) y el detalle lo dice, en vez de afirmar
-// que Operam los ignoro. La calle, que SI trae GET /branches/:code, se sigue
-// verificando.
-test('si GET /customers/:id falla, el telefono del domicilio queda sin comprobar y no se reporta como ignorado (#431)', async () => {
-  const operam = operamEnMemoria({ falla: { obtenerClientePorId: 'Operam 503' } });
-  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO }), operam.deps);
-
-  assert.equal(res.tipo, 'lograda');
-  const verificacion = paso(res, 'verificar branch');
-  assert.equal(verificacion.status, 'ok');
-  assert.match(verificacion.detalle, /phone, email sin comprobar/);
-  assert.match(verificacion.detalle, /Operam 503/);
-  assert.equal(paso(res, 'verificar Cel').status, 'error');
 });
 
 // #386: el PUT de branch EXIGE br_ref -- sin el Operam responde 406 ("La
@@ -1832,4 +1786,134 @@ test('el bloqueo sin vendedor se lee en dos capas en el panel del alta y en la s
 
   const subida = pasosParaMostrar(res.pasos);
   assert.ok(subida.some(p => p.estado === 'error' && p.mensaje === res.mensaje && /Jaime Abaroa/.test(p.detalle)), JSON.stringify(subida));
+});
+
+// === #566: el Alta de cliente deja a su persona como Contacto de entrega ========
+// POST /customers crea UNA persona, General del cliente y del domicilio, con el
+// nombre corto del Cliente Operam como nombre (ADR-0024). El alta la deja como el
+// Contacto de entrega por el modulo Contactos en Operam, que aqui entra sustituido
+// (`contactoEntregaDelAlta`): la persona sale de releer al Cliente Operam recien
+// creado y lo que se le deja, del Contacto de entrega de la Solicitud.
+
+const LUCIA = { nombre: 'Lucia Recibe', telefono: '5544332211', correo: 'lucia@example.com' };
+
+test('#566: tras el alta la persona que creo Operam queda con el nombre, los numeros y el correo del Contacto de entrega y con General y Entrega', async () => {
+  const operam = operamEnMemoria();
+  const contactos = contactosOperamEnMemoria({
+    clientes: [{ customer_id: '900', branches: ['800'] }],
+    personas: [{ personId: '1501', name: 'Hotel Azul', ref: 'Hotel Azul', phone: CELULAR, fax: CELULAR }],
+    renglones: [
+      { personId: '1501', tipo: 'customer', entidad: '900', rol: 'general' },
+      { personId: '1501', tipo: 'cust_branch', entidad: '800', rol: 'general' },
+    ],
+  });
+  const deps = { ...operam.deps, contactoEntregaDelAlta: sol => contactoEntregaDelAlta(sol, contactos.deps) };
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.clienteId, 900);
+  const p = contactos.estado.personas.get('1501');
+  assert.deepEqual([p.name, p.fax, p.phone, p.email], ['Lucia Recibe', '5544332211', '5544332211', 'lucia@example.com']);
+  const roles = contactos.estado.renglones.filter(r => r.personId === '1501' && r.entidad === '800').map(r => r.rol);
+  assert.deepEqual(roles, ['general', 'delivery']);
+  assert.equal(contactos.estado.personas.size, 1, 'no nace otra persona');
+  assert.equal(paso(res, 'contacto de entrega').status, 'ok');
+  assert.deepEqual(res.contactoEntrega, { personId: '1501', escrito: true });
+});
+
+test('#566: al modulo viaja la persona que Operam creo con el Cliente Operam y el Contacto de entrega de la Solicitud', async () => {
+  const operam = operamEnMemoria();
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const personaCreada = operam.cliente(res.clienteId).contacts[0].id;
+  assert.deepEqual(operam.pedidos('contactoEntregaDelAlta').map(l => l.args[0]), [{
+    clienteId: res.clienteId, domicilioId: res.domicilioId, personId: String(personaCreada), contacto: LUCIA,
+  }]);
+});
+
+// La verificacion del alta relee al contacto: lo que no quedo lo reporta el paso del
+// modulo, con sus dos capas, y el alta sigue lograda (CODING_STANDARDS.md regla 3).
+test('#566: lo que la relectura del contacto no confirma llega al reporte del alta y el alta sigue lograda', async () => {
+  const aviso = { name: 'contacto de entrega', status: 'warn', mensaje: 'Lucia Recibe quedo en Operam en el domicilio de entrega, pero revisa su contacto: el Cel no quedo como se capturo.', detalle: 'domicilio 800 del cliente 900: cel se esperaba "5544332211" y se leyo "5588776655"' };
+  const operam = operamEnMemoria({ contactoEntrega: { tipo: 'lograda', escrito: true, personId: '1501', noAplicados: [{ campo: 'cel' }], pasos: [aviso] } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.deepEqual(paso(res, 'contacto de entrega'), aviso);
+});
+
+test('#566: si la escritura del Contacto de entrega falla, el alta queda lograda con aviso en dos capas', async () => {
+  const operam = operamEnMemoria({ falla: { contactoEntregaDelAlta: 'la web legacy no respondio' } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.creadoNuevo, true);
+  const p = paso(res, 'contacto de entrega');
+  assert.equal(p.status, 'warn');
+  assert.match(p.mensaje, /Contacto de entrega/);
+  assert.doesNotMatch(p.mensaje, /web legacy/);
+  assert.match(p.detalle, /la web legacy no respondio/);
+  assert.deepEqual(res.contactoEntrega, { personId: '1501', escrito: false });
+});
+
+test('#566: un bloqueo del modulo tambien deja el alta lograda, con su paso', async () => {
+  const bloqueo = { name: 'contacto de entrega', status: 'error', mensaje: 'No se pudo dejar al Contacto de entrega en el domicilio de entrega en Operam: revisa ahi el contacto que creo Operam con el Cliente Operam.', detalle: 'domicilio 800 del cliente 900, web legacy: Operam 503' };
+  const operam = operamEnMemoria({ contactoEntrega: { tipo: 'bloqueo', motivo: 'operam', mensaje: bloqueo.mensaje, detalle: bloqueo.detalle, pasos: [bloqueo] } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.deepEqual(paso(res, 'contacto de entrega'), bloqueo);
+  assert.deepEqual(res.contactoEntrega, { personId: '1501', escrito: false });
+});
+
+test('#566: sobre un Cliente Operam que ya existia no se toca a sus contactos y el paso sale omitido', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', branches: [{ branch_code: 7, br_name: 'HOTEL AZUL' }] }],
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41 }, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('contactoEntregaDelAlta').length, 0);
+  assert.equal(paso(res, 'contacto de entrega').status, 'omitido');
+  assert.equal(res.contactoEntrega, undefined);
+});
+
+test('#566: otro domicilio de un Cliente Operam existente no crea persona: el alta no escribe contactos', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', branches: [{ branch_code: 7, br_name: 'Matriz', addr_street: 'Otra calle', addr_zip: '11000' }] }],
+  });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, decision: { tipo: 'otro-domicilio', clienteId: 41 }, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('contactoEntregaDelAlta').length, 0);
+  assert.equal(paso(res, 'contacto de entrega').status, 'omitido');
+});
+
+// Escribirle a una persona que no es la que creo el alta seria pisar a alguien que
+// nadie eligio: sin una sola persona General en el Cliente Operam releido no se
+// escribe nada y el paso lo dice.
+test('#566: si al releer el Cliente Operam no hay una sola persona General, no se escribe a nadie y el paso avisa', async () => {
+  const operam = operamEnMemoria({ falla: { obtenerClientePorId: 'Operam 503' } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(operam.pedidos('contactoEntregaDelAlta').length, 0);
+  const p = paso(res, 'contacto de entrega');
+  assert.equal(p.status, 'warn');
+  assert.match(p.detalle, /Operam 503/);
+  assert.deepEqual(res.contactoEntrega, { personId: null, escrito: false });
+});
+
+// ADR-0024 regla 8: la verificacion del alta relee al contacto, no la copia aplanada
+// del domicilio. El Telefono y el correo que viajan en el PUT del domicilio ya no se
+// comparan contra branches[]: los verifica la relectura del Contacto de entrega.
+test('#566: el telefono y el correo del domicilio ya no se verifican contra la copia aplanada de branches[]', async () => {
+  const operam = operamEnMemoria({ ignoraBranch: ['phone', 'email'] });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  const verificacion = paso(res, 'verificar branch');
+  assert.equal(verificacion.status, 'ok');
+  assert.doesNotMatch(verificacion.detalle, /phone|email/);
 });

@@ -492,3 +492,71 @@ test('#562 alta lograda con un General previo en el domicilio: la subida lleva l
   const marca = m.registro(31).data.contactoEntregaPendiente;
   assert.deepEqual([marca.clienteId, marca.domicilioId, marca.contacto], [900, 800, { nombre: 'Lucia Recibe' }]);
 });
+
+// #566 (ADR-0024 regla 8): el alta que crea al Cliente Operam deja a la persona que crea
+// POST /customers como el Contacto de entrega de la cotizacion. La subida le pasa al
+// alta quien recibe y ya no escribe el contacto otra vez: si lo hiciera, veria al
+// General que el alta acaba de dejar y le preguntaria al vendedor por desplazarlo.
+test('#566 la Solicitud de alta lleva el Contacto de entrega de la cotizacion', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [sinCliente({ nombreEntrega: 'Lucia Recibe', celEntrega: '5544332211', emailEntrega: 'lucia@example.com' })] });
+  await subirQuote(31, {}, m.deps);
+  const [solicitud] = m.llamadas.darDeAlta[0];
+  assert.deepEqual(solicitud.contactoEntrega, { nombre: 'Lucia Recibe', telefono: '5544332211', correo: 'lucia@example.com' });
+});
+
+test('#566 el alta que dejo al Contacto de entrega: la subida no lo escribe otra vez, no pregunta y reporta el paso del alta', async () => {
+  const pasoAlta = { name: 'contacto de entrega', status: 'ok', mensaje: 'Lucia Recibe quedo en Operam como contacto General y de Entrega del domicilio de entrega.', detalle: 'domicilio 800 del cliente 900: persona 1501 editada' };
+  const pregunta = { tipo: 'pregunta', motivo: 'general-existente', desplazados: [{ personId: '1501', nombre: 'La Esquina', roles: ['general'] }], mensaje: 'm', detalle: 'd', pasos: [] };
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente({ nombreEntrega: 'Lucia Recibe' })],
+    alta: lograda({ pasos: [{ ...PASO_ALTA }, pasoAlta], contactoEntrega: { personId: '1501', escrito: true } }),
+    contactoEntrega: pregunta,
+  });
+  const r = await subirQuote(31, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.registro(31).data.contactoEntregaPendiente, undefined);
+  assert.deepEqual(r.pasos.filter(p => p.name === 'contacto de entrega'), [pasoAlta]);
+});
+
+// Con el person_id en la cotizacion, Editar y la actualizacion del quote editan a ESA
+// persona (#563) en vez de reconocerla por su numero o su nombre.
+test('#566 la cotizacion queda con el person_id de la persona que el alta dejo como Contacto de entrega', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente()],
+    alta: lograda({ contactoEntrega: { personId: '1501', escrito: true } }),
+  });
+  await subirQuote(31, {}, m.deps);
+  const { cliente } = m.registro(31).data;
+  assert.equal(cliente.contactoEntregaPersonId, '1501');
+  assert.equal(cliente.customerId, 900);
+});
+
+test('#566 si el alta no pudo dejar al Contacto de entrega, la subida no lo intenta otra vez ni anota person_id', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente()],
+    alta: lograda({ contactoEntrega: { personId: '1501', escrito: false } }),
+  });
+  const r = await subirQuote(31, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal('contactoEntregaPersonId' in m.registro(31).data.cliente, false);
+});
+
+// De punta a punta con el alta REAL sobre el adaptador en memoria: el Cliente Operam
+// recien creado no le pregunta al vendedor por el General que creo Operam.
+test('#566 alta REAL: subir la cotizacion de un Cliente Operam nuevo no pregunta por el General que creo Operam', async () => {
+  const operam = operamEnMemoria();
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente({ nombreEntrega: 'Lucia Recibe' })],
+    alta: (s) => darDeAlta(s, operam.deps),
+    contactoEntrega: { tipo: 'pregunta', motivo: 'general-existente', desplazados: [{ personId: '1501', nombre: 'La Esquina', roles: ['general'] }], mensaje: 'm', detalle: 'd', pasos: [] },
+  });
+  const r = await subirQuote(31, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal(operam.pedidos('contactoEntregaDelAlta').length, 1);
+  assert.equal(operam.pedidos('contactoEntregaDelAlta')[0].args[0].contacto.nombre, 'Lucia Recibe');
+});

@@ -10,6 +10,11 @@
 //     escribe (#74). Es lo que hace fallar la verificacion por relectura.
 //   - `falla`: la dependencia que lanza, por nombre, para probar los bloqueos.
 //
+// El Contacto de entrega (#566) lo escribe el modulo Contactos en Operam, que aqui
+// entra SUSTITUIDO: `contactoEntregaDelAlta` registra la solicitud y contesta
+// `contactoEntrega` (un valor del modulo, o una funcion). Una prueba que quiera el
+// modulo real lo compone sobre test/helpers/contactos-operam-memoria.js.
+//
 // El POST de cliente auto-crea su domicilio de entrega copiando el nombre en
 // MAYUSCULAS, como Operam (#170), y el POST de domicilio no lo hace: asi la
 // diferencia entre "recien creado" y "preexistente" se ve en el estado.
@@ -52,11 +57,14 @@ export function operamEnMemoria({
   falla = {},
   siguienteClienteId = 900,
   siguienteBranchId = 800,
+  siguientePersonaId = 1501,
+  contactoEntrega = null,
 } = {}) {
   const estado = {
     clientes: clientes.map(c => ({ ...c, branches: (c.branches || []).map(b => ({ ...b })) })),
     proximoCliente: siguienteClienteId,
     proximoBranch: siguienteBranchId,
+    proximaPersona: siguientePersonaId,
     cache: [],
     refrescos: 0,
     auditoria: [],
@@ -111,8 +119,10 @@ export function operamEnMemoria({
       for (const campo of CAMPOS_BRANCH_DESDE_CLIENTE) if (body[campo]) branch[campo] = body[campo];
       // El Cel del Contacto en Operam sale de `celular_nota` (buildClienteBody lo
       // escribe en la casilla `fax`, #339): el adaptador lo imita para que la
-      // verificacion por relectura tenga algo real que comparar.
-      const contacto = { id: 1, name: body.CustName };
+      // verificacion por relectura tenga algo real que comparar. Como Operam, el POST
+      // crea UNA persona, General del Cliente Operam (ADR-0024), con su person_id.
+      const contacto = { id: estado.proximaPersona++, action: 'general', name: body.CustName, ref: body.cust_ref || '' };
+      for (const campo of CAMPOS_BRANCH_DESDE_CLIENTE) if (body[campo]) contacto[campo] = body[campo];
       aplicar(contacto, { [CAMPO_CEL]: body.celular_nota || null }, ignoraCliente);
       const cliente = { ...body, customer_id, sales_type: body.sales_type ?? '12', branches: [branch], contacts: [contacto] };
       estado.clientes.push(cliente);
@@ -183,6 +193,19 @@ export function operamEnMemoria({
     logCliente(...args) {
       registrar('logCliente', ...args);
       estado.auditoria.push(args);
+    },
+    async contactoEntregaDelAlta(solicitud) {
+      registrar('contactoEntregaDelAlta', solicitud);
+      if (typeof contactoEntrega === 'function') return await contactoEntrega(solicitud);
+      if (contactoEntrega) return contactoEntrega;
+      return {
+        tipo: 'lograda', escrito: true, personId: solicitud.personId, noAplicados: [],
+        pasos: [{
+          name: 'contacto de entrega', status: 'ok',
+          mensaje: 'El Contacto de entrega quedo en Operam como contacto General y de Entrega del domicilio de entrega.',
+          detalle: `domicilio ${solicitud.domicilioId} del cliente ${solicitud.clienteId}: persona ${solicitud.personId} editada`,
+        }],
+      };
     },
     // El segmento NO lo escribe la API v3 por ningun camino (#172): lo escribe la
     // web legacy. Aqui solo se registra la llamada y se responde lo que el test

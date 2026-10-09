@@ -31,15 +31,16 @@ export function webDeMentiras({ despuesDeEditar = GENERAL_564, errorAlAgregar = 
   const estado = { pedidos: [], agregadas: [], editadas: [] };
   // Lo que la web pinta tras actualizar a una persona: sus Asignaciones son las del
   // assgn[] que llego (REPLACE) y sus casillas (#563) las que llegaron: Telefono,
-  // Telefono Secundario, Cel y email son las columnas 4 a 7 de la tabla.
-  const CELDAS_CASILLAS = { 3: 'phone', 4: 'phone2', 5: 'fax', 6: 'email' };
+  // Telefono Secundario, Cel y email son las columnas 4 a 7 de la tabla. El nombre
+  // completo (columna 3) es el nombre y el apellido que llegaron (#566).
+  const CELDAS_CASILLAS = { 2: 'nombre', 3: 'phone', 4: 'phone2', 5: 'fax', 6: 'email' };
   const conCasillas = (fila, p) => {
     let i = -1;
     return fila.replace(/<td[^>]*>[\s\S]*?<\/td>/g, (td) => {
       i += 1;
       const llave = CELDAS_CASILLAS[i];
       if (!llave) return td;
-      const v = p.get(llave) ?? '';
+      const v = llave === 'nombre' ? [p.get('name'), p.get('name2')].filter(Boolean).join(' ') : (p.get(llave) ?? '');
       return llave === 'email' ? `<td ><a href='mailto:${v}'>${v}</a></td>` : `<td >${v}</td>`;
     });
   };

@@ -4023,6 +4023,10 @@ function solicitudDelFormulario(body, vendedor) {
       telefono: entrega.phone || '',
       correo: entrega.email || '',
     },
+    // Quien recibe (#566): el formulario no lo captura -- su "Nombre del domicilio" es
+    // un lugar --, asi que la persona que crea Operam conserva su nombre y recibe el
+    // Telefono y el correo del domicilio de entrega.
+    contactoEntrega: { nombre: '', telefono: entrega.phone || '', correo: entrega.email || '' },
     ligaFija: { clienteId: null, domicilioId: b.branch_id ?? null },
     decision: decisionDelFormulario(b),
     segmento: { preferencia: 'esperar' },

@@ -522,13 +522,22 @@
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-7" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
-                <div class="alta-paso" id="alta-paso-6" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                <div class="alta-paso" id="alta-paso-6" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
                   <div class="alta-paso-icono" id="alta-paso-ico-6" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:600">Celular del Contacto</div>
                     <div style="font-size:11px;color:var(--text-light)">GET /customers/{id} &mdash; casilla Cel (campo fax)</div>
                   </div>
                   <div class="alta-paso-msg" id="alta-paso-msg-6" style="font-size:11px;color:var(--danger);display:none"></div>
+                </div>
+                <!-- #566: la persona que crea Operam con el Cliente Operam queda como el Contacto de entrega. -->
+                <div class="alta-paso" id="alta-paso-8" style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                  <div class="alta-paso-icono" id="alta-paso-ico-8" style="width:22px;text-align:center;font-size:16px">&#9675;</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600">Contacto de entrega</div>
+                    <div style="font-size:11px;color:var(--text-light)">Contactos del domicilio en la web de Operam &mdash; General y Entrega</div>
+                  </div>
+                  <div class="alta-paso-msg" id="alta-paso-msg-8" style="font-size:11px;color:var(--danger);display:none"></div>
                 </div>
               </div>
               <!-- Motivo del fallo (#213). Vive FUERA de las filas de pasos a proposito:

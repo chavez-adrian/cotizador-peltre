@@ -293,8 +293,7 @@ test('diffBranchDomicilio: branch que persistio todo -> sin discrepancias', () =
   const fresco = { br_name: 'Recepcion', addr_street: 'Av Reforma 100', addr_interior: 'Piso 3', addr_colony: 'Juarez',
     addr_city: 'Cuauhtemoc', addr_state: 'CDMX', addr_zip: '06600',
     addr_reference: 'Entre calle A y B, porton negro' };
-  const delCliente = { phone: '+52 5511223344', email: 'entrega@hotelazul.mx' };
-  assert.deepEqual(diffBranchDomicilio(fresco, enviado, delCliente), []);
+  assert.deepEqual(diffBranchDomicilio(fresco, enviado), []);
 });
 
 test('diffBranchDomicilio: campo ignorado por Operam se reporta como no actualizado', () => {
@@ -375,58 +374,14 @@ test('#244 buildClienteGenerico: el tax_id sale del RFC capturado, no del pais',
   assert.equal(buildClienteGenerico(entry).tax_id, 'XEXX010101000');
 });
 
-// issue #369: el formulario manda el telefono del domicilio con espacio tras el
-// codigo de pais (+52 2222933000) y Operam lo persiste sin el espacio. Comparar
-// como texto lo reportaba "ignorado" aunque SI quedo guardado (falso warn del
-// paso "Domicilio de entrega"). El telefono se compara por digitos.
-test('diffBranchDomicilio: phone releido sin espacio coincide con el enviado con espacio (#369)', () => {
-  const enviado = { addr_street: 'Av Reforma 100', phone: '+52 2222933000' };
-  const fresco = { addr_street: 'Av Reforma 100' };
-  assert.deepEqual(diffBranchDomicilio(fresco, enviado, { phone: '+522222933000' }), []);
-});
-
-test('diffBranchDomicilio: phone realmente distinto se sigue reportando (#369)', () => {
-  const enviado = { phone: '+52 2222933000' };
-  const diff = diffBranchDomicilio({}, enviado, { phone: '+52 5511223344' });
-  assert.equal(diff.length, 1);
-  assert.equal(diff[0].campo, 'phone');
-  assert.equal(diff[0].nuevo, '+52 2222933000');
-  assert.equal(diff[0].anterior, '+52 5511223344');
-});
-
-// issue #431: el GET /branches/:code NO expone phone ni email (medido en vivo en
-// #211, en #339 sobre el cliente 15 y en el branch 579 del cliente 530 el
-// 2026-09-23). Quien SI los trae es la entrada del domicilio en `branches[]` de
-// GET /customers/:id: el alta del 530 salio con "Operam ignoro phone" (anterior
-// "" -> nuevo "+525500000000") y el telefono SI estaba guardado.
-test('diffBranchDomicilio: el telefono se lee del domicilio en branches[] del cliente, no de GET /branches/:code (#431)', () => {
-  const enviado = { addr_street: 'Av Reforma 100', phone: '+525500000000' };
-  const fresco = { addr_street: 'Av Reforma 100' };
-  const delCliente = { branch_code: 579, phone: '+525500000000' };
-  assert.deepEqual(diffBranchDomicilio(fresco, enviado, delCliente), []);
-});
-
-test('diffBranchDomicilio: un telefono que no quedo en branches[] del cliente se sigue reportando (#431)', () => {
-  const enviado = { addr_street: 'Av Reforma 100', phone: '+525500000000' };
-  const diff = diffBranchDomicilio({ addr_street: 'Av Reforma 100' }, enviado, { branch_code: 579, phone: '' });
-  assert.deepEqual(diff, [{ campo: 'phone', label: 'Telefono', anterior: '', nuevo: '+525500000000' }]);
-});
-
-// El correo de entrega tiene el mismo lector: docs/arquitectura.md lo midio fuera
-// del GET /branches/:code desde #211 (y otra vez en #339, cliente 15).
-test('diffBranchDomicilio: el correo de entrega tambien se lee de branches[] del cliente (#431)', () => {
-  const enviado = { email: 'entrega@hotelazul.mx' };
-  assert.deepEqual(diffBranchDomicilio({}, enviado, { email: 'entrega@hotelazul.mx' }), []);
-  const diff = diffBranchDomicilio({ email: 'entrega@hotelazul.mx' }, enviado, { email: 'otro@hotelazul.mx' });
-  assert.deepEqual(diff.map(x => [x.campo, x.anterior]), [['email', 'otro@hotelazul.mx']]);
-});
-
-// Sin la lectura del cliente (fallo, o el domicilio no aparece en su lista) el
-// telefono y el correo no se pudieron leer: salen de la comparacion en vez de
-// afirmar que Operam los ignoro (patron noLegible de #373). Los campos del
-// domicilio que SI trae GET /branches/:code se siguen comparando.
-test('diffBranchDomicilio: sin la lectura del cliente, telefono y correo no se afirman como ignorados (#431)', () => {
+// #566 (ADR-0024 regla 8): el telefono y el correo que viajan en el PUT del domicilio
+// solo se releen en la copia APLANADA del General que trae branches[] de
+// GET /customers/:id (#431). Quien recibe se verifica releyendo al contacto (modulo
+// Contactos en Operam), asi que la verificacion del domicilio ya no los compara, ni
+// aunque la copia aplanada venga distinta o vacia.
+test('diffBranchDomicilio: no compara el telefono ni el correo del domicilio, que se verifican releyendo al contacto (#566)', () => {
   const enviado = { addr_street: 'Av Reforma 100', addr_zip: '06600', phone: '+525500000000', email: 'entrega@hotelazul.mx' };
-  const diff = diffBranchDomicilio({ addr_street: 'Av Reforma 100', addr_zip: '' }, enviado, null);
-  assert.deepEqual(diff.map(x => x.campo), ['addr_zip']);
+  const aplanado = { branch_code: 579, phone: '', email: 'otro@hotelazul.mx' };
+  assert.deepEqual(diffBranchDomicilio({ addr_street: 'Av Reforma 100', addr_zip: '06600' }, enviado, aplanado), []);
+  assert.deepEqual(diffBranchDomicilio({ addr_street: 'Av Reforma 100', addr_zip: '' }, enviado, aplanado).map(x => x.campo), ['addr_zip']);
 });

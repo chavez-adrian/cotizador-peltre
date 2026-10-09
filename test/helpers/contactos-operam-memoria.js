@@ -30,12 +30,13 @@
 //     domicilio, el unico lugar que trae sus Notas: `{ personId, nombre, apellido,
 //     referencia, roles, casillas, notas }`. Una persona que no esta en el domicilio
 //     lanza, como la web (no hay boton contactsEdit para ella).
-//   - `editar(personId, { roles, notas, casillas })` (#562, #563): repostea ese
-//     formulario con los roles (assgn[] es REPLACE: los renglones de la persona en el
-//     domicilio quedan exactamente esos), las notas y las casillas que vengan (Cel,
-//     Telefono, Secundario, correo); lo que no viene, y el nombre siempre, no cambia.
-//     `ignoraAlEditar` (lista: 'roles', 'notas', 'cel', 'telefono', 'secundario',
-//     'correo') simula a Operam guardando sin ellos.
+//   - `editar(personId, { roles, notas, casillas, nombre, apellido })` (#562, #563):
+//     repostea ese formulario con los roles (assgn[] es REPLACE: los renglones de la
+//     persona en el domicilio quedan exactamente esos), las notas y las casillas que
+//     vengan (Cel, Telefono, Secundario, correo); lo que no viene no cambia. El nombre
+//     y el apellido solo cambian si vienen (#566: la persona que crea el alta).
+//     `ignoraAlEditar` (lista: 'roles', 'notas', 'nombre', 'cel', 'telefono',
+//     'secundario', 'correo') simula a Operam guardando sin ellos.
 //   - `cerrar()`: cierra la sesion web; queda en `sesiones`.
 // Un domicilio que no es del Cliente Operam lanza, como la guarda del adaptador real.
 // `falla: { abrirDomicilioWeb | leer | crear: 'mensaje' }` hace lanzar a esa llamada;
@@ -186,6 +187,10 @@ export function contactosOperamEnMemoria({
           if (!renglonesDe('cust_branch', code).some(r => r.personId === id)) throw new Error(`la persona ${id} no esta en el domicilio ${code}`);
           const crudo = estado.personas.get(id);
           if (cambios.notas !== undefined && !ignoraAlEditar.includes('notas')) crudo.notes = cambios.notas ?? '';
+          if (!ignoraAlEditar.includes('nombre')) {
+            if (cambios.nombre !== undefined) crudo.name = cambios.nombre ?? '';
+            if (cambios.apellido !== undefined) crudo.name2 = cambios.apellido ?? '';
+          }
           for (const [casilla, llave] of Object.entries(LLAVE_DE_CASILLA)) {
             if (cambios.casillas?.[casilla] !== undefined && !ignoraAlEditar.includes(casilla)) crudo[llave] = cambios.casillas[casilla];
           }

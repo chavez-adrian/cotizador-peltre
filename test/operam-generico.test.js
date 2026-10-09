@@ -211,7 +211,9 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
   const segmento = res.body.steps.find(s => s.name === 'segmento');
   assert.equal(segmento.status, 'omitido');
   assert.equal(res.body.steps.find(s => s.name === 'PUT customer (config comercial)').status, 'omitido');
-  assert.ok(res.body.steps.every(s => s.name && (s.status === 'ok' || s.status === 'omitido')), 'ningun paso en error');
+  // El Contacto de entrega (#566) lo escribe el alta por la web legacy, que esta
+  // prueba no sirve: sus reglas viven en test/contactos-operam-alta.test.js.
+  assert.ok(res.body.steps.filter(s => s.name !== 'contacto de entrega').every(s => s.name && (s.status === 'ok' || s.status === 'omitido')), 'ningun paso en error');
 
   // Orden: primero el POST del cliente, despues la cotizacion a su nombre.
   assert.ok(llamadas.includes('POST customer'));
