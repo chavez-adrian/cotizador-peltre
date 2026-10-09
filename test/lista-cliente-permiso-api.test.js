@@ -375,7 +375,7 @@ test('L12: el vendedor sin ninguna celda sube su cotizacion y el cliente generic
     totalPiezas: 100, total: 11600, tier: 'M550',
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
-      cliente: { razonSocial: 'Hotel Sin Celdas SA', nombreCorto: 'Sin Celdas', telefono: '+52 5599887766', pais: 'MX' },
+      cliente: { razonSocial: 'Hotel Sin Celdas SA', nombreCorto: 'Sin Celdas', telefono: '+52 5599887766', celEntrega: '+52 5599887766', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX' },
       items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });

@@ -91,7 +91,7 @@ function nuevaCotizacion(vendedor) {
     totalPiezas: 100, total: 11600, tier: 'M100',
     data: {
       fecha: '2026-09-25', vigencia: '2026-10-25',
-      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', pais: 'MX' },
+      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', celEntrega: '+52 5588776655', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX' },
       items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });

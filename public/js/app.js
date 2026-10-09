@@ -149,6 +149,7 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 // Moneda del cliente (#297, ADR-0015): el MISMO juicio que aplica el servidor al
 // subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
+import { bloqueoContactoEntrega } from './contacto-entrega-logica.js';
 // Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
 // Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
 import { MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
@@ -3148,6 +3149,21 @@ function progresoConSegundos(btn) {
 // tenia "Generar".
 async function crearOActualizarCotizacion() {
   if (bloqueaGeneracionPorMoneda()) return;
+  // #558 (ADR-0024): sin domicilio de entrega o sin el telefono del Contacto de
+  // entrega no se manda nada -- el MISMO juicio con el que la Subida del quote
+  // bloquea -- y el vendedor va al campo que falta en el paso Envio. Tambien al
+  // Editar una cotizacion vieja y cuando el cliente recoge en planta.
+  const faltaEntrega = bloqueoContactoEntrega({
+    cpEntrega: document.getElementById('cl-cp-entrega')?.value,
+    calle: document.getElementById('cl-calle')?.value,
+    celEntrega: numeroDeCampo('cl-cel-entrega'),
+  });
+  if (faltaEntrega) {
+    alert(faltaEntrega.mensaje);
+    switchTab('envio');
+    document.getElementById(faltaEntrega.campo)?.focus();
+    return;
+  }
   const telErr = validarTelefonosCotizacion();
   if (telErr) {
     alert(telErr.mensaje);

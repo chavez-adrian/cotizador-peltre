@@ -126,7 +126,7 @@ function nuevaCotizacion(cliente = {}, tier = 'M100') {
     totalPiezas: 100, total: 11600, tier,
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
-      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: CELULAR, pais: 'MX', ...cliente },
+      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: CELULAR, celEntrega: CELULAR, calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX', ...cliente },
       items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });
@@ -156,7 +156,7 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       if (opts?.method === 'PUT') { llamadas.push('PUT customer'); return jsonResponse({ result: true }); }
       // El Cel (#339) viaja en `fax` y solo el GET del CLIENTE lo expone, tanto del
       // Contacto en Operam auto-generado como de la sucursal.
-      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 911, fax: CELULAR }] }] }); }
+      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 911, fax: CELULAR, phone: CELULAR }] }] }); }
       // MINA (#81): la dedup por RFC EXACTO de crearCliente matchearia este otro
       // generico y reutilizaria el cliente EQUIVOCADO. El flujo debe saltarla.
       if (u.includes('tax_id=')) { llamadas.push('GET tax_id'); return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XAXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
@@ -164,13 +164,13 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       llamadas.push('GET search');
       return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'FERRETERIA EL CLAVO', cust_ref: 'El Clavo', tax_id: 'XAXX010101000' }] });
     },
-    // issue #189: sin domicilio de entrega el PUT del branch YA NO se omite (escribe
-    // tax_group_id/sales_account); br_name coincide con lo derivado del nombre corto
-    // del cliente para que la verificacion post-PUT no reporte una discrepancia.
+    // El PUT del branch lleva el domicilio de entrega, que desde #558 la subida exige;
+    // la relectura devuelve lo escrito (br_name derivado del nombre corto del
+    // cliente) para que la verificacion post-PUT no reporte una discrepancia.
     '/api/v3/sales/branches/911': (u, opts) => {
       if (opts?.method === 'PUT') { llamadas.push('PUT branch'); return jsonResponse({ result: true }); }
       llamadas.push('GET branch');
-      return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
+      return jsonResponse({ data: [{ br_name: 'Hotel Azul', addr_street: 'Av. Juarez 45', addr_zip: '56530' }] });
     },
     '/api/v3/sales/quote': (u, opts) => {
       if (opts?.method !== 'POST') return jsonResponse({ data: [{ order_type: listaEscritaWeb }] });
@@ -751,7 +751,9 @@ test('F1: cotizacion legacy sin datos del contacto -> 422 del camino viejo, cero
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({
     id, fecha: '2026-01-01T00:00:00Z', vendedor: 'Tester', cliente: '',
-    totalPiezas: 0, total: 0, tier: '', data: { cliente: {}, items: [] },
+    // Con el domicilio y el telefono del Contacto de entrega (#558): sin ellos la
+    // subida se bloquea antes, por ese motivo, y nunca llega al camino viejo.
+    totalPiezas: 0, total: 0, tier: '', data: { cliente: { calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5512340000' }, items: [] },
   });
   writeJson(COTS_PATH, cots);
   // fetch queda bloqueado (beforeEach): si el flujo tocara Operam, la respuesta
@@ -881,48 +883,30 @@ test('D1: cliente generico recien creado con domicilio -> PUT del branch con cus
   assert.ok(ver && ver.status === 'ok', 'la verificacion no encontro discrepancias');
 });
 
-// issue #189: sin domicilio de entrega, el PUT del branch YA NO SE OMITE -- corre
-// igual para escribir tax_group_id/sales_account (no dependen del domicilio, solo
-// del pais del cliente). Antes la falta de calle/CP cancelaba el PUT completo y se
-// llevaba el grupo de impuestos, que Operam entonces auto-creaba con su default fijo
-// (gravado), incorrecto para un cliente extranjero.
-test('D2: sin domicilio de entrega -> el PUT del branch corre igual (SOLO tax_group_id/sales_account, issue #189)', async () => {
+// issue #189: el PUT del branch corre aunque no haya domicilio que escribir, por el
+// grupo de impuestos. Desde #558 la subida ya no llega al alta sin domicilio de
+// entrega (calle y CP), asi que ese caso se prueba en buildBranchGenerico
+// (test/alta-generica.test.js) y aqui queda la guarda de la ruta: el camino del alta
+// sin domicilio responde 422 sin crear ningun Cliente Operam (fetch bloqueado).
+test('D2: sin domicilio de entrega el camino del alta responde 422 sin crear ningun Cliente Operam (#558)', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
-  const id = nuevaCotizacion();
-  let branchPut = null;
-  mockOperamFetch({
-    '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
-    '/api/v3/sales/branches/911': (u, opts) => {
-      if (opts?.method === 'PUT') { branchPut = JSON.parse(opts.body); return jsonResponse({ result: true }); }
-      return jsonResponse({ result: true, data: [{}] });
-    },
-    '/api/v3/sales/customers': (u, opts) => {
-      if (opts?.method === 'POST') return jsonResponse({ result: true, customer_id: 910 });
-      if (opts?.method === 'PUT') return jsonResponse({ result: true });
-      if (u.includes('/910')) return jsonResponse({ data: [{ sales_type: '12', branches: [{ branch_code: 911 }] }] });
-      return jsonResponse({ total: 0, data: [] });
-    },
-    '/api/v3/sales/quote': () => jsonResponse({ result: true, added_trans_no: 1802 }),
-  });
+  const id = nuevaCotizacion({ calle: '', cpEntrega: '' });
 
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`)
     .set('Authorization', `Bearer ${TOKEN}`).send({});
 
-  assert.equal(res.status, 200);
-  assert.equal(res.body.folio, 1802);
-  assert.ok(branchPut, 'sin domicilio SI debe hacer el PUT del branch (tax_group_id/sales_account)');
-  assert.equal(branchPut.tax_group_id, 1, 'cliente MX -> gravado');
-  assert.equal(branchPut.sales_account, '401-01-001');
-  assert.equal(branchPut.addr_street, '', 'sin domicilio no manda calle (actualizarBranchCliente default vacio)');
-  const put = res.body.steps.find(s => s.name === 'PUT branch (domicilio)');
-  assert.ok(put && put.status === 'ok', 'reporta el PUT del branch');
+  assert.equal(res.status, 422);
+  assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
+  assert.equal(res.body.campo, 'cl-cp-entrega');
+  const cot = readJson(COTS_PATH).find(c => c.id === id);
+  assert.equal(cot.data.cliente.customerId, undefined, 'no persiste customer_id');
 });
 
-// issue #189, zona gris: sin domicilio de entrega no hay pais de entrega que mirar --
-// la inferencia decidida es el pais del CLIENTE (`c.pais`, area). Un extranjero puede
-// recibir en Mexico y esto lo pasaria por alto, pero es preferible al default fijo de
-// Operam (siempre gravado), que es lo que se media en vivo con 5 clientes extranjeros.
-test('D2b: sin domicilio de entrega, cliente extranjero -> tax_group_id/sales_account de exportacion (issue #189)', async () => {
+// issue #189: el pais del CLIENTE (`c.pais`, area) decide el grupo de impuestos del
+// branch. Un extranjero puede recibir en Mexico y esto lo pasaria por alto, pero es
+// preferible al default fijo de Operam (siempre gravado), que es lo que se media en
+// vivo con 5 clientes extranjeros.
+test('D2b: cliente extranjero -> tax_group_id/sales_account de exportacion (issue #189)', async () => {
   writeJson(PROSPECTOS_PATH, [prospectoBase()]);
   const id = nuevaCotizacion({ pais: 'US' });
   let branchPut = null;
@@ -946,7 +930,7 @@ test('D2b: sin domicilio de entrega, cliente extranjero -> tax_group_id/sales_ac
 
   assert.equal(res.status, 200);
   assert.equal(res.body.folio, 1807);
-  assert.ok(branchPut, 'sin domicilio SI debe hacer el PUT del branch');
+  assert.ok(branchPut, 'debe hacer el PUT del branch');
   assert.equal(branchPut.tax_group_id, 2, 'cliente extranjero -> exportacion');
   assert.equal(branchPut.sales_account, '401-07-000');
 });

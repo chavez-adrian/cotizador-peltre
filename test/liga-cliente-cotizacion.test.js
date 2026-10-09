@@ -79,7 +79,7 @@ function contenido(cliente) {
     fecha: '2026-09-18', vigencia: '2099-10-18', tier: 'Mayoreo',
     cliente: {
       razonSocial: 'Sofia Rodriguez', nombreCorto: 'Sofia Rodriguez',
-      telefono: '+52 5551234567', cpEntrega: '56530', pais: 'MX',
+      telefono: '+52 5551234567', celEntrega: '+52 5551234567', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX',
       ...cliente,
     },
     items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],

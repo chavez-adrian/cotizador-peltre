@@ -235,7 +235,7 @@ test('B5: subirCotizacionOperam llama POST /api/v3/sales/quote', async () => {
     tier: 'Menudeo',
     data: {
       fecha: '2026-05-12',
-      cliente: { razonSocial: 'BANCO DE MEXICO', rfc: 'BMF821130AR3', calle: 'Av. 5 de Mayo' },
+      cliente: { razonSocial: 'BANCO DE MEXICO', rfc: 'BMF821130AR3', calle: 'Av. 5 de Mayo', cpEntrega: '56530', celEntrega: '+52 5512345678' },
       items: [{ codigo: 'VA08G1N1M0', descripcion: 'Vaso 8', cantidad: 2, precio: 50 }],
       notas: ['Tiempo de entrega: 4 semanas'],
     },

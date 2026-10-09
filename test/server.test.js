@@ -2354,7 +2354,7 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
     totalPiezas: 10, total: 1000, tier: 'Mayoreo',
     data: {
       fecha: '2026-06-17', vigencia: '2026-07-17',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', referencia: 'OC-9', nombreEntrega: 'Almacen' },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', referencia: 'OC-9', nombreEntrega: 'Almacen', calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5551234567' },
       items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
     },
   }]);
@@ -2479,7 +2479,7 @@ function cotizacionActualizable(extra = {}, { tier = 'Mayoreo' } = {}) {
     totalPiezas: 3, total: 300, tier, folioOperam: '1200',
     data: {
       fecha: '2026-07-28', vigencia: '2026-08-27',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
       notas: ['Nota nueva.'],
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
       ...extra,
@@ -2581,7 +2581,7 @@ test('A104: si la cotizacion apunta a OTRO cliente se aborta sin escribir (no se
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
   _resetSesionWeb();
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
   });
   const { restore, doc, bitacora } = mockOperamWebLegacy();
   try {
@@ -2600,7 +2600,7 @@ test('A104: con el MISMO cliente que el quote la actualizacion procede', async (
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
   _resetSesionWeb();
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
   });
   const { restore, doc } = mockOperamWebLegacy();
   try {
@@ -2647,7 +2647,7 @@ test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persist
     totalPiezas: 1, total: 100, tier: 'Mayoreo',
     data: {
       fecha: '2026-06-17',
-      cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA' },
+      cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA', calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5551234567' },
       items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 100, descuento: 0 }],
     },
   }]);
@@ -2788,7 +2788,7 @@ test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo
   _resetSesionWeb();
   // #505: vigencia futura, para que regenerar no la recalcule como vencida.
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
     huellaQuote: 'huella-vieja', vigencia: '2099-08-27',
   });
   const { restore } = mockOperamWebLegacy();
@@ -2816,7 +2816,7 @@ test('#328: corregir el domicilio de entrega llega al quote de Operam', async ()
   _resetSesionWeb();
   const clienteViejo = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567',
+    telefono: '+52 5551234567', celEntrega: '+52 5551234567',
     cpEntrega: '56530', calle: 'Calle Vieja 1', colonia: 'Centro', municipio: 'Chalco', estado: 'Mexico',
   };
   const id = cotizacionActualizable({ cliente: clienteViejo });
@@ -2857,7 +2857,7 @@ test('#332: corregir SOLO el numero interior llega al quote de Operam', async ()
   _resetSesionWeb();
   const sinInterior = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567',
+    telefono: '+52 5551234567', celEntrega: '+52 5551234567',
     cpEntrega: '11700', calle: 'Bosques de Duraznos 187', numInt: '',
     colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
   };
@@ -2896,18 +2896,19 @@ test('#329: corregir el contacto de entrega llega al quote de Operam', async () 
   _resetSesionWeb();
   const sinContacto = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567',
+    telefono: '+52 5551234567', celEntrega: '+52 55 1234 0000',
     cpEntrega: '11700', calle: 'Bosques de Duraznos 187',
     colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
   };
   const id = cotizacionActualizable({ cliente: sinContacto });
   const { restore, doc } = mockOperamWebLegacy();
   try {
-    // 1. Sin contacto de entrega capturado, la reescritura BORRA lo que el quote traia:
-    // vacio explicito, nunca el contacto por defecto que Operam habia heredado.
+    // 1. Sin correo de entrega capturado, la reescritura BORRA el que el quote traia:
+    // vacio explicito, nunca el contacto por defecto que Operam habia heredado. El
+    // telefono ya no puede faltar (#558): sin el la actualizacion se bloquea.
     await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
     const subida = readCots().find(c => c.id === id);
-    assert.strictEqual(doc.phone, '', 'sin celular de entrega el quote queda con el telefono vacio');
+    assert.strictEqual(doc.phone, '+52 55 1234 0000', 'el quote queda con el celular de entrega capturado');
     assert.strictEqual(doc.email, '', 'sin correo de entrega el quote queda con el correo vacio');
 
     // 2. El vendedor captura el contacto de entrega y regenera.

@@ -85,7 +85,7 @@ const RFC = 'WSI010101AAA';
 function cotizacion() {
   return {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Menudeo', _compress: false,
-    cliente: { razonSocial: 'WILLIAMS SONOMA INC', nombreCorto: 'Williams Sonoma', telefono: '+52 55 1234 5678', rfc: RFC },
+    cliente: { razonSocial: 'WILLIAMS SONOMA INC', nombreCorto: 'Williams Sonoma', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: RFC },
     items: [{ codigo: 'AB12', descripcion: 'Olla', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 1000, iva: 160, total: 1160, notas: [],
   };
@@ -180,7 +180,7 @@ async function escenarioCandidatoEnDolares() {
     totalPiezas: 100, total: 11600, tier: 'M100',
     data: {
       fecha: '2026-01-01', vigencia: '2026-02-01',
-      cliente: { razonSocial: 'Acme Export', nombreCorto: 'Acme Export', telefono: '+52 55 8877 6655', pais: 'MX' },
+      cliente: { razonSocial: 'Acme Export', nombreCorto: 'Acme Export', telefono: '+52 55 8877 6655', celEntrega: '+52 55 8877 6655', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX' },
       items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });

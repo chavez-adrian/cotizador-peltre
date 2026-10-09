@@ -56,7 +56,7 @@ const leerCola = () => JSON.parse(leerArchivoSync(COLA_PATH));
 
 const DATA = {
   fecha: '2026-09-24', vigencia: '2026-10-24',
-  cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', telefono: '+52 5551234567' },
+  cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', telefono: '+52 5551234567', celEntrega: '+52 5551234567', calle: 'Av. Juarez 45' },
   items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 }],
   subtotal: 1000, iva: 160, total: 1160, notas: [],
 };

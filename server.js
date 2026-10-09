@@ -67,6 +67,7 @@ import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
+import { CODIGO_ENTREGA_INCOMPLETA, MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA } from './public/js/contacto-entrega-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado } from './public/js/decorados-logica.js';
@@ -3445,6 +3446,7 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
 // quedo desalineado y hay que avisarlo con detalle, incluido si se alcanzo a
 // escribir (`escrito`).
 function respuestaActualizacion(r) {
+  if (r.tipo === 'bloqueo' && esBloqueoContactoEntrega(r)) return { status: 422, cuerpo: cuerpoContactoEntrega(r) };
   if (r.tipo === 'bloqueo') return { status: 409, cuerpo: { error: r.mensaje } };
   if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos } };
   return {
@@ -3456,6 +3458,18 @@ function respuestaActualizacion(r) {
       steps: r.pasos,
     },
   };
+}
+
+// Sin el telefono del Contacto de entrega o sin domicilio de entrega (#558): 422 al
+// crear y al actualizar, con el campo al que va el vendedor. Ni el 409 de la
+// cotizacion con pedido (que ofrece Copiar) ni el 503 de Operam caido: lo que falta
+// es un dato de la cotizacion, y reintentar sin capturarlo da lo mismo.
+function esBloqueoContactoEntrega(r) {
+  return r.motivo === MOTIVO_SIN_DOMICILIO_ENTREGA || r.motivo === MOTIVO_SIN_TELEFONO_ENTREGA;
+}
+
+function cuerpoContactoEntrega(r) {
+  return { error: r.mensaje, detalle: r.detalle, codigo: CODIGO_ENTREGA_INCOMPLETA, campo: r.campo, faltan: r.faltan };
 }
 
 // Subir la cotizacion a Operam (#83): la secuencia vive en lib/subida-quote.js
@@ -3523,6 +3537,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   // estructurado y SIN Reintentar. Lo demas es Operam: el documento SIGUE saliendo,
   // sin numero (ADR-0009).
   if (r.motivo === 'cliente-no-identificado') return res.status(422).json({ error: r.mensaje });
+  if (esBloqueoContactoEntrega(r)) return res.status(422).json(cuerpoContactoEntrega(r));
   if (r.motivo === 'sin-lista-precios') return res.status(422).json({ error: r.mensaje, codigo: CODIGO_CLIENTE_SIN_LISTA, ...delAlta });
   if (r.motivo === 'moneda-extranjera') {
     return res.status(422).json({ error: r.mensaje, codigo: CODIGO_MONEDA_EXTRANJERA, moneda: r.moneda, ...delAlta });

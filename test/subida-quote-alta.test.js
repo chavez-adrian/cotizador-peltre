@@ -19,7 +19,7 @@ function sinCliente(cliente = {}, raiz = {}) {
     totalPiezas: 3, total: 300, tier: 'M100', folioOperam: null,
     data: {
       fecha: '2026-10-03', vigencia: '2026-11-14',
-      cliente: { rfc: '', razonSocial: 'Cafe La Esquina', nombreCorto: 'La Esquina', telefono: '5598765432', cpEntrega: '56530', ...cliente },
+      cliente: { rfc: '', razonSocial: 'Cafe La Esquina', nombreCorto: 'La Esquina', telefono: '5598765432', cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '5598765432', ...cliente },
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
     },
     ...raiz,

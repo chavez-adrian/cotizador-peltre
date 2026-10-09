@@ -732,11 +732,12 @@
          aqui, encima de las opciones de envio. Los ids conservan el prefijo cl-
          (nacieron en el paso Cliente); moverlos habria significado tocar cada
          lectura/escritura de estos campos en app.js sin ganancia funcional.
-         Nada de esto es requisito para generar el documento (#84 AC4); CP+pais
-         SI siguen siendo obligatorios para cotizar paqueteria (cotizarEnvia). -->
+         Desde #558 (ADR-0024) CP, calle y celular de entrega son requisito para
+         generar y actualizar, tambien si el cliente recoge en planta; CP+pais
+         siguen siendo obligatorios para cotizar paqueteria (cotizarEnvia). -->
     <div id="pc-entrega-wrap" class="pc-entrega-inline">
-      <div class="section-header">Domicilio de entrega <span style="font-weight:400;color:var(--text-light);font-size:12px">(opcional para el documento)</span></div>
-      <div class="pc-nota" style="margin-bottom:12px">Se necesita CP + pais para cotizar la paqueteria; el resto es opcional y solo se imprime en el documento si esta capturado.</div>
+      <div class="section-header">Domicilio de entrega</div>
+      <div class="pc-nota" style="margin-bottom:12px">El CP, la calle y el celular de entrega son obligatorios para generar la cotizaci&oacute;n, tambi&eacute;n si el cliente recoge en planta. Para cotizar la paqueter&iacute;a se necesita adem&aacute;s el pa&iacute;s.</div>
       <div id="pc-dom-slot"></div>
       <div class="form-row">
         <div class="form-group" style="flex:0 0 120px">

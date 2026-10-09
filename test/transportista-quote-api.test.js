@@ -66,7 +66,7 @@ function dataCotizacion(envio, extra = {}) {
   return {
     // #505: vigencia futura -- una ya pasada se recalcula al editar y pide actualizar.
     fecha: '2026-09-24', vigencia: '2099-10-24',
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', telefono: '+52 5551234567' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', telefono: '+52 5551234567', celEntrega: '+52 5551234567', calle: 'Av. Juarez 45' },
     items: [
       { codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 10, precio: 100, descuento: 0 },
       ...(envio ? [{ codigo: 'ENVIO', descripcion: envio.descripcion, cantidad: 1, precio: envio.precio, descuento: 0 }] : []),

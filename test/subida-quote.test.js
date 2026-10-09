@@ -20,7 +20,7 @@ function cotizacion(extra = {}, raiz = {}) {
     totalPiezas: 3, total: 300, tier: 'M100', folioOperam: '1200',
     data: {
       fecha: '2026-07-28', vigencia: '2026-08-27',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530' },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Reforma 123', celEntrega: '+52 55 1234 5678' },
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
       huellaQuote: 'huella-previa',
       ...extra,
@@ -127,7 +127,7 @@ test('exito: devuelve actualizada con el folio y guarda la huella con la lista y
   const guardada = m.registro(7).data.huellaQuote;
   assert.notEqual(guardada, 'huella-previa');
   // Literal (como #522): la lista 15 y el transportista 3 de los resolutores entran a la huella.
-  assert.equal(guardada, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":"15","branchId":null,"shipVia":"3","vigencia":"2026-08-27"}');
+  assert.equal(guardada, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"Av. Reforma 123, 56530","contactPhone":"+52 55 1234 5678","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":"15","branchId":null,"shipVia":"3","vigencia":"2026-08-27"}');
 });
 
 test('exito: limpia la marca quoteDesactualizado', async () => {
@@ -264,7 +264,7 @@ function nueva(cliente = {}, raiz = {}) {
     totalPiezas: 3, total: 300, tier: 'M100', folioOperam: null,
     data: {
       fecha: '2026-10-03', vigencia: '2026-11-14',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '5512345678', cpEntrega: '56530', ...cliente },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '5512345678', cpEntrega: '56530', calle: 'Av. Reforma 123', celEntrega: '5512345678', ...cliente },
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
     },
     ...raiz,
@@ -406,7 +406,7 @@ test('con folio: la huella guardada es literal, con listaId y shipVia en null pr
     lista: null, transportista: { shipVia: null, linea: null, motivo: 'sin envio' },
   });
   await subirQuote(21, {}, m.deps);
-  assert.equal(m.registro(21).data.huellaQuote, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":null,"branchId":null,"shipVia":null,"vigencia":"2026-11-14"}');
+  assert.equal(m.registro(21).data.huellaQuote, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"Av. Reforma 123, 56530","contactPhone":"5512345678","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":null,"branchId":null,"shipVia":null,"vigencia":"2026-11-14"}');
 });
 
 test('post-fix: escribe vigencia, lista y transportista del quote recien creado', async () => {
@@ -679,4 +679,80 @@ test('#528 lograda con el registro sin cambio: la relectura confirma y quita la 
   assert.equal(nombres(m.secuencia).filter((n) => n === 'obtener').length, 2, 'decidir y releer al lograrse');
   assert.equal(m.registro(7).data.quoteDesactualizado, null);
   assert.equal((await subirQuote(7, {}, m.deps)).tipo, 'ya-subida');
+});
+
+// --- Contacto de entrega y domicilio de entrega obligatorios (#558, ADR-0024) ---
+// Sin el telefono del Contacto de entrega o sin domicilio de entrega la subida
+// termina en bloqueo con motivo, al crear y al actualizar, ANTES de escribir nada en
+// Operam ni en el registro.
+
+test('#558 crear sin telefono del Contacto de entrega: bloqueo con motivo sin escribir en Operam ni en el registro', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ celEntrega: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-telefono-entrega');
+  assert.match(r.mensaje, /tel\u00e9fono del Contacto de entrega/);
+  assert.match(r.detalle, /celEntrega/);
+  assert.deepEqual(nombres(m.secuencia), ['obtener']);
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+});
+
+test('#558 actualizar sin telefono del Contacto de entrega: bloqueo con motivo sin reescribir el quote ni tocar la marca', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530', celEntrega: '' } })] });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-telefono-entrega');
+  assert.match(r.mensaje, /tel\u00e9fono del Contacto de entrega/);
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+  assert.equal(m.llamadas.sacarDeLaColaPostFix.length, 0);
+});
+
+test('#558 crear por el camino del alta sin domicilio de entrega: bloqueo sin dar de alta ningun Cliente Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '', calle: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-domicilio-entrega');
+  assert.match(r.mensaje, /domicilio de entrega/);
+  assert.equal(m.llamadas.darDeAlta.length, 0);
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+});
+
+test('#558 el cliente que recoge en planta (sin envio) tambien necesita el telefono del Contacto de entrega', async () => {
+  const sinEnvio = nueva({ celEntrega: '' });
+  sinEnvio.data.envio = { carrier: '', servicio: '', precio: 0 };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [sinEnvio], transportista: { shipVia: null, linea: null, motivo: 'sin envio' } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-telefono-entrega');
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+});
+
+test('#558 sin correo del Contacto de entrega la subida procede', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ emailEntrega: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
+});
+
+test('#558 Editar una cotizacion vieja sin telefono de entrega: la entrada unica no actualiza y la marca se queda para el siguiente intento', async () => {
+  const vieja = cotizacion({ quoteDesactualizado: MARCA_PENDIENTE, cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530' } });
+  const m = subidaQuoteEnMemoria({ cotizaciones: [vieja] });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.operacion, 'actualizar');
+  assert.equal(r.motivo, 'sin-telefono-entrega');
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+  assert.equal(m.llamadas.actualizarDatos.length, 0);
+  assert.deepEqual(m.registro(7).data.quoteDesactualizado, MARCA_PENDIENTE);
+});
+
+test('#558 actualizar sin domicilio de entrega: bloqueo con motivo sin reescribir el quote', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: '', celEntrega: '5512345678' } })] });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-domicilio-entrega');
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
 });

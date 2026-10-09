@@ -77,7 +77,7 @@ function agregarCotizacion({ folioOperam = null, tier = 'M100', cliente = {}, it
     totalPiezas: 100, total: 11600, tier, folioOperam,
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
-      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', pais: 'MX', ...cliente },
+      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', celEntrega: '+52 5588776655', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX', ...cliente },
       items: items ?? [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });
@@ -395,4 +395,55 @@ test('#528 con folio y sin marca la ruta de crear responde yaSubida como hoy, si
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { ok: true, folio: '1200', yaSubida: true, customer_id: 10 });
+});
+
+// --- Contacto de entrega incompleto (#558) -------------------------------------
+// El bloqueo del modulo se traduce a 422 con su codigo, el campo al que va el
+// vendedor y el mensaje en dos capas; nunca al 503 de "Operam fallo" (que entrega el
+// documento como si reintentar sirviera) ni al 409 de "con pedido" (que ofrece
+// Copiar). fetchBloqueado demuestra que no se toco Operam.
+
+test('#558 crear sin telefono del Contacto de entrega responde 422 con codigo, campo y detalle sin tocar Operam', async () => {
+  const id = agregarCotizacion({ cliente: { celEntrega: '' } });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 422);
+  assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
+  assert.equal(res.body.campo, 'cl-cel-entrega');
+  assert.match(res.body.error, /tel\u00e9fono del Contacto de entrega/);
+  assert.match(res.body.detalle, /celEntrega/);
+  assert.equal(readCots().find(c => c.id === id).folioOperam, null);
+});
+
+test('#558 Editar sin domicilio de entrega: la entrada unica responde 422 con operacion actualizar', async () => {
+  const id = agregarCotizacion({ folioOperam: '1200', cliente: { calle: '' } });
+  const cots = readCots();
+  cots.find(c => c.id === id).data.quoteDesactualizado = { fecha: '2026-10-04T10:00:00.000Z', pendiente: true };
+  escribirArchivoSync(COTS_PATH, JSON.stringify(cots, null, 2));
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 422);
+  assert.equal(res.body.operacion, 'actualizar');
+  assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
+  assert.equal(res.body.campo, 'cl-calle');
+  assert.match(res.body.error, /domicilio de entrega/);
+});
+
+test('#558 /actualizar sin telefono del Contacto de entrega responde 422 con codigo', async () => {
+  const id = agregarCotizacion({ folioOperam: '1200', cliente: { celEntrega: '' } });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', TOKEN);
+  assert.equal(res.status, 422);
+  assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
+  assert.equal(res.body.campo, 'cl-cel-entrega');
+});
+
+test('#558 la Pre-cotizacion no se bloquea: guardar sin telefono ni domicilio de entrega responde 200 y el documento se genera', async () => {
+  const guardar = await supertest(app).post('/api/cotizacion').set('Authorization', TOKEN).send({
+    fecha: '2026-10-09', vigencia: '2026-11-08', tier: 'M100',
+    cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', calle: '', celEntrega: '' },
+    items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 10000, iva: 1600, total: 11600, notas: [],
+  });
+  assert.equal(guardar.status, 200, JSON.stringify(guardar.body));
+  const html = await supertest(app).get(`/api/cotizacion/html/${guardar.body.id}`);
+  assert.equal(html.status, 200);
+  assert.ok(html.text.includes('Hotel Azul Centro'));
 });

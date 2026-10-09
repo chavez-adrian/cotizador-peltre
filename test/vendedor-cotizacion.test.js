@@ -67,7 +67,7 @@ function contenido(extra = {}) {
     fecha: '2026-09-19', vigencia: '2026-10-19', tier: 'Mayoreo',
     cliente: {
       razonSocial: 'Restaurante La Mesa', nombreCorto: 'La Mesa',
-      telefono: '+52 5551234567', cpEntrega: '56530', pais: 'MX',
+      telefono: '+52 5551234567', celEntrega: '+52 5551234567', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX',
     },
     items: [{ codigo: 'CR20-PLATO', descripcion: 'Plato', cantidad: 500, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 50000, iva: 8000, total: 58000, notas: [],
