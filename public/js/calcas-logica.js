@@ -420,3 +420,12 @@ export function estadoMarcaDecorado({ hayCalca, marcaActual, origen } = {}) {
   }
   return { valor: false, editable: true, motivo: 'Sin decorado: tiempo de producci\u00f3n con la tabla normal.' };
 }
+
+// La marca que viaja al guardar (#555). El data del registro se mergea a nivel
+// raiz: `false` solo viaja cuando la cotizacion cargo marcada y el vendedor la
+// desmarco, para que un false de una cotizacion que nunca la tuvo no pise la
+// marca puesta despues desde la tarjeta del tablero. Sin llave sobrevive la guardada.
+export function marcaDecoradoAlGuardar({ hayCalca, marcaActual, origen, marcaCargada } = {}) {
+  if (estadoMarcaDecorado({ hayCalca, marcaActual, origen }).valor) return true;
+  return marcaCargada === true ? false : undefined;
+}

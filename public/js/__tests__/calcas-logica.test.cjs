@@ -11,7 +11,7 @@ let precioManualAlCargar, MENSAJE_COPIA_PRECIO_MANUAL;
 let piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca;
 let motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio;
 let siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito;
-let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado;
+let avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado, marcaDecoradoAlGuardar;
 let MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS;
 let lineasDeProducto, topeDisenos, puedeAgregarDiseno, avisoTopeDisenos;
 
@@ -26,7 +26,7 @@ before(async () => {
     piezasDeProducto, hayCalcaEnCarrito, cantidadFacturableCalca, avisoClampCalca,
     motivoCalcaInvalida, bloqueaGeneracionPorCalcaSinPrecio, impideAgregarCalcaSinPrecio,
     siguienteNumeroDiseno, llaveDiseno, codigoDeLlave, llaveCarrito,
-    avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado,
+    avisoCalcaInvalida, relacionCalcaProducto, estadoMarcaDecorado, marcaDecoradoAlGuardar,
     MAX_DISENOS_POR_LINEA_PRODUCTO, MOTIVOS_TOPE_DISENOS,
     lineasDeProducto, topeDisenos, puedeAgregarDiseno, avisoTopeDisenos,
   } = await import('../calcas-logica.js'));
@@ -878,4 +878,25 @@ test('#402-2: el aviso del armador sigue hablando de la calca por agregar, no de
   const armador = render.indexOf("getElementById('cal-aviso')");
   assert.ok(armador > 0 && render.indexOf('motivoCalcaInvalidaActual()') > armador,
     'son dos avisos distintos: el del armador (#cal-aviso) y el del carrito');
+});
+
+// === #555: que marca viaja al guardar. `false` solo cuando la cotizacion cargo
+// marcada y el vendedor la desmarco; si no, la llave no viaja para no pisar una
+// marca puesta desde la tarjeta del tablero ===
+test('#555-1: cargo marcada y el vendedor la desmarco sin calca: viaja false', () => {
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: false, marcaActual: false, marcaCargada: true }), false);
+});
+
+test('#555-2: sin marca y sin haberla cargado marcada: la llave no viaja', () => {
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: false, marcaActual: false, marcaCargada: false }), undefined);
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: false, marcaActual: false }), undefined);
+});
+
+test('#555-3: con calca en el carrito viaja true aunque la marca se haya apagado', () => {
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: true, marcaActual: false, marcaCargada: true }), true);
+});
+
+test('#555-4: marcada viaja true, la haya cargado o no', () => {
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: false, marcaActual: true, origen: 'guardado', marcaCargada: true }), true);
+  assert.strictEqual(marcaDecoradoAlGuardar({ hayCalca: false, marcaActual: true, origen: 'manual', marcaCargada: false }), true);
 });

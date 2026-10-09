@@ -309,6 +309,7 @@ import {
   avisoCalcaInvalida,
   relacionCalcaProducto,
   estadoMarcaDecorado,
+  marcaDecoradoAlGuardar,
   lineasDeProducto,
   puedeAgregarDiseno,
   avisoTopeDisenos,
@@ -2363,12 +2364,16 @@ function sincronizarMarcaDecorado() {
 }
 
 // La marca viaja con el guardado para que la oportunidad nazca ya sujeta al gate
-// de #61. Se manda SOLO en true: el data del registro se mergea a nivel raiz, asi
-// que un false pisaria una marca puesta desde la tarjeta del tablero -- que es
-// donde se apaga, con el aviso de que deja de exigir las 6 autorizaciones.
+// de #61. `false` solo viaja si la cotizacion que se edita cargo marcada y el
+// vendedor la desmarco (#555); si no, la llave no viaja y sobrevive la del
+// registro, para no pisar una marca puesta desde la tarjeta del tablero.
 function marcaDecoradoParaGuardar() {
-  const hayCalca = hayCalcaEnCarrito(itemsDelCarrito());
-  return estadoMarcaDecorado({ hayCalca, marcaActual: decoradoManual, origen: origenMarcaDecorado }).valor ? true : undefined;
+  return marcaDecoradoAlGuardar({
+    hayCalca: hayCalcaEnCarrito(itemsDelCarrito()),
+    marcaActual: decoradoManual,
+    origen: origenMarcaDecorado,
+    marcaCargada: state.vigenciaPrevia?.decorado === true,
+  });
 }
 
 // === RESUMEN ===
@@ -2910,8 +2915,11 @@ async function guardarYNumerarCotizacion(cuerpo, sobre, progreso) {
       vigencia,
       fechaCreacion: state.vigenciaPrevia?.fechaCreacion ?? cuerpo.fecha,
       items: (cuerpo.items || []).map(i => ({ codigo: i.codigo, cantidad: i.cantidad })),
-      decorado: cuerpo.decorado === true || state.vigenciaPrevia?.decorado === true,
+      decorado: cuerpo.decorado === true,
     };
+    // El desmarcado viaja una vez (#555): con el registro ya en false, el cuerpo
+    // siguiente de la misma pantalla no trae la llave y debe contar como igual.
+    if (cuerpo.decorado === false) delete state.cuerpoGuardado.decorado;
   }
   state.recalcularVigencia = false;
   state.avisoVigencia = avisoVigencia || state.avisoVigencia;
@@ -2974,9 +2982,9 @@ function vigenciaEnPantalla() {
   return vigenciaAlGuardar(condicionesVigentes(), {
     hoy: fechaEmisionHoy(),
     items: itemsDelCarrito(),
-    // La marca que quedara guardada, como la deriva el servidor: false no viaja,
-    // asi que al editar sobrevive la del registro.
-    decorado: marcaDecoradoParaGuardar() === true || state.vigenciaPrevia?.decorado === true,
+    // La marca que quedara guardada: si la cargada era true, desmarcarla viaja
+    // como false (#555); sin llave sobrevive la del registro, que era false.
+    decorado: marcaDecoradoParaGuardar() === true,
     previa: state.vigenciaPrevia,
     recalcular: state.recalcularVigencia,
   });

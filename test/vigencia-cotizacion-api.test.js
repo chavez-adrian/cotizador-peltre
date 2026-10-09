@@ -144,6 +144,28 @@ test('#505: editar una cotizacion decorada sin mandar la marca conserva la vigen
   }
 });
 
+// #555: desmarcar el decorado en la edicion manda `decorado: false` explicito. La
+// marca queda apagada, la vigencia baja a la tabla normal con base en la creacion
+// y el checklist de calca sobrevive (ADR-0010: sus pasos son gestiones reales).
+test('#555: desmarcar el decorado al editar apaga la marca y deriva la vigencia con la tabla normal', async () => {
+  const { id, creacion } = subida({ diasAtras: 3, decorado: true });
+  const cots = readCots();
+  cots.find(c => c.id === id).data.calcaChecklist = { arteFinal: true };
+  writeCots(cots);
+  const res = await guardar({ ...contenido({ decorado: false }), cotizacionId: String(id) });
+  assert.equal(res.body.requiereActualizacionOperam, true);
+  assert.equal(guardada(id).data.decorado, false);
+  assert.equal(guardada(id).data.vigencia, sumarDiasFecha(creacion, 42));
+  assert.deepEqual(guardada(id).data.calcaChecklist, { arteFinal: true });
+});
+
+test('#555: desmarcar el decorado y Recalcular vigencia la deriva con base hoy y la tabla normal', async () => {
+  const { id } = subida({ diasAtras: 3, decorado: true });
+  await guardar({ ...contenido({ decorado: false }), cotizacionId: String(id), recalcularVigencia: true });
+  assert.equal(guardada(id).data.decorado, false);
+  assert.equal(guardada(id).data.vigencia, sumarDiasFecha(HOY, 42));
+});
+
 test('#505: editar una cotizacion vencida la recalcula con base hoy y lo avisa', async () => {
   const { id } = subida({ diasAtras: 50, vigencia: sumarDiasFecha(HOY, -1) });
   const res = await guardar({ ...contenido(), cotizacionId: String(id) });

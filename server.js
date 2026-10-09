@@ -516,8 +516,9 @@ async function crearOActualizarCotizacion(data, vendedor, prevConocido) {
   const recalcularVigencia = data.recalcularVigencia === true;
   delete data.recalcularVigencia;
   // La marca de decorado con la que se deriva es la que QUEDA guardada: el data se
-  // mergea por la raiz y el navegador solo manda `decorado` en true, asi que sin la
-  // llave sobrevive la del registro previo.
+  // mergea por la raiz y el navegador manda `decorado` en true, o en false solo al
+  // desmarcar una cotizacion que cargo marcada (#555); sin la llave sobrevive la
+  // del registro previo.
   const reglaVigencia = (previa, decoradoGuardado) => vigenciaAlGuardar(condicionesComerciales(configStore.leer()), {
     hoy: fechaEmisionHoy(), items: data.items,
     decorado: Object.hasOwn(data, 'decorado') ? data.decorado === true : decoradoGuardado === true,
