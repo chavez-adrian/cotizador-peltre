@@ -815,3 +815,70 @@ test('#558 actualizar sin domicilio de entrega: bloqueo con motivo sin reescribi
   assert.equal(r.motivo, 'sin-domicilio-entrega');
   assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
 });
+
+// --- #561: el Contacto de entrega queda en el domicilio de entrega en Operam ---
+// La escritura es del modulo Contactos en Operam (ADR-0024), aqui sustituido: la
+// subida le pide escribirlo DESPUES del quote, sobre el Cliente Operam y el domicilio
+// a los que se subio, y reporta su paso. Si falla, la subida sigue lograda con aviso.
+
+const LUCIA = { nombreEntrega: 'Lucia Recibe', celEntrega: '+52 55 1234 5678', emailEntrega: 'lucia@example.com' };
+const CONTACTO_ESCRITO = {
+  tipo: 'lograda', escrito: true, personId: '1301', noAplicados: [],
+  pasos: [{ name: 'contacto de entrega', status: 'ok', mensaje: 'Lucia Recibe quedo en Operam como contacto General y de Entrega del domicilio de entrega.', detalle: 'domicilio 564 del cliente 15: persona 1301 creada' }],
+};
+
+test('#561 crear: despues del quote pide escribir el Contacto de entrega en el domicilio al que se subio', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: CONTACTO_ESCRITO });
+  await subirQuote(21, {}, m.deps);
+  assert.deepEqual(m.llamadas.escribirContactoEntrega, [[{
+    clienteId: 15, domicilioId: 564,
+    contacto: { nombre: 'Lucia Recibe', telefono: '+52 55 1234 5678', correo: 'lucia@example.com' },
+  }]]);
+  assert.ok(nombres(m.secuencia).indexOf('corregirVigenciaQuote') < nombres(m.secuencia).indexOf('escribirContactoEntrega'));
+});
+
+test('#561 crear: el paso del Contacto de entrega sale en el reporte de la subida, despues del post-fix y antes de la liga', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 },
+    contactoEntrega: CONTACTO_ESCRITO, prospectos: [CONTACTO_SIN_LIGAS],
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(r.pasos.map((p) => p.name), [
+    'post-fix vigencia', 'lista del quote', 'transportista del quote',
+    'telefono del Contacto de entrega', 'correo del Contacto de entrega',
+    'contacto de entrega', 'ligar prospecto',
+  ]);
+  assert.deepEqual(r.pasos[5], CONTACTO_ESCRITO.pasos[0]);
+});
+
+test('#561 crear: si el modulo falla, la subida queda lograda con aviso y el folio se conserva', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 },
+    contactoEntrega: () => { throw new Error('la sesion web no abrio'); },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
+  assert.equal(m.registro(21).folioOperam, '1330');
+  const paso = r.pasos.find((p) => p.name === 'contacto de entrega');
+  assert.equal(paso.status, 'warn');
+  assert.doesNotMatch(paso.mensaje, /sesion web/);
+  assert.match(paso.detalle, /la sesion web no abrio/);
+});
+
+test('#561 crear: el bloqueo que devuelve el modulo sale como su paso y la subida sigue lograda', async () => {
+  const bloqueo = {
+    tipo: 'bloqueo', motivo: 'operam', mensaje: 'No se pudo escribir el Contacto de entrega en el domicilio de entrega en Operam.', detalle: 'FA 500',
+    pasos: [{ name: 'contacto de entrega', status: 'error', mensaje: 'No se pudo escribir el Contacto de entrega en el domicilio de entrega en Operam.', detalle: 'FA 500' }],
+  };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: bloqueo });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.pasos.at(-1), bloqueo.pasos[0]);
+});
+
+test('#561 crear: sin folio no hay quote, y el Contacto de entrega no se escribe', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '', customerId: 15, branchId: 564 }, contactoEntrega: CONTACTO_ESCRITO });
+  await subirQuote(21, {}, m.deps);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+});

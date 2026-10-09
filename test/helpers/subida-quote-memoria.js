@@ -26,6 +26,11 @@
 // REAL la compone sobre test/helpers/operam-memoria.js y la pasa aqui), y
 // `listasPrecios`, lo que contesta obtenerListasPrecios. Las dos quedan en
 // `secuencia` como el resto.
+//
+// El Contacto de entrega en el domicilio (#561) entra como `contactoEntrega`, lo que
+// contesta escribirContactoEntrega del modulo Contactos en Operam (un objeto, o una
+// funcion `(solicitud) => resultado` que puede lanzar). Por defecto no escribe nada ni
+// agrega pasos, para que las pruebas de otras reglas no cambien.
 
 const clonar = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
@@ -86,6 +91,7 @@ export function subidaQuoteEnMemoria({
   ligarFalla = null,
   alta = { tipo: 'lograda', clienteId: 900, domicilioId: 800, creadoNuevo: true, pasos: [] },
   listasPrecios = [{ id: 12, nombre: 'Precio de lista' }, { id: 15, nombre: 'M100' }],
+  contactoEntrega = { tipo: 'lograda', escrito: false, pasos: [] },
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));
   const enCola = new Set(cola.map(String));
@@ -93,6 +99,7 @@ export function subidaQuoteEnMemoria({
     obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [],
     setFolioOperam: [], resolverClienteDeCotizacion: [], subirCotizacionOperam: [],
     corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], darDeAlta: [], obtenerListasPrecios: [],
+    escribirContactoEntrega: [],
   };
   const secuencia = [];
   const anotar = (nombre, args) => {
@@ -162,6 +169,10 @@ export function subidaQuoteEnMemoria({
       anotar('darDeAlta', [solicitud]);
       // Sin clonar: el resultado puede traer `segmentoDiferido`, una funcion.
       return typeof alta === 'function' ? alta(solicitud) : { ...alta, pasos: [...(alta.pasos || [])] };
+    },
+    async escribirContactoEntrega(solicitud) {
+      anotar('escribirContactoEntrega', [solicitud]);
+      return resolverValor(contactoEntrega, [solicitud]);
     },
     async obtenerListasPrecios() {
       anotar('obtenerListasPrecios', []);

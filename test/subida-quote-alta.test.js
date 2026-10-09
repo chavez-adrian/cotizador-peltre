@@ -452,3 +452,23 @@ test('alta que lanza: se propaga sin marcar motivo, sin anotar y sin convertirse
   assert.equal(m.llamadas.actualizarDatos.length, 0);
   assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
 });
+
+// #561: por el camino del alta el Contacto de entrega va al Cliente Operam y al
+// domicilio que dejo el alta, despues del quote, y su paso entra al reporte. El
+// Cliente Operam recien creado ya trae el General que crea Operam: el modulo decide
+// que hacer con el (ADR-0024; #566 lo deja como Contacto de entrega).
+test('#561 alta lograda: despues del quote pide escribir el Contacto de entrega en el domicilio del alta y reporta su paso', async () => {
+  const paso = { name: 'contacto de entrega', status: 'omitido', mensaje: 'El domicilio de entrega ya tiene un contacto General en Operam.', detalle: 'domicilio 800' };
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [sinCliente({ nombreEntrega: 'Lucia Recibe', emailEntrega: 'lucia@example.com' })],
+    contactoEntrega: { tipo: 'lograda', escrito: false, motivo: 'general-existente', pasos: [paso] },
+  });
+  const r = await subirQuote(31, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(m.llamadas.escribirContactoEntrega, [[{
+    clienteId: 900, domicilioId: 800,
+    contacto: { nombre: 'Lucia Recibe', telefono: '5598765432', correo: 'lucia@example.com' },
+  }]]);
+  assert.ok(nombres(m.secuencia).indexOf('corregirVigenciaQuote') < nombres(m.secuencia).indexOf('escribirContactoEntrega'));
+  assert.deepEqual(r.pasos.at(-1), paso);
+});

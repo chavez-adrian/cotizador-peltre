@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html><head><meta http-equiv='Content-Type' content='text/html; charset=utf-8'></head><body>
+<form enctype='multipart/form-data' method='post' action='/sales/manage/customer_branches.php'  >
+<center><table class='tablestyle_noborder' cellpadding=2 cellspacing=0>
+<tr>
+<td>Seleccione un cliente: </td>
+<td nowrap><span id='_customer_id_sel'><select autocomplete='off'  name='customer_id' class='combo2' title='Presione tecla Tab para filtrar por parte del nombre; F2 - introducir nuevo cliente'   chosen="chosen_ajax" chosen_ajax="../../sales/inquiry/customers.ajax.php?inactive=false&specoption="><option groupid='15' selected  value='15'>Adrian Chavez Rosete</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_customer_id_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+</table></center>
+<div style='text-align: center; margin-bottom: 2rem'><a id='_el6ac93a2f208a35.43859192' href='../../sales/manage/customers.php?debtor_no=15' >Ir a Cliente</a>
+</div><div style='margin-left: 4.5rem; margin-bottom: 1rem;'><td >Nombre corto / Nombre:</td>
+<td><input  class="searchbox" type="text" name="name_short" size="16" maxlength="18" value="" ></td>
+<td ><button class="ajaxsubmit" type="submit"aspect='default'  name="SearchCustomerAddress"  id="SearchCustomerAddress" value="Buscar" title='Buscar'
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Buscar</span></button>
+</td>
+</div><div id='_branch_tbl_span'><center><table class='tablestyle' width=95% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Nombre Corto</td>
+<td class='tableheader' >Nombre</td>
+<td class='tableheader' >Contacto</td>
+<td class='tableheader' >Vendedor</td>
+<td class='tableheader' >Area/Zona</td>
+<td class='tableheader' >Telefono</td>
+<td class='tableheader' >Cel No.</td>
+<td class='tableheader' >E-mail</td>
+<td class='tableheader' >Grupo de Impuestos</td>
+<td class='tableheader' ></td>
+<td class='tableheader' ></td>
+</tr>
+<tr class='evenrow'  >
+<td >Bosques de Europa (Nombre Corto)</td>
+<td >Bosques de Europa (Nombre del Domicilio)</td>
+<td ></td>
+<td >Adrian Chavez</td>
+<td >10 Mexico</td>
+<td ></td>
+<td ></td>
+<td ><a href='mailto:'></a></td>
+<td >I.V.A. 16%</td>
+<td ><button type='submit' class='editbutton' name='Edit564' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td>
+<td ><button type='submit' class='editbutton' name='Delete564' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td>
+</tr>
+<tr class='oddrow'  >
+<td >Pestalozzi (Nombre Corto)</td>
+<td >Pestalozzi (Nombre del Domicilio)</td>
+<td ></td>
+<td >Adrian Chavez</td>
+<td >10 Mexico</td>
+<td ></td>
+<td ></td>
+<td ><a href='mailto:'></a></td>
+<td >I.V.A. 16%</td>
+<td ><button type='submit' class='editbutton' name='Edit15' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td>
+<td ><button type='submit' class='editbutton' name='Delete15' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td>
+</tr>
+<tr class='navibar'>
+<td colspan=14 class='navibar' style='border:none;padding:3px;'><div style='float:right;'><center><table cellpadding=2 cellspacing=0>
+<tr>
+<td ><button class="ajaxsubmit" type="submit"aspect='default'  name="Imprimir"  id="Imprimir" value="Descargar Excel" title='Descargar Excel'
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Descargar Excel</span></button>
+</td>
+<button class="inputsubmit" type="submit" style='display:none;' name="Update"  id="Update" value="Actualizar"
+		style=''><span>Actualizar</span></button>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_first"  id="branch_tbl_page_first" value="Primero"><span>Primero</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_prev"  id="branch_tbl_page_prev" value="Previo"><span>Previo</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_next"  id="branch_tbl_page_next" value="Siguiente"><span>Siguiente</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_last"  id="branch_tbl_page_last" value="Ultimo"><span>Ultimo</span></button>
+</td>
+</tr>
+</table></center>
+</div>Registros 1-2 de 2 <input type='checkbox' name='show_inactive' value='1' onclick='JsHttpRequest.request("_show_inactive_update", this.form);' 
+		autocomplete='off'
+		>
+Mostrar Inactivos</td></tr>
+</table></center>
+</div><div id='tabs'><ul class='ajaxtabs' rel='_tabs_div'>
+<li><button type='submit' name='tabs_settings' class='ajaxbutton'  ><span>Configuracion General</span></button>
+</li>
+<li><button type='submit' name='tabs_contacts' class='current'  ><span>Contactos</span></button>
+</li>
+<li><button type='submit' name='tabs_documents' class='ajaxbutton'  ><span>Expediente</span></button>
+</li>
+<li><button type='submit' name='tabs_pdf_formats' class='ajaxbutton'  ><span>Formatos de Impresion PDF</span></button>
+</li>
+</ul>
+<div class='spaceBox'></div>
+<input type='hidden' name='_tabs_sel' value='contacts'>
+<div class='contentBox' id='_tabs_div'>
+<div id='contacts_div'><br><center><table class='tablestyle' width=80% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Asignaciones</td>
+<td class='tableheader' >Referencia</td>
+<td class='tableheader' >Nombre Completo</td>
+<td class='tableheader' >Telefono</td>
+<td class='tableheader' >Telefono Secundario</td>
+<td class='tableheader' >Cel</td>
+<td class='tableheader' >email</td>
+<td class='tableheader' ></td>
+<td class='tableheader' >&nbsp;</td>
+</tr>
+<tr class='evenrow'  >
+<td >Deliveries</td>
+<td >Adrian Bosques Referencia</td>
+<td >Adrian Bosques Nombre </td>
+<td ></td>
+<td ></td>
+<td ></td>
+<td ><a href='mailto:'></a></td>
+<td align='center'><button type='submit' class='editbutton' name='contactsEdit[1249]' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td><td align='center'><button type='submit' class='editbutton' name='contactsDelete[1249]' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td></tr>
+<tr class='oddrow'  >
+<td >General,Deliveries</td>
+<td >MED556C-B1</td>
+<td >Zeta GD Prueba</td>
+<td >55 0000 0201</td>
+<td ></td>
+<td >5500000291</td>
+<td ><a href='mailto:b1@example.com'>b1@example.com</a></td>
+<td align='center'><button type='submit' class='editbutton' name='contactsEdit[1293]' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td><td align='center'><button type='submit' class='editbutton' name='contactsDelete[1293]' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td></tr>
+<tr class='evenrow'  >
+<td >General,Deliveries</td>
+<td >MED556C-B1</td>
+<td >Zeta GD Prueba</td>
+<td >55 0000 0201</td>
+<td ></td>
+<td >5500000291</td>
+<td ><a href='mailto:b1@example.com'>b1@example.com</a></td>
+<td align='center'><button type='submit' class='editbutton' name='contactsEdit[1293]' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td><td align='center'><button type='submit' class='editbutton' name='contactsDelete[1293]' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td></tr>
+</table></center>
+<br><center><button class="ajaxsubmit" type="submit"aspect='default'  name="contactsNEW"  id="contactsNEW" value="Agregar nuevo"
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Agregar nuevo</span></button>
+</center><input type="hidden" name="contactsMode[]" value='' id="">
+</div><input type="hidden" name="branch_code" value='564' id="">
+<input type="hidden" name="selected_id" value='564' id="">
+<br></div></div><input type="hidden" name="_focus" value='' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='token-de-prueba' id="">
+</form>
+</body></html>

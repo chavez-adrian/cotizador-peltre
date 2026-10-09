@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html><head><meta http-equiv='Content-Type' content='text/html; charset=utf-8'></head><body>
+<form enctype='multipart/form-data' method='post' action='/sales/manage/customer_branches.php'  >
+<center><table class='tablestyle_noborder' cellpadding=2 cellspacing=0>
+<tr>
+<td>Seleccione un cliente: </td>
+<td nowrap><span id='_customer_id_sel'><select autocomplete='off'  name='customer_id' class='combo2' title='Presione tecla Tab para filtrar por parte del nombre; F2 - introducir nuevo cliente'   chosen="chosen_ajax" chosen_ajax="../../sales/inquiry/customers.ajax.php?inactive=false&specoption="><option groupid='15' selected  value='15'>Adrian Chavez Rosete</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_customer_id_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+</table></center>
+<div style='text-align: center; margin-bottom: 2rem'><a id='_el6ac9285eb77a16.51127957' href='../../sales/manage/customers.php?debtor_no=15' >Ir a Cliente</a>
+</div><div style='margin-left: 4.5rem; margin-bottom: 1rem;'><td >Nombre corto / Nombre:</td>
+<td><input  class="searchbox" type="text" name="name_short" size="16" maxlength="18" value="" ></td>
+<td ><button class="ajaxsubmit" type="submit"aspect='default'  name="SearchCustomerAddress"  id="SearchCustomerAddress" value="Buscar" title='Buscar'
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Buscar</span></button>
+</td>
+</div><div id='_branch_tbl_span'><center><table class='tablestyle' width=95% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Nombre Corto</td>
+<td class='tableheader' >Nombre</td>
+<td class='tableheader' >Contacto</td>
+<td class='tableheader' >Vendedor</td>
+<td class='tableheader' >Area/Zona</td>
+<td class='tableheader' >Telefono</td>
+<td class='tableheader' >Cel No.</td>
+<td class='tableheader' >E-mail</td>
+<td class='tableheader' >Grupo de Impuestos</td>
+<td class='tableheader' ></td>
+<td class='tableheader' ></td>
+</tr>
+<tr class='evenrow'  >
+<td >Bosques de Europa (Nombre Corto)</td>
+<td >Bosques de Europa (Nombre del Domicilio)</td>
+<td ></td>
+<td >Adrian Chavez</td>
+<td >10 Mexico</td>
+<td ></td>
+<td ></td>
+<td ><a href='mailto:'></a></td>
+<td >I.V.A. 16%</td>
+<td ><button type='submit' class='editbutton' name='Edit564' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td>
+<td ><button type='submit' class='editbutton' name='Delete564' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td>
+</tr>
+<tr class='oddrow'  >
+<td >Pestalozzi (Nombre Corto)</td>
+<td >Pestalozzi (Nombre del Domicilio)</td>
+<td ></td>
+<td >Adrian Chavez</td>
+<td >10 Mexico</td>
+<td ></td>
+<td ></td>
+<td ><a href='mailto:'></a></td>
+<td >I.V.A. 16%</td>
+<td ><button type='submit' class='editbutton' name='Edit15' value='1' title='Editar' /><img src='../../themes/default/images/edit.gif' width='12' height='12' border='0' />
+</button>
+</td>
+<td ><button type='submit' class='editbutton' name='Delete15' value='1' title='Eliminar' /><img src='../../themes/default/images/delete.gif' width='12' height='12' border='0' />
+</button>
+</td>
+</tr>
+<tr class='navibar'>
+<td colspan=14 class='navibar' style='border:none;padding:3px;'><div style='float:right;'><center><table cellpadding=2 cellspacing=0>
+<tr>
+<td ><button class="ajaxsubmit" type="submit"aspect='default'  name="Imprimir"  id="Imprimir" value="Descargar Excel" title='Descargar Excel'
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Descargar Excel</span></button>
+</td>
+<button class="inputsubmit" type="submit" style='display:none;' name="Update"  id="Update" value="Actualizar"
+		style=''><span>Actualizar</span></button>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_first"  id="branch_tbl_page_first" value="Primero"><span>Primero</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_prev"  id="branch_tbl_page_prev" value="Previo"><span>Previo</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_next"  id="branch_tbl_page_next" value="Siguiente"><span>Siguiente</span></button>
+</td>
+<td align='right'><button disabled class="navibutton" type="submit" name="branch_tbl_page_last"  id="branch_tbl_page_last" value="Ultimo"><span>Ultimo</span></button>
+</td>
+</tr>
+</table></center>
+</div>Registros 1-2 de 2 <input type='checkbox' name='show_inactive' value='1' onclick='JsHttpRequest.request("_show_inactive_update", this.form);' 
+		autocomplete='off'
+		>
+Mostrar Inactivos</td></tr>
+</table></center>
+</div><div id='tabs'><ul class='ajaxtabs' rel='_tabs_div'>
+<li><button type='submit' name='tabs_settings' class='current'  ><span>Configuracion General</span></button>
+</li>
+<li><button type='submit' name='tabs_contacts' class='ajaxbutton'  ><span>Contactos</span></button>
+</li>
+<li><button type='submit' name='tabs_documents' class='ajaxbutton'  ><span>Expediente</span></button>
+</li>
+<li><button type='submit' name='tabs_pdf_formats' class='ajaxbutton'  ><span>Formatos de Impresion PDF</span></button>
+</li>
+</ul>
+<div class='spaceBox'></div>
+<input type='hidden' name='_tabs_sel' value='settings'>
+<div class='contentBox' id='_tabs_div'>
+<center><table class='tablestyle2' cellpadding=2 cellspacing=0>
+<tr valign=top><td>
+<table class='tablestyle_inner' >
+<input type="hidden" name="popup" value='' id="">
+<tr><td colspan=2 class='tableheader' width='' >Nombre y Contacto</td></tr>
+<tr ><td class='label'>Nombre del Domicilio:</td><td ><input  type="text" name="br_name" size="35" maxlength="250" value="Bosques de Europa (Nombre del Domicilio)"></td>
+</tr>
+<tr ><td class='label'>Nombre Corto:</td><td ><input  type="text" name="br_ref" size="30" maxlength="250" value="Bosques de Europa (Nombre Corto)"></td>
+</tr>
+<tr><td colspan=2 class='tableheader' width='' >Ventas</td></tr>
+<tr><td class='label'>Vendedor:</td><td>
+<span id='_salesman_sel'><select autocomplete='off'  name='salesman' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>Adrian Chavez</option>
+<option groupid='9'   value='9'>Alejandro Castanon</option>
+<option groupid='2'   value='2'>Alejandro Chavez</option>
+<option groupid='6'   value='6'>Amazon</option>
+<option groupid='10'   value='10'>Jaime Abaroa Santos</option>
+<option groupid='5'   value='5'>Mercado Libre</option>
+<option groupid='7'   value='7'>Mostrador</option>
+<option groupid='8'   value='8'>Oswaldo Chavez</option>
+<option groupid='11'   value='11'>Pilar Rosete</option>
+<option groupid='3'   value='3'>Shopify</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Area/Zona de Venta:</td><td><span id='_area_sel'><select autocomplete='off'  name='area' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>10 Mexico</option>
+<option groupid='5'   value='5'>20 USA</option>
+<option groupid='7'   value='7'>30 CANADA</option>
+<option groupid='6'   value='6'>90 Otras regiones</option>
+<option groupid='2'   value='2'>Tiendas digitales</option>
+<option groupid='4'   value='4'>Tiendas fisicas</option>
+<option groupid='3'   value='3'>Ventas de mostrador</option>
+</select>
+</span>
+<input  type='submit' class='combo_select' style='border:0;background:url(../../themes/default/images/button_ok.png) no-repeat;display:none;' aspect='fallback' name='_area_update' value=' ' title='Seleccione'> 
+</td>
+</tr>
+<tr><td class='label'>Grupo de Ventas:</td><td><span id='_group_no_sel'><select autocomplete='off'  name='group_no' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>Grupo de venta</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Almacen de Inventario Predeterminada:</td><td><span id='_default_location_sel'><select autocomplete='off'  name='default_location' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='01.Tlapacoya' selected  value='40'>PT</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Compania de transporte predeterminada:</td><td><span id='_default_ship_via_sel'><select autocomplete='off'  name='default_ship_via' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>1011812201714&nbsp;&nbsp;&nbsp;&nbsp;Default</option>
+<option groupid='6'   value='6'>1062609241737&nbsp;&nbsp;&nbsp;&nbsp;DHL</option>
+<option groupid='5'   value='5'>1052609241737&nbsp;&nbsp;&nbsp;&nbsp;Estafeta</option>
+<option groupid='2'   value='2'>1022409121109&nbsp;&nbsp;&nbsp;&nbsp;FedEx</option>
+<option groupid='3'   value='3'>1032409121109&nbsp;&nbsp;&nbsp;&nbsp;LalaMove</option>
+<option groupid='4'   value='4'>1042609241736&nbsp;&nbsp;&nbsp;&nbsp;Tresguerras</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Grupo de Impuestos:</td><td><span id='_tax_group_id_sel'><select autocomplete='off'  name='tax_group_id' class='combo' title=''  data-placeholder="Seleccionar Opcion!" chosen="chosen_def"><option groupid='1' selected  value='1'>I.V.A. 16%</option>
+<option groupid='2'   value='2'>Exento de Impuestos</option>
+<option groupid='3'   value='3'>RET I.S.R. 10%</option>
+<option groupid='4'   value='4'>Todos los Impuestos</option>
+<option groupid='5'   value='5'>RET I.V.A. 4%</option>
+<option groupid='6'   value='6'>RET I.V.A. 10.66%</option>
+<option groupid='7'   value='7'>IEPS</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td colspan=2 class='tableheader' width='' >Direcciones</td></tr>
+<tr ><td class='label'>Distancia en Km:</td><td ><input  type="text" name="dist_km" size="35" maxlength="40" value="0"></td>
+</tr>
+<tr ><td class='label'>Calle:</td><td ><input  type="text" name="addr_street" size="35" maxlength="255" value="Bosques de Europa"></td>
+</tr>
+<tr ><td class='label'>No. Exterior (Carta Porte):</td><td ><input  type="text" name="addr_exterior" size="6" maxlength="255" value="163"></td>
+</tr>
+<tr ><td class='label'>No. Interior (Carta Porte):</td><td ><input  type="text" name="addr_interior" size="6" maxlength="255" value="S/N"></td>
+</tr>
+<tr ><td class='label'>Colonia:</td><td ><input  type="text" name="addr_colony" size="24" maxlength="255" value="Bosques de Aragon"></td>
+</tr>
+<tr ><td class='label'>Municipio:</td><td ><input  type="text" name="addr_city" size="26" maxlength="255" value="Nezahualcoyotl"></td>
+</tr>
+<tr ><td class='label'>Estado:</td><td ><input  type="text" name="addr_state" size="30" maxlength="255" value="Mexico"></td>
+</tr>
+<tr ><td class='label'>Codigo Postal (Carta Porte):</td><td ><input  type="text" name="addr_zip" size="10" maxlength="7" value="57170"></td>
+</tr>
+<tr ><td class='label'>Referencia (Carta Porte):</td><td ><input  type="text" name="addr_reference" size="35" maxlength="255" value=""></td>
+</tr>
+<tr ><td class='label'>Clave Colonia (Carta Porte):</td><td ><input  type="text" name="timbrado_colonia" size="24" maxlength="120" value=""></td>
+</tr>
+<tr ><td class='label'>Clave Municipio (Carta Porte):</td><td ><input  type="text" name="timbrado_municipio" size="26" maxlength="120" value=""></td>
+</tr>
+<tr ><td class='label'>Clave Estado (Carta Porte):</td><td ><input  type="text" name="timbrado_estado" size="30" maxlength="120" value=""></td>
+</tr>
+<tr ><td class='label'>Clave Localidad (Carta Porte):</td><td ><input  type="text" name="timbrado_localidad" size="20" maxlength="50" value=""></td>
+</tr>
+<tr><td class='label'>Clave Pais (Carta Porte):</td><td><span id='_timbrado_pais_sel'><select autocomplete='off'  name='timbrado_pais' class='combo' title=''  chosen="chosen_ajax" chosen_ajax="../../includes/elastic_ajax.php?nombre_catalogo=c_pais&label_catalogo=descripcion&value_catalogo=clave&search_fields=clave,descripcion&key_only=0&specoption=LSBTaW4gT3BjacOzbiAt"><option selected value=''>- Sin Opcion -</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Tipo Estacion (Carta Porte):</td><td><span id='_timbrado_tipo_estacion_sel'><select autocomplete='off'  name='timbrado_tipo_estacion' class='combo' title=''  chosen="chosen_ajax" chosen_ajax="../../includes/elastic_ajax.php?nombre_catalogo=c_tipoestacion&label_catalogo=descripcion&value_catalogo=clave&search_fields=clave,descripcion&key_only=0&specoption=LSBTaW4gT3BjacOzbiAt"><option selected value=''>- Sin Opcion -</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Residencia Fiscal  (Carta Porte):</td><td><span id='_timbrado_residencia_fiscal_sel'><select autocomplete='off'  name='timbrado_residencia_fiscal' class='combo' title=''  chosen="chosen_ajax" chosen_ajax="../../includes/elastic_ajax.php?nombre_catalogo=c_pais&label_catalogo=descripcion&value_catalogo=clave&search_fields=clave,descripcion&key_only=0&specoption=LSBTaW4gT3BjacOzbiAt"><option selected value=''>- Sin Opcion -</option>
+</select>
+</span>
+</td>
+</tr>
+<tr ><td class='label'>DistanciaRecorrida (Carta Porte):</td><td ><input  type="text" name="timbrado_distancia_recorrida" size="10" maxlength="10" value=""></td>
+</tr>
+<tr ><td class='label'>IDDestino (Carta Porte):</td><td ><input  type="text" name="timbrado_id_destino" size="10" maxlength="10" value=""></td>
+</tr>
+<tr><td class='label'>NumEstacion (Carta Porte):</td><td><span id='_timbrado_num_estacion_sel'><select autocomplete='off'  name='timbrado_num_estacion' class='combo' title=''  chosen="chosen_ajax" chosen_ajax="../../includes/elastic_ajax.php?nombre_catalogo=c_estaciones&label_catalogo=descripcion&value_catalogo=clave&search_fields=clave,descripcion&key_only=0&specoption=LSBTaW4gT3BjacOzbiAt"><option selected value=''>- Sin Opcion -</option>
+</select>
+</span>
+</td>
+</tr>
+<tr ><td class='label'>NombreEstacion (Carta Porte):</td><td ><input  type="text" name="timbrado_nombre_estacion" size="35" maxlength="50" value=""></td>
+</tr>
+<tr>
+<td class='label '>NavegacionTrafico (Carta Porte):</td>
+<td nowrap><span id='_timbrado_navegacion_trafico_sel'><select autocomplete='off'  name='timbrado_navegacion_trafico' class='combo' title='' data-placeholder="Seleccionar Opcion!" chosen="chosen_def">- Sin Opcion -<option  selected="selected" value=''>- Sin Opcion -</option>
+<option  value='Altura'>Altura</option>
+<option  value='Cabotaje'>Cabotaje</option>
+</select>
+</span>
+</td>
+</tr>
+<tr ><td class='label'>NumRegIdTrib (Comercio Exterior/Carta Porte):</td><td ><input  type="text" name="timbrado_num_reg_id_trib" size="35" maxlength="50" value=""></td>
+</tr>
+<input type="hidden" name="br_address" value='Bosques de Europa #163 Int. S/N Col. Bosques de Aragon Nezahualcoyotl, Mexico CP 57170' id="">
+<tr><td class='label' style=''>Notas Generales:</td><td><textarea name='notes' cols='35' rows='4'  
+	 style=''></textarea>
+</td>
+</tr>
+</table>
+</td><td style='border-left:1px solid #cccccc;' >
+<table class='tablestyle_inner' >
+<tr><td colspan=2 class='tableheader' width='' >Precios de Envio</td></tr>
+<tr><td class='label'>Establecer precios de envio especificos</td><td ><input type='checkbox' name='shippingcosts' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+<tr>
+<td colspan ="2">
+<center><table class='tablestyle' width=100% cellpadding=2 cellspacing=0>
+<tr>
+<td class='tableheader' >Sucursal</td>
+<td class='tableheader' >Precio de Envio</td>
+<td class='tableheader' >Sin precio de envio</td>
+</tr>
+<tr class='evenrow'  >
+<td class='label'>01.Tlapacoya (MXN)</td>
+<td><input class='amount ' type="text" name="sucursal_1" size="10" maxlength="10" dec="2" value="0" ></td>
+<td ><input checked type='checkbox' name='sucursal_nocost_1' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+<tr class='oddrow'  >
+<td class='label'>02. Bazaar Sabado (MXN)</td>
+<td><input class='amount ' type="text" name="sucursal_2" size="10" maxlength="10" dec="2" value="0" ></td>
+<td ><input checked type='checkbox' name='sucursal_nocost_2' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+<tr class='evenrow'  >
+<td class='label'>30. Shopify (MXN)</td>
+<td><input class='amount ' type="text" name="sucursal_3" size="10" maxlength="10" dec="2" value="0" ></td>
+<td ><input checked type='checkbox' name='sucursal_nocost_3' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+<tr class='oddrow'  >
+<td class='label'>31. Amazon Mexico (MXN)</td>
+<td><input class='amount ' type="text" name="sucursal_4" size="10" maxlength="10" dec="2" value="0" ></td>
+<td ><input checked type='checkbox' name='sucursal_nocost_4' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+<tr class='evenrow'  >
+<td class='label'>32. Amazon EUA (MXN)</td>
+<td><input class='amount ' type="text" name="sucursal_5" size="10" maxlength="10" dec="2" value="0.00" ></td>
+<td ><input checked type='checkbox' name='sucursal_nocost_5' value='1' 
+		autocomplete='off'
+		>
+</td></tr>
+</table></center>
+</td>
+</tr>
+<tr><td colspan=2 class='tableheader' width='' >Cuentas Contables</td></tr>
+<tr><td class='label'>Cuenta de Ventas:</td><td><span id='_sales_account_sel'><select autocomplete='off'  name='sales_account' class='combo3' title=''   chosen="chosen_ajax" chosen_ajax="../../gl/inquiry/accounts_list.ajax.php?skip_bank_accounts=true&skip_bank_accounts_complementary=true&show_inactive=false&specoption=VXNhciBDdWVudGEgQ29udGFibGUgZGVsIEFydMOtY3Vsby9TZXJ2aWNpbw==&additional="><option selected value=''>Usar Cuenta Contable del Articulo/Servicio</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Cuenta de Descuento en Ventas:</td><td><span id='_sales_discount_account_sel'><select autocomplete='off'  name='sales_discount_account' class='combo3' title=''   chosen="chosen_ajax" chosen_ajax="../../gl/inquiry/accounts_list.ajax.php?skip_bank_accounts=true&skip_bank_accounts_complementary=true&show_inactive=false&specoption=&additional="><option groupid='Devoluciones,descuentosobonificacionessobreventasy/os' selected  value='402-01-001'>402-01-001&nbsp;&nbsp;&nbsp;&nbsp;Devoluciones, descuentos o bonificaciones sobre ventas y/o s</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Cuenta por Cobrar:</td><td><span id='_receivables_account_sel'><select autocomplete='off'  name='receivables_account' class='combo3' title=''   chosen="chosen_ajax" chosen_ajax="../../gl/inquiry/accounts_list.ajax.php?skip_bank_accounts=true&skip_bank_accounts_complementary=true&show_inactive=false&specoption=&additional="><option groupid='Clientesnacionales' selected  value='105-01-001'>105-01-001&nbsp;&nbsp;&nbsp;&nbsp;Clientes Nacionales</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Cuenta de Descuento en Pagos:</td><td><span id='_payment_discount_account_sel'><select autocomplete='off'  name='payment_discount_account' class='combo3' title=''   chosen="chosen_ajax" chosen_ajax="../../gl/inquiry/accounts_list.ajax.php?skip_bank_accounts=true&skip_bank_accounts_complementary=true&show_inactive=false&specoption=&additional="><option groupid='Devoluciones,descuentosobonificacionessobrecompras' selected  value='503-01-001'>503-01-001&nbsp;&nbsp;&nbsp;&nbsp;Devoluciones, descuentos o bonificaciones sobre compras</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Cuenta Facturas Anticipadas:</td><td><span id='_advance_invoice_account_sel'><select autocomplete='off'  name='advance_invoice_account' class='combo3' title=''   chosen="chosen_ajax" chosen_ajax="../../gl/inquiry/accounts_list.ajax.php?skip_bank_accounts=true&skip_bank_accounts_complementary=true&show_inactive=false&specoption=&additional="><option groupid='Inversionestemporales'   value='103-01-002'>103-01-002&nbsp;&nbsp;&nbsp;&nbsp;Banorte inversion</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td class='label'>Deshabilitar este Domicilio:</td><td><span id='_inactive_sel'><select autocomplete='off'  name='inactive' class='combo' title='' data-placeholder="Seleccionar Opcion!" chosen="chosen_def">No<option  selected="selected" value='0'>No</option>
+<option  value='1'>Si</option>
+</select>
+</span>
+</td>
+</tr>
+<tr><td colspan=2 class='tableheader' width='' >Otros</td></tr>
+<tr ><td class='label'>Latitud:</td><td ><input  type="text" name="latitud" size="35" maxlength="40" value=""></td>
+</tr>
+<tr ><td class='label'>Longitud:</td><td ><input  type="text" name="longitud" size="35" maxlength="40" value=""></td>
+</tr>
+<tr><td colspan=2 class='tableheader' width='' >API (INTEGRACIONES)</td></tr>
+<tr><td class='label'>DOMICILIO CLIENTE ID</td><td  id=''>564</td>
+</tr>
+</table>
+</td></tr>
+</table></center>
+<br><center><button class="ajaxsubmit" type="submit"aspect='default'  name="UPDATE_ITEM"  id="UPDATE_ITEM" value="Actualizar" title='Guardar Cambios'
+		style=''><img src='../../themes/default/images/ok.gif' height='12'><span>Actualizar</span></button>
+<button class="ajaxsubmit" type="submit"aspect='cancel'  name="RESET"  id="RESET" value="Cancelar" title='Cancelar edicion'
+		style=''><img src='../../themes/default/images/escape.png' height='12'><span>Cancelar</span></button>
+</center><input type="hidden" name="branch_code" value='564' id="">
+<input type="hidden" name="selected_id" value='564' id="">
+<br></div></div><input type="hidden" name="_focus" value='br_name' id="">
+<input type="hidden" name="_modified" value='0' id="">
+<input type="hidden" name="_token" value='token-de-prueba' id="">
+</form>
+</body></html>
