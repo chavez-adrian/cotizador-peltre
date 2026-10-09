@@ -16,6 +16,11 @@ export const MOTIVO_SIN_TELEFONO_ENTREGA = 'sin-telefono-entrega';
 // codigo, nunca parseando el texto (misma disciplina que CLIENTE_MONEDA_EXTRANJERA).
 export const CODIGO_ENTREGA_INCOMPLETA = 'CONTACTO_ENTREGA_INCOMPLETO';
 
+// El nombre del paso del Contacto de entrega en los reportes (#561, #566): lo escriben
+// el modulo Contactos en Operam, el Alta de cliente y la Subida del quote, y lo leen el
+// panel del alta y el reporte de la subida en el navegador. Uno solo para todos.
+export const PASO_CONTACTO_ENTREGA = 'contacto de entrega';
+
 const vacio = (v) => !String(v ?? '').trim();
 
 // Un codigo de pais suelto ('+52') no es telefono: es lo que queda de un campo con

@@ -20,6 +20,7 @@ const MODULOS_DE_DOMINIO = [
   'lib/contactos-operam.js',
   'lib/contactos-operam-logica.js',
   'lib/fusion-contactos.js',
+  'lib/fusion-contactos-logica.js',
   'public/js/modo-alta-logica.js',
 ];
 

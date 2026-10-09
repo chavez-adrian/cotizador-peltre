@@ -20,6 +20,7 @@ import { faltaComprobante, comprobanteDe, puedeSubirComprobante, ACCEPT_COMPROBA
 import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-logica.js';
 import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION, ICONO_TRES_PUNTOS } from './iconos.js';
 import { entregaPedido } from './entrega-pedido-logica.js';
+import { PASO_CONTACTO_ENTREGA } from './contacto-entrega-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -147,7 +148,6 @@ const PASO_CON_AVISO_PROPIO = new Set(['post-fix vigencia']);
 
 // `okQueSeLeen` agrega, para UNA respuesta, pasos en ok que se tienen que leer (#562: la
 // respuesta a la pregunta del General dice que paso con el contacto).
-const PASO_CONTACTO_ENTREGA = 'contacto de entrega';
 
 function pasosVisibles(steps, okQueSeLeen = []) {
   return (Array.isArray(steps) ? steps : [])

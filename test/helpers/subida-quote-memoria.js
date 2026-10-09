@@ -138,6 +138,7 @@ export function subidaQuoteEnMemoria({
     },
     async sacarDeLaColaPostFix(folio) {
       llamadas.sacarDeLaColaPostFix.push(folio);
+      secuencia.push(['sacarDeLaColaPostFix', folio]);
       enCola.delete(String(folio));
     },
     async setFolioOperam(id, folio) {

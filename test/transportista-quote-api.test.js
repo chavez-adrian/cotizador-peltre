@@ -93,10 +93,10 @@ function guardarCotizacion(data, extra = {}) {
 
 // Operam de mentiras: API v3 (cliente por RFC, POST del quote y su relectura) y la
 // web legacy (formulario de edicion con el select `ship_via` real, vista read-only).
-// Solo ProcessOrder escribe el encabezado; la relectura del quote devuelve lo que
-// quedo. `webCaida` devuelve una pagina sin formulario: el post-fix no llega a escribir.
+// Solo ProcessOrder escribe el encabezado (transportista y, desde #556, telefono y
+// correo del Contacto de entrega); la relectura del quote devuelve lo que quedo. `webCaida` devuelve una pagina sin formulario: el post-fix no llega a escribir.
 function mockOperam({ shipVia = '1', lineas = [], webCaida = false } = {}) {
-  const doc = { shipVia, vigencia: '2026-01-01', comments: 'viejo', lineas: lineas.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
+  const doc = { shipVia, telefono: '', correo: '', vigencia: '2026-01-01', comments: 'viejo', lineas: lineas.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
   const sesion = { carrito: doc.lineas.map(l => ({ ...l })) };
   const procesos = [];
   const OPCIONES = [['1', 'Default'], ['2', 'FedEx'], ['3', 'LalaMove'], ['4', 'Tresguerras'], ['5', 'Estafeta'], ['6', 'DHL']];
@@ -131,7 +131,7 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
   const handlers = [
     ['/api/v3/login', () => json({ token: 'tok', result: true })],
     ['/api/v3/sales/customers', () => json({ total: 1, data: [{ customer_id: 314, tax_id: 'CPE921211N76', CustName: 'El Pendulo', sales_type: '12', curr_code: 'MXN', branches: [{ branch_code: 88 }] }] })],
-    ['/api/v3/sales/quote/', () => json({ data: [{ order_no: '1296', ship_via: doc.shipVia, order_type: '12' }] })],
+    ['/api/v3/sales/quote/', () => json({ data: [{ order_no: '1296', ship_via: doc.shipVia, order_type: '12', contact_phone: doc.telefono, contact_email: doc.correo }] })],
     ['/api/v3/sales/quote', () => json({ result: true, added_trans_no: 1296 })],
     ['trans_type=30', () => texto('<html>login ok</html>')],
     ['ModifyQuotationNumber', () => texto(webCaida ? '<html><body>Error interno</body></html>' : form())],
@@ -147,6 +147,8 @@ ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?s
         doc.vigencia = p.get('delivery_date');
         doc.comments = p.get('Comments');
         if (p.has('ship_via')) doc.shipVia = p.get('ship_via');
+        if (p.has('phone')) doc.telefono = p.get('phone');
+        if (p.has('email')) doc.correo = p.get('email');
       }
       return texto(form());
     }],

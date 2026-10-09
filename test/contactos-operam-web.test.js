@@ -8,14 +8,27 @@
 // test/helpers/domicilios-web-mentira.js, que sirve las paginas REALES medidas el
 // 2026-10-09 sobre el Cliente Operam 15, domicilio 564, y responde segun el boton que
 // trae el body, como FrontAccounting. --test-concurrency=1: fetch es global.
-import { test, beforeEach, afterEach } from 'node:test';
+import { test, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { abrirDomicilioWeb, serializarBodyDomicilios, personasDeContactos } from '../lib/contactos-operam-web.js';
 import { webDeMentiras, GENERAL_564, ROLES_564, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
-process.env.OPERAM_URL = 'https://fa.mentira.test';
-process.env.OPERAM_USER = 'usuario_de_prueba';
-process.env.OPERAM_PASSWORD = 'clave_de_prueba';
+// Las credenciales de la web de mentiras solo mientras corre este archivo: al terminar,
+// process.env queda como estaba (lo que no existia se borra).
+const CREDENCIALES = { OPERAM_URL: 'https://fa.mentira.test', OPERAM_USER: 'usuario_de_prueba', OPERAM_PASSWORD: 'clave_de_prueba' };
+let envOriginal;
+
+before(() => {
+  envOriginal = Object.fromEntries(Object.keys(CREDENCIALES).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, CREDENCIALES);
+});
+
+after(() => {
+  for (const [k, v] of Object.entries(envOriginal)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+});
 
 // Los botones del formulario que NO son del contacto: guardar, crear o borrar el
 // domicilio, y los de editar o borrar un contacto existente.
@@ -220,5 +233,28 @@ test('W13: editar a la persona elegida por la web legacy: la pregunta son 6 peti
   assert.equal(fa.pedidos.length, 8);
   const update = posts().find((p) => p.params.has('contactsUPDATE[1289]'));
   assert.deepEqual(['name', 'fax', 'phone', 'email'].map((k) => update.params.get(k)), ['MEDICION556b General', '5512345678', '5512345678', 'g564@example.com']);
+  assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
+});
+
+// #566 (antes CA9 de test/contactos-operam-alta.test.js): la persona del alta como
+// Contacto de entrega por el adaptador REAL contra la web legacy de mentiras (paginas
+// medidas del Cliente Operam 15, domicilio 564, con la 1289 de General). El formulario
+// de editar es el unico que cambia el nombre, y solo viaja lo que la persona del alta
+// necesita. Una sola sesion: login (2), navegar a la tabla (3), formulario de editar,
+// actualizar (su respuesta ya es la tabla releida) y salida = 8 peticiones.
+test('W14: la persona del alta por la web legacy: el formulario de editar lleva el nombre nuevo, el apellido vacio, la Referencia intacta, los numeros, el correo y General y Entrega', async () => {
+  const { contactoEntregaDelAlta } = await import('../lib/contactos-operam.js');
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const lucia = { nombre: 'Lucia Recibe', telefono: '5544332211', correo: 'lucia@example.com' };
+  const r = await contactoEntregaDelAlta({ clienteId: '15', domicilioId: '564', personId: '1289', contacto: lucia });
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.noAplicados, []);
+  const update = fa.pedidos.find((p) => p.params.has('contactsUPDATE[1289]'));
+  assert.deepEqual(
+    ['name', 'name2', 'ref', 'fax', 'phone', 'email'].map((k) => update.params.get(k)),
+    ['Lucia Recibe', '', 'MEDICION556BG', '5544332211', '5544332211', 'lucia@example.com'],
+  );
+  assert.deepEqual(update.params.getAll('assgn[]'), ['1', '4']);
+  assert.equal(fa.pedidos.length, 8);
   assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
 });

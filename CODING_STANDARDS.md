@@ -1,6 +1,6 @@
 # Estandares de los modulos de dominio
 
-Reglas de criterio para los modulos que dan cuerpo a un termino del glosario (`GLOSSARY.md`): hoy **Alta de cliente** (`lib/alta-cliente.js`), **Subida del quote** (`lib/subida-quote.js`), **Modo del alta** (`public/js/modo-alta-logica.js`) y **Contactos en Operam** (`lib/contactos-operam.js`, con su nucleo puro `lib/contactos-operam-logica.js`) y **Fusion de Contactos** (`lib/fusion-contactos.js`, #565). Las aplica `/code-review` a todo modulo de dominio nuevo o tocado. Cada regla cita la decision de donde sale; el detalle y las opciones descartadas viven en el ADR.
+Reglas de criterio para los modulos que dan cuerpo a un termino del glosario (`GLOSSARY.md`): hoy **Alta de cliente** (`lib/alta-cliente.js`), **Subida del quote** (`lib/subida-quote.js`), **Modo del alta** (`public/js/modo-alta-logica.js`) y **Contactos en Operam** (`lib/contactos-operam.js`, con su nucleo puro `lib/contactos-operam-logica.js`) y **Fusion de Contactos** (`lib/fusion-contactos.js`, #565, con su nucleo puro `lib/fusion-contactos-logica.js`). Las aplica `/code-review` a todo modulo de dominio nuevo o tocado. Cada regla cita la decision de donde sale; el detalle y las opciones descartadas viven en el ADR.
 
 Un modulo de dominio nuevo se agrega a la lista de arriba y a `MODULOS_DE_DOMINIO` en `test/modulos-dominio.test.js`.
 

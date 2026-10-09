@@ -1,7 +1,8 @@
 // El Alta de cliente deja a la persona que crea Operam como Contacto de entrega (#566,
 // ADR-0024 regla 8). Se prueba por la interfaz del modulo Contactos en Operam
 // (`contactoEntregaDelAlta`) contra el adaptador en memoria
-// (test/helpers/contactos-operam-memoria.js), sin fetch.
+// (test/helpers/contactos-operam-memoria.js), sin fetch. Lo que viaja por el adaptador
+// REAL de la web legacy (W14) vive en test/contactos-operam-web.test.js.
 //
 // POST /customers crea un domicilio y UNA persona, General del cliente y del
 // domicilio, con el nombre corto del Cliente Operam como nombre (medido 2026-10-09).
@@ -11,7 +12,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contactoEntregaDelAlta } from '../lib/contactos-operam.js';
 import { contactosOperamEnMemoria } from './helpers/contactos-operam-memoria.js';
-import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
 const CLIENTE_900 = { customer_id: '900', branches: ['800'] };
 const PERSONA_DEL_ALTA = { personId: '1501', name: 'La Esquina', ref: 'La Esquina', phone: '5598765432', fax: '5511112222' };
@@ -141,33 +141,4 @@ test('CA8: sin nada que dejar en la persona (sin nombre, numero ni correo) no ab
   assert.equal(r.motivo, 'sin-contacto');
   assert.equal(r.pasos[0].status, 'omitido');
   assert.equal(op.pedidos('abrirDomicilioWeb').length, 0);
-});
-
-// Por el adaptador REAL contra la web legacy de mentiras (paginas medidas del Cliente
-// Operam 15, domicilio 564, con la 1289 de General): el formulario de editar es el
-// unico que cambia el nombre, y solo viaja lo que la persona del alta necesita. Una
-// sola sesion: login (2), navegar a la tabla (3), formulario de editar, actualizar (su
-// respuesta ya es la tabla releida) y salida = 8 peticiones.
-test('CA9: por la web legacy el formulario de editar lleva el nombre nuevo, el apellido vacio, la Referencia intacta, los numeros, el correo y General y Entrega', async () => {
-  process.env.OPERAM_URL = 'https://fa.mentira.test';
-  process.env.OPERAM_USER = 'usuario_de_prueba';
-  process.env.OPERAM_PASSWORD = 'clave_de_prueba';
-  const fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
-  const fetchOriginal = globalThis.fetch;
-  globalThis.fetch = (url, init) => fa.fetch(url, init);
-  try {
-    const r = await contactoEntregaDelAlta({ clienteId: '15', domicilioId: '564', personId: '1289', contacto: LUCIA });
-    assert.equal(r.tipo, 'lograda');
-    assert.deepEqual(r.noAplicados, []);
-    const update = fa.pedidos.find(p => p.params.has('contactsUPDATE[1289]'));
-    assert.deepEqual(
-      ['name', 'name2', 'ref', 'fax', 'phone', 'email'].map(k => update.params.get(k)),
-      ['Lucia Recibe', '', 'MEDICION556BG', '5544332211', '5544332211', 'lucia@example.com'],
-    );
-    assert.deepEqual(update.params.getAll('assgn[]'), ['1', '4']);
-    assert.equal(fa.pedidos.length, 8);
-    assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
-  } finally {
-    globalThis.fetch = fetchOriginal;
-  }
 });

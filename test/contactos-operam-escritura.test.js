@@ -76,36 +76,51 @@ test('CE2: en un domicilio que ya tiene General devuelve la pregunta al vendedor
   assert.match(r.pasos[0].mensaje, /Alfa G Prueba/);
 });
 
-// La cotizacion no guarda a quien eligio el vendedor en el selector, solo el nombre y
-// los datos: una persona que ya esta en el domicilio se reconoce por esos datos y no se
-// duplica. Editarla desde el cotizador es #563; mientras tanto no se escribe.
-test('CE3: si el Contacto de entrega ya esta en el domicilio con ese numero (en cualquier casilla) no crea otra persona', async () => {
+// Sin el person_id de la persona elegida (cotizaciones anteriores a #563 o "+ Nuevo
+// contacto") la UNICA identidad de una persona es su numero (ultimos 10 digitos,
+// lib/telefono-llave.js): la del domicilio que lo tiene en cualquiera de sus casillas
+// ES el Contacto de entrega y se edita como la persona elegida de #563 -- llena lo
+// vacio, pregunta si pisa, queda como unico General --; no se crea otra.
+// (Revision de #557: hasta ahi se omitia sin escribir.)
+test('CE3: si el Contacto de entrega ya esta en el domicilio con ese numero (en cualquier casilla), sin person_id se edita esa persona y no se crea otra', async () => {
   const op = operam({
     personas: [...PERSONAS, { personId: '1295', name: 'Lucy', name2: 'Almacen', phone2: '55 1234 5678' }],
     renglones: [...RENGLONES, { id: '3591', personId: '1295', tipo: 'cust_branch', entidad: '564', rol: 'delivery' }],
   });
   const r = await escribirContactoEntrega(solicitud(), op.deps);
-  assert.equal(r.escrito, false);
-  assert.equal(r.motivo, 'persona-existente');
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.equal(r.personId, '1295');
   assert.equal(op.pedidos('crear').length, 0);
-  assert.equal(r.pasos[0].status, 'omitido');
+  const lucy = enOperam(op, '1295');
+  assert.deepEqual({ ...lucy, roles: [...lucy.roles].sort() }, {
+    nombre: 'Lucy', cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678', secundario: '55 1234 5678',
+    correo: 'lucia@example.com', roles: ['delivery', 'general'],
+  });
+  assert.equal(r.pasos[0].status, 'ok');
   assert.match(r.pasos[0].mensaje, /Lucy Almacen/);
 });
 
-// El selector del paso Envio pone en "Entregar a" el NOMBRE de la persona, sin su
-// apellido, y la web pinta "Nombre Completo" (nombre y apellido juntos). La 1249 del
-// domicilio 564 no tiene numeros: solo el nombre la reconoce.
-test('CE4: si el Contacto de entrega es una persona del domicilio por su nombre (con o sin apellido) no crea otra', async () => {
-  const sinNumeros = await escribirContactoEntrega(solicitud({ contacto: { nombre: 'adrian  bosques nombre', telefono: '5598765432' } }), operam().deps);
-  assert.equal(sinNumeros.motivo, 'persona-existente');
+// El nombre NO identifica: dos personas pueden llamarse igual (revision de #557). Un
+// homonimo con otro numero es otra persona y se crea; la del domicilio no se toca.
+test('CE4: un homonimo de una persona del domicilio con otro numero (con o sin apellido) es otra persona: se crea y la del domicilio queda igual', async () => {
+  const op1 = operam();
+  const sinNumeros = await escribirContactoEntrega(solicitud({ contacto: { nombre: 'adrian  bosques nombre', telefono: '5598765432' } }), op1.deps);
+  assert.equal(sinNumeros.escrito, true);
+  assert.notEqual(sinNumeros.personId, '1249');
+  assert.equal(op1.pedidos('crear').length, 1);
+  assert.deepEqual(enOperam(op1, '1249'), { nombre: 'Adrian Bosques Nombre', cel: '', telefono: '', secundario: '', correo: '', roles: ['delivery'] });
 
   const op = operam({
     personas: [...PERSONAS, { personId: '1296', name: 'Zeta DG', name2: 'Prueba', fax: '5500000392' }],
     renglones: [...RENGLONES, { id: '3592', personId: '1296', tipo: 'cust_branch', entidad: '564', rol: 'delivery' }],
   });
   const conApellido = await escribirContactoEntrega(solicitud({ contacto: { nombre: 'Zeta DG', telefono: '5598765432' } }), op.deps);
-  assert.equal(conApellido.motivo, 'persona-existente');
-  assert.equal(op.pedidos('crear').length, 0);
+  assert.equal(conApellido.escrito, true);
+  assert.ok(!['1249', '1296'].includes(conApellido.personId));
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.equal(op.pedidos('editar').length, 0);
+  assert.equal(enOperam(op, '1296').cel, '5500000392');
 });
 
 // Relee y compara siempre (CODING_STANDARDS.md regla 6): la web legacy guarda y
@@ -179,6 +194,27 @@ test('CE10: sin domicilio de entrega no abre la web y lo reporta omitido', async
   assert.equal(op.pedidos('abrirDomicilioWeb').length, 0);
 });
 
+// Los Clientes Operam genericos (DEBTORS_GENERICOS, lib/deduplicacion.js: mostrador,
+// bazar, publico en general) los comparten clientes que no tienen nada que ver entre si:
+// su domicilio no es de quien recibe. Como en #459, el generico se excluye ANTES de
+// mirar el domicilio: no se abre la web legacy, no se busca la copia (#564) y, sin
+// escritura, tampoco hay fusion (revision de #557).
+test('CE44: en un Cliente Operam generico no se escribe el Contacto de entrega: omitido en dos capas, sin abrir la web ni buscar la copia', async () => {
+  const op = operam();
+  const r = await escribirContactoEntrega({ clienteId: 14, domicilioId: '14', contacto: { ...LUCIA, personId: '61' } }, op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, false);
+  assert.equal(r.motivo, 'cliente-generico');
+  assert.equal(r.pasos[0].name, 'contacto de entrega');
+  assert.equal(r.pasos[0].status, 'omitido');
+  assert.match(r.pasos[0].mensaje, /generico/);
+  assert.match(r.pasos[0].detalle, /cliente 14/);
+  for (const llamada of ['abrirDomicilioWeb', 'buscarCopia', 'obtenerCliente']) assert.equal(op.pedidos(llamada).length, 0, llamada);
+
+  const sinNombre = await escribirContactoEntrega({ clienteId: '417', domicilioId: '900', contacto: { nombre: '', telefono: '5512345678' } }, op.deps);
+  assert.equal(sinNombre.motivo, 'cliente-generico');
+});
+
 // El formulario de Operam limita el nombre y la Referencia a 40 caracteres (maxlength,
 // medido); se manda lo que mandaria el navegador y la relectura compara contra eso.
 // La Referencia, que el formulario exige y el cotizador no captura, es el nombre.
@@ -194,26 +230,37 @@ test('CE11: un nombre de mas de 40 caracteres se escribe recortado y la relectur
 
 // El nombre del Contacto de entrega es opcional en el cotizador (solo el telefono es
 // obligatorio, #558) y una persona sin nombre no se escribe: ponerle el del Cliente
-// Operam es justo el desorden que ADR-0024 corrige.
-test('CE12: un Contacto de entrega sin nombre no se escribe y se reporta omitido', async () => {
+// Operam es justo el desorden que ADR-0024 corrige. Como el cotizador SI deja generar
+// sin nombre, no escribirlo es algo que el vendedor tiene que saber: aviso, no omitido
+// (revision de #557).
+test('CE12: un Contacto de entrega sin nombre no se escribe y el paso avisa en dos capas que falta el nombre', async () => {
   const op = operam();
   const r = await escribirContactoEntrega(solicitud({ contacto: { nombre: '  ', telefono: '5512345678' } }), op.deps);
   assert.equal(r.escrito, false);
   assert.equal(r.motivo, 'sin-nombre');
-  assert.equal(r.pasos[0].status, 'omitido');
+  assert.equal(r.pasos[0].name, 'contacto de entrega');
+  assert.equal(r.pasos[0].status, 'warn');
+  assert.match(r.pasos[0].mensaje, /no se escribi.* en Operam/);
+  assert.match(r.pasos[0].mensaje, /falta (el|su) nombre/);
+  assert.match(r.pasos[0].detalle, /domicilio 564 del cliente 15/);
   assert.equal(op.pedidos('abrirDomicilioWeb').length, 0);
 });
 
 // Si quien recibe es el General, el vendedor elige al General (ADR-0024 regla 2): esa
-// persona es el Contacto de entrega, no un General al que haya que desplazar.
-test('CE13: si el Contacto de entrega ES el General del domicilio, se reconoce como esa persona y no como un General ajeno', async () => {
+// persona -- reconocida por su numero -- es el Contacto de entrega, no un General al
+// que haya que desplazar: se edita (llena lo vacio y gana Entrega) sin preguntar.
+test('CE13: si el Contacto de entrega ES el General del domicilio, se edita esa persona y no se pregunta por desplazarla', async () => {
   const op = operam({
     personas: [...PERSONAS, { personId: '1294', name: 'Alfa G', name2: 'Prueba', fax: '5512345678' }],
     renglones: [...RENGLONES, { id: '3590', personId: '1294', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
   });
   const r = await escribirContactoEntrega(solicitud({ contacto: { nombre: 'Alfa G', telefono: '+52 55 1234 5678' } }), op.deps);
-  assert.equal(r.motivo, 'persona-existente');
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.personId, '1294');
   assert.equal(op.pedidos('crear').length, 0);
+  assert.deepEqual(generalesDe(op), ['1294']);
+  assert.ok(enOperam(op, '1294').roles.includes('delivery'));
+  assert.equal(enOperam(op, '1294').telefono, '+52 55 1234 5678');
 });
 
 // --- #562: el vendedor confirma y el General que estaba se desplaza ------------
@@ -523,31 +570,50 @@ test('CE31: a la edicion solo viajan las casillas que cambian', async () => {
 });
 
 // --- #565: el cambio de numero de una persona sale de la edicion confirmada --------
-// La Subida del quote funde los Contactos del cotizador cuando el Cel de un person_id
-// cambia (enmienda a ADR-0016). Para eso la lograda de una edicion trae `cambios`: las
-// casillas no vacias que se pisaron y que la relectura CONFIRMA, con el valor viejo y
-// el nuevo. Lo que la relectura no confirma no es un cambio.
-test('CE41: la edicion confirmada trae los cambios releidos (person_id, casilla, viejo y nuevo); lo no aplicado no cuenta', async () => {
+// La Subida del quote funde los Contactos del cotizador cuando cambia el NUMERO DE
+// IDENTIDAD de un person_id (enmienda a ADR-0016; revision de #557): el que el
+// cotizador le propone a la persona, Cel > Telefono > Secundario (`telefonoDePersona`,
+// public/js/contacto-entrega-logica.js), antes de editarla y despues, segun la
+// relectura. Por eso la lograda de una edicion trae `cambioDeNumero`: `{ personId,
+// viejo, nuevo }` cuando ese numero cambio y Operam lo CONFIRMA. No es la casilla Cel:
+// llenar un Cel vacio tambien cambia el numero de identidad si antes era el Telefono.
+test('CE41: la edicion confirmada trae el cambio del numero de identidad (person_id, viejo y nuevo); lo que la relectura no confirma no cuenta', async () => {
   const op = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' });
   const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
   const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
   assert.equal(r.tipo, 'lograda');
-  assert.deepEqual(r.cambios, [
-    { personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
-    { personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
-  ]);
+  assert.deepEqual(r.cambioDeNumero, { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
 
+  // Operam no guardo el Cel: su Cel sigue siendo el numero viejo, que es su numero de
+  // identidad. No cambio.
   const ignora = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' }, { ignoraAlEditar: ['cel'] });
   const pregunta2 = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), ignora.deps);
   const r2 = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta2) }), ignora.deps);
-  assert.deepEqual(r2.cambios.map(c => c.campo), ['telefono']);
+  assert.equal(r2.tipo, 'lograda');
+  assert.equal(r2.cambioDeNumero, undefined);
 });
 
-test('CE42: llenar casillas vacias o crear una persona nueva no trae cambios de numero', async () => {
+test('CE42: llenar casillas de una persona sin numero, crear una persona nueva o el mismo numero con otro formato no cambian el numero de identidad', async () => {
   const vacia = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), conPersona({}).deps);
-  assert.deepEqual(vacia.cambios, []);
+  assert.equal(vacia.escrito, true);
+  assert.equal(vacia.cambioDeNumero, undefined);
   const nueva = await escribirContactoEntrega(solicitud(), operam().deps);
-  assert.equal(nueva.cambios, undefined);
+  assert.equal(nueva.cambioDeNumero, undefined);
+  const formato = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), conPersona({ fax: '5512345678' }).deps);
+  assert.equal(formato.escrito, true);
+  assert.equal(formato.cambioDeNumero, undefined);
+});
+
+// El caso que la casilla Cel no veia: Cel vacio y Telefono X. Capturar N LLENA el Cel
+// (no lo pisa) y pisa el Telefono; el numero de identidad pasa de X a N.
+test('CE43: Cel vacio y Telefono X, se captura N: el numero de identidad cambia de X a N', async () => {
+  const op = conPersona({ phone: '55 8888 0000' });
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(pregunta.tipo, 'pregunta');
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(enOperam(op, '1249').cel, '+52 55 1234 5678');
+  assert.deepEqual(r.cambioDeNumero, { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
 });
 
 // --- Copia en el domicilio de la persona del Cliente Operam (#564, ADR-0024 regla 6) ---

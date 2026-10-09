@@ -7,7 +7,7 @@
 import { cpValido } from './cotizar-logica.js';
 import { esRegimenValido, tipoPersonaRfc } from './regimen-fiscal-logica.js';
 import { llaveCelularOrigen } from './origen-logica.js';
-import { telefonoDePersona } from './contacto-entrega-logica.js';
+import { telefonoDePersona, PASO_CONTACTO_ENTREGA } from './contacto-entrega-logica.js';
 
 // Case-insensitive y sin acentos (NFD): pliega mayusculas y diacriticos para
 // que dos grafias del mismo nombre (con o sin acento) comparen igual.
@@ -2119,7 +2119,7 @@ export const ALTA_PASO_FILA = {
   'verificar Cel': 6,
   // La persona que crea Operam con el Cliente Operam queda como el Contacto de
   // entrega (#566): fila propia, porque su aviso es otro que el del Cel.
-  'contacto de entrega': 8,
+  [PASO_CONTACTO_ENTREGA]: 8,
   // A quien quedo el domicilio NUEVO de un Cliente Operam existente (#414, #433):
   // fila propia, porque en la del domicilio la verificacion lo taparia.
   'vendedor branch': 7,

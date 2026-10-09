@@ -5,7 +5,7 @@ import {
 } from '../lib/subida-quote.js';
 import {
   subidaQuoteEnMemoria, RESULTADOS_ACTUALIZAR, LISTA_ESCRITA, TRANSPORTISTA_ESCRITO,
-  POSTFIX_VERIFICADO, CORREO_ENTREGA_ESCRITO,
+  POSTFIX_VERIFICADO, CORREO_ENTREGA_ESCRITO, TELEFONO_ENTREGA_ESCRITO,
 } from './helpers/subida-quote-memoria.js';
 import { ErrorClienteSinLista } from '../lib/lista-precios-cliente.js';
 import { ErrorClienteMonedaExtranjera } from '../public/js/moneda-cliente-logica.js';
@@ -144,6 +144,51 @@ test('exito: saca el folio de la cola de reintentos del post-fix (#380)', async 
   await actualizarQuote(7, m.deps);
   assert.deepEqual(m.llamadas.sacarDeLaColaPostFix, ['1200']);
   assert.equal(m.enCola('1200'), false);
+});
+
+// #556 / US16 de #557 (revision): el telefono y el correo del Contacto de entrega que la
+// relectura de ACTUALIZAR no confirma entran a la cola de reintentos (#380), igual que
+// al crear. Va DESPUES de sacar el folio de la cola: si no, la salida de lo viejo se
+// llevaria tambien lo recien encolado. Solo telefono y correo: el transportista tiene
+// el mismo hueco desde #448 y queda fuera de esta spec.
+const TELEFONO_AJENO = {
+  aplica: true, esperado: '+52 55 1234 5678', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null,
+};
+
+test('#557 actualizar: un telefono del Contacto de entrega que la relectura no confirma se encola despues de sacar el folio de la cola', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion()], cola: ['1200'],
+    actualizar: { ...RESULTADOS_ACTUALIZAR.exito(), telefonoEntrega: TELEFONO_AJENO, correoEntrega: CORREO_ENTREGA_ESCRITO, transportista: TRANSPORTISTA_ESCRITO },
+  });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(r.pasos.find((p) => p.name === 'telefono del Contacto de entrega').status, 'warn');
+  assert.equal(m.llamadas.encolarPostFix.length, 1);
+  const nombres = m.secuencia.map(([n]) => n);
+  assert.ok(nombres.indexOf('sacarDeLaColaPostFix') < nombres.indexOf('encolarPostFix'), nombres.join(', '));
+  const [fila] = m.llamadas.encolarPostFix[0];
+  assert.equal(fila.folio, '1200');
+  assert.equal(fila.cotizacionId, 7);
+  assert.equal(fila.vendedor, 'Tester');
+  assert.equal(fila.vigencia, '2026-08-27');
+  assert.equal(fila.lista, '15');
+  assert.equal(fila.transportista, 3);
+  assert.equal(fila.telefonoEntrega, '+52 55 1234 5678');
+  assert.equal(fila.correoEntrega, '');
+  assert.equal(fila.fechaDocumento, '2026-07-28');
+  // La cola juzga SOLO telefono y correo: el contenido y la vigencia ya los verifico
+  // la actualizacion (r.ok), y lista y transportista no entran.
+  assert.deepEqual(fila.resultado, { ok: true, telefonoEntrega: TELEFONO_AJENO, correoEntrega: CORREO_ENTREGA_ESCRITO });
+});
+
+test('#557 actualizar: con telefono y correo confirmados no se encola nada, aunque el transportista no haya quedado', async () => {
+  const transportistaAjeno = { ...TRANSPORTISTA_ESCRITO, ok: false, encontrado: '1' };
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion()],
+    actualizar: { ...RESULTADOS_ACTUALIZAR.exito(), telefonoEntrega: TELEFONO_ENTREGA_ESCRITO, correoEntrega: CORREO_ENTREGA_ESCRITO, transportista: transportistaAjeno },
+  });
+  await actualizarQuote(7, m.deps);
+  assert.equal(m.llamadas.encolarPostFix.length, 0);
 });
 
 test('exito: los pasos salen en orden -- actualizar quote, lista, transportista, almacen', async () => {
@@ -1068,6 +1113,50 @@ test('#563 la entrada unica con la marca del guardado actualiza y trae la pregun
   assert.deepEqual(r.preguntaContacto.pisa, PREGUNTA_PISA.pisa);
 });
 
+// Revision de #557: la respuesta del vendedor sobrevive a la marca quoteDesactualizado
+// (#528). Si el vendedor cambio la cotizacion y ademas contesto la pregunta del
+// contacto, la entrada unica actualiza el quote y el contacto se escribe CON su
+// decision: sin ella el modulo volvia a preguntar lo mismo.
+const pendienteYDesactualizada = (marca) => cotizacion({
+  cliente: { ...cotizacion().data.cliente, ...LUCIA },
+  quoteDesactualizado: { fecha: '2026-10-04T10:00:00.000Z', pendiente: true },
+  contactoEntregaPendiente: marca,
+});
+
+test('#557 con quote desactualizado y contacto pendiente, la decision del vendedor llega al modulo al actualizar', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(MARCA_ALFA)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: DESPLAZADO });
+  const r = await subirQuote(7, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.operacion, 'actualizar');
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 1);
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.deepEqual(solicitud.decision, { desplazar: ['1294'] });
+  assert.deepEqual(solicitud.cotizacion, { id: 7, folio: cotizacion().folioOperam });
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.registro(7).data.contactoEntregaPendiente, null);
+  assert.deepEqual(r.pasos.at(-1), DESPLAZADO.pasos[0]);
+});
+
+test('#557 con quote desactualizado, "conservar" actualiza el quote, no escribe el contacto y quita la marca', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(MARCA_ALFA)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: DESPLAZADO });
+  const r = await subirQuote(7, { contactoEntrega: { conservar: true } }, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 1);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal(m.registro(7).data.contactoEntregaPendiente, null);
+  const paso = r.pasos.at(-1);
+  assert.equal(paso.name, 'contacto de entrega');
+  assert.equal(paso.status, 'omitido');
+  assert.match(paso.mensaje, /Alfa G Prueba sigue como contacto General/);
+});
+
+test('#557 con quote desactualizado y una decision sin contacto pendiente, el contacto se escribe sin decision', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(undefined)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: CONTACTO_ESCRITO });
+  await subirQuote(7, DESPLAZAR_ALFA, m.deps);
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.equal(solicitud.decision, undefined);
+});
+
 test('#563 actualizar: el contacto escrito quita la marca pendiente que quedaba; si la web legacy falla, la marca se queda', async () => {
   const escrito = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ contactoEntregaPendiente: MARCA_ALFA })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: CONTACTO_ESCRITO });
   await actualizarQuote(7, escrito.deps);
@@ -1109,11 +1198,12 @@ test('#563 conservar con casillas a pisar: no toca Operam y el paso dice que sus
   assert.doesNotMatch(r.pasos[0].mensaje, /sigue como contacto General/);
 });
 
-// --- #565: cambiar el Cel de un Contacto en Operam funde los Contactos ----------
-// Cuando el modulo Contactos en Operam CONFIRMA (relectura) que el Cel de un person_id
-// cambio, la Subida del quote pide a la Fusion de Contactos (aqui sustituida) fundir
-// el Contacto del numero viejo en el del nuevo. Su paso entra al reporte; una falla de
-// la fusion no tumba la subida.
+// --- #565: cambiar el numero de un Contacto en Operam funde los Contactos ------
+// Cuando el modulo Contactos en Operam CONFIRMA (relectura) que el numero de identidad
+// de un person_id cambio (`cambioDeNumero`: Cel > Telefono > Secundario, revision de
+// #557), la Subida del quote pide a la Fusion de Contactos (aqui sustituida) fundir el
+// Contacto del numero viejo en el del nuevo. Su paso entra al reporte; una falla de la
+// fusion no tumba la subida.
 
 const MARCA_PISA_CEL = {
   ...MARCA_PISA,
@@ -1122,10 +1212,7 @@ const MARCA_PISA_CEL = {
 const DECISION_CEL = { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }] } };
 const EDITADO_CEL = {
   tipo: 'lograda', escrito: true, personId: '1249', noAplicados: [],
-  cambios: [
-    { personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
-    { personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
-  ],
+  cambioDeNumero: { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
   pasos: [{ name: 'contacto de entrega', status: 'ok', mensaje: 'Adrian Bosques Nombre quedo en Operam como contacto General y de Entrega del domicilio de entrega, con sus datos al dia.', detalle: 'persona 1249 editada' }],
 };
 const FUNDIDO = {
@@ -1133,7 +1220,7 @@ const FUNDIDO = {
   pasos: [{ name: 'fusion de Contactos', status: 'ok', mensaje: 'Lucia Recibe cambio de numero', detalle: 'persona 1249: Contacto 10 fundido en 20' }],
 };
 
-test('#565 el Cel confirmado de un person_id funde los Contactos: viejo, nuevo, person_id y cotizacion, con su paso tras el del contacto', async () => {
+test('#565 el cambio confirmado del numero de un person_id funde los Contactos: viejo, nuevo, person_id y cotizacion, con su paso tras el del contacto', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA_CEL)], contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
   const r = await subirQuote(21, DECISION_CEL, m.deps);
   assert.equal(r.tipo, 'contacto-entrega');
@@ -1145,14 +1232,14 @@ test('#565 el Cel confirmado de un person_id funde los Contactos: viejo, nuevo, 
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
-test('#565 un numero sin person_id (persona nueva) o un cambio que no es del Cel no funde nada', async () => {
+test('#565 una persona nueva o una edicion que no cambia el numero de identidad no funde nada', async () => {
   const nuevo = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: CONTACTO_ESCRITO, fusion: FUNDIDO });
   const r = await subirQuote(21, {}, nuevo.deps);
   assert.equal(r.tipo, 'lograda');
   assert.equal(nuevo.llamadas.fundirContactos.length, 0);
   assert.equal(r.pasos.some(p => p.name === 'fusion de Contactos'), false);
 
-  const soloTelefono = { ...EDITADO_CEL, cambios: [EDITADO_CEL.cambios[1]] };
+  const { cambioDeNumero: _sinCambio, ...soloTelefono } = EDITADO_CEL;
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)], contactoEntrega: soloTelefono, fusion: FUNDIDO });
   await subirQuote(21, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] } }, m.deps);
   assert.equal(m.llamadas.fundirContactos.length, 0);
@@ -1170,7 +1257,7 @@ test('#565 si la fusion falla, el contacto queda escrito y el paso avisa en dos 
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
-test('#565 al actualizar, una edicion que cambia el Cel tambien funde los Contactos', async () => {
+test('#565 al actualizar, una edicion que cambia el numero tambien funde los Contactos', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { ...cotizacion().data.cliente, ...LUCIA, contactoEntregaPersonId: '1249' } })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
   const r = await actualizarQuote(7, m.deps);
   assert.equal(r.tipo, 'actualizada');
