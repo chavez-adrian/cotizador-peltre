@@ -1108,3 +1108,72 @@ test('#563 conservar con casillas a pisar: no toca Operam y el paso dice que sus
   assert.match(r.pasos[0].mensaje, /Adrian Bosques Nombre conserva sus datos en Operam/);
   assert.doesNotMatch(r.pasos[0].mensaje, /sigue como contacto General/);
 });
+
+// --- #565: cambiar el Cel de un Contacto en Operam funde los Contactos ----------
+// Cuando el modulo Contactos en Operam CONFIRMA (relectura) que el Cel de un person_id
+// cambio, la Subida del quote pide a la Fusion de Contactos (aqui sustituida) fundir
+// el Contacto del numero viejo en el del nuevo. Su paso entra al reporte; una falla de
+// la fusion no tumba la subida.
+
+const MARCA_PISA_CEL = {
+  ...MARCA_PISA,
+  pisa: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' }],
+};
+const DECISION_CEL = { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }] } };
+const EDITADO_CEL = {
+  tipo: 'lograda', escrito: true, personId: '1249', noAplicados: [],
+  cambios: [
+    { personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
+    { personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
+  ],
+  pasos: [{ name: 'contacto de entrega', status: 'ok', mensaje: 'Adrian Bosques Nombre quedo en Operam como contacto General y de Entrega del domicilio de entrega, con sus datos al dia.', detalle: 'persona 1249 editada' }],
+};
+const FUNDIDO = {
+  tipo: 'lograda', fundido: true, forma: 'fundido', contactoId: 20, contactoFundido: 10, oportunidades: [30], cotizaciones: [21],
+  pasos: [{ name: 'fusion de Contactos', status: 'ok', mensaje: 'Lucia Recibe cambio de numero', detalle: 'persona 1249: Contacto 10 fundido en 20' }],
+};
+
+test('#565 el Cel confirmado de un person_id funde los Contactos: viejo, nuevo, person_id y cotizacion, con su paso tras el del contacto', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA_CEL)], contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
+  const r = await subirQuote(21, DECISION_CEL, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.deepEqual(m.llamadas.fundirContactos, [[{
+    celularViejo: '55 8888 0000', celularNuevo: '+52 55 1234 5678', personId: '1249',
+    cotizacion: { id: 21, folio: '1330' }, vendedor: 'Tester',
+  }]]);
+  assert.deepEqual(r.pasos, [...EDITADO_CEL.pasos, ...FUNDIDO.pasos]);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+});
+
+test('#565 un numero sin person_id (persona nueva) o un cambio que no es del Cel no funde nada', async () => {
+  const nuevo = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: CONTACTO_ESCRITO, fusion: FUNDIDO });
+  const r = await subirQuote(21, {}, nuevo.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(nuevo.llamadas.fundirContactos.length, 0);
+  assert.equal(r.pasos.some(p => p.name === 'fusion de Contactos'), false);
+
+  const soloTelefono = { ...EDITADO_CEL, cambios: [EDITADO_CEL.cambios[1]] };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)], contactoEntrega: soloTelefono, fusion: FUNDIDO });
+  await subirQuote(21, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] } }, m.deps);
+  assert.equal(m.llamadas.fundirContactos.length, 0);
+});
+
+test('#565 si la fusion falla, el contacto queda escrito y el paso avisa en dos capas', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA_CEL)], contactoEntrega: EDITADO_CEL, fusion: () => { throw new Error('Neon caido'); } });
+  const r = await subirQuote(21, DECISION_CEL, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  const paso = r.pasos.find(p => p.name === 'fusion de Contactos');
+  assert.equal(paso.status, 'warn');
+  assert.doesNotMatch(paso.mensaje, /Neon/);
+  assert.match(paso.detalle, /Neon caido/);
+  assert.match(paso.detalle, /1249/);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+});
+
+test('#565 al actualizar, una edicion que cambia el Cel tambien funde los Contactos', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { ...cotizacion().data.cliente, ...LUCIA, contactoEntregaPersonId: '1249' } })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.deepEqual(m.llamadas.fundirContactos.map(([s]) => [s.celularViejo, s.celularNuevo, s.personId, s.cotizacion]), [['55 8888 0000', '+52 55 1234 5678', '1249', { id: 7, folio: cotizacion().folioOperam }]]);
+  assert.deepEqual(r.pasos.at(-1), FUNDIDO.pasos[0]);
+});

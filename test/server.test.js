@@ -19,6 +19,9 @@ const COTS_PATH = join(DATA_DIR, 'cotizaciones.json');
 // #380: la subida encola en la cola persistida el post-fix que no quedo verificado.
 const COLA_POSTFIX_PATH = join(dirname(COTS_PATH), 'postfix-pendientes.json');
 const DROPBOX_SUBIDAS_PATH = join(DATA_DIR, 'dropbox-subidas.json');
+// #565: la confirmacion del Cel de #563 funde los Contactos en los stores reales.
+const PROSPECTOS_PATH = join(DATA_DIR, 'prospectos.json');
+const OPORTUNIDADES_PATH = join(DATA_DIR, 'oportunidades.json');
 
 const envPath = join(__dirname, '..', '.env');
 if (existsSync(envPath)) {
@@ -65,7 +68,7 @@ function idLibre(cots) {
 // esta en .gitignore, asi que el residuo no sale en git status.
 let restaurarDatos;
 before(() => {
-  restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH, COLA_POSTFIX_PATH]);
+  restaurarDatos = fotoDatos([COTS_PATH, DROPBOX_SUBIDAS_PATH, COLA_POSTFIX_PATH, PROSPECTOS_PATH, OPORTUNIDADES_PATH]);
   fijarDatos(COTS_PATH, []);
 });
 after(() => { restaurarDatos(); });
@@ -3117,6 +3120,13 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
       customerId: '15', branchId: '564', nombreEntrega: 'MEDICION556b General', celEntrega: '5512345678', contactoEntregaPersonId: '1289',
     },
   });
+  // #565: el Contacto del Cel viejo de la 1289 existe en el cotizador; al confirmar el
+  // Cel nuevo se muda a el (el nuevo no era Contacto) con el evento de la fusion.
+  fijarDatos(PROSPECTOS_PATH, [{
+    id: 9001, fecha: '2026-10-01T00:00:00.000Z', vendedor: 'Tester', celular: '5500000022', celular10: '5500000022',
+    nombre: 'MEDICION556b General', etapa: 'por_cotizar', eventos: [], data: {},
+  }]);
+  fijarDatos(OPORTUNIDADES_PATH, []);
   const quote = mockOperamWebLegacy({ cliente: '15', domicilio: '564' });
   let fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
   const delQuote = globalThis.fetch;
@@ -3138,7 +3148,10 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
     const confirmar = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`).send(p.reintentar.confirmar);
     assert.strictEqual(confirmar.status, 200);
     assert.strictEqual(confirmar.body.contactoEntrega, true, JSON.stringify(confirmar.body));
-    assert.deepStrictEqual(confirmar.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok']]);
+    assert.deepStrictEqual(confirmar.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok'], ['fusion de Contactos', 'ok']]);
+    const [contacto] = JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
+    assert.deepStrictEqual([contacto.id, contacto.celular10], [9001, '5512345678']);
+    assert.deepStrictEqual(contacto.eventos.map(e => [e.tipo, e.celularDe, e.celularA, e.personId]), [['fusion', '5500000022', '5512345678', '1289']]);
     const update = fa.pedidos.find(x => x.params.has('contactsUPDATE[1289]'));
     assert.deepStrictEqual(['name', 'name2', 'fax'].map(k => update.params.get(k)), ['MEDICION556b General', 'Prueba', '5512345678']);
     assert.strictEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);

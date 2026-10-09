@@ -522,6 +522,34 @@ test('CE31: a la edicion solo viajan las casillas que cambian', async () => {
   assert.deepEqual([enOperam(op, '1249').secundario, enOperam(op, '1249').correo], ['55 7777 0000', 'LUCIA@example.com']);
 });
 
+// --- #565: el cambio de numero de una persona sale de la edicion confirmada --------
+// La Subida del quote funde los Contactos del cotizador cuando el Cel de un person_id
+// cambia (enmienda a ADR-0016). Para eso la lograda de una edicion trae `cambios`: las
+// casillas no vacias que se pisaron y que la relectura CONFIRMA, con el valor viejo y
+// el nuevo. Lo que la relectura no confirma no es un cambio.
+test('CE41: la edicion confirmada trae los cambios releidos (person_id, casilla, viejo y nuevo); lo no aplicado no cuenta', async () => {
+  const op = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' });
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.cambios, [
+    { personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
+    { personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
+  ]);
+
+  const ignora = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' }, { ignoraAlEditar: ['cel'] });
+  const pregunta2 = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), ignora.deps);
+  const r2 = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta2) }), ignora.deps);
+  assert.deepEqual(r2.cambios.map(c => c.campo), ['telefono']);
+});
+
+test('CE42: llenar casillas vacias o crear una persona nueva no trae cambios de numero', async () => {
+  const vacia = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), conPersona({}).deps);
+  assert.deepEqual(vacia.cambios, []);
+  const nueva = await escribirContactoEntrega(solicitud(), operam().deps);
+  assert.equal(nueva.cambios, undefined);
+});
+
 // --- Copia en el domicilio de la persona del Cliente Operam (#564, ADR-0024 regla 6) ---
 // Operam no liga una persona existente a un domicilio (medido: "Clonar" tambien crea
 // otra), asi que la persona elegida que solo esta en el Cliente Operam se COPIA al

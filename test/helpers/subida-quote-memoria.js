@@ -31,6 +31,9 @@
 // contesta escribirContactoEntrega del modulo Contactos en Operam (un objeto, o una
 // funcion `(solicitud) => resultado` que puede lanzar). Por defecto no escribe nada ni
 // agrega pasos, para que las pruebas de otras reglas no cambien.
+//
+// La Fusion de Contactos (#565) entra como `fusion`, lo que contesta fundirContactos
+// (un objeto, o una funcion `(solicitud) => resultado` que puede lanzar).
 
 const clonar = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
@@ -92,6 +95,7 @@ export function subidaQuoteEnMemoria({
   alta = { tipo: 'lograda', clienteId: 900, domicilioId: 800, creadoNuevo: true, pasos: [] },
   listasPrecios = [{ id: 12, nombre: 'Precio de lista' }, { id: 15, nombre: 'M100' }],
   contactoEntrega = { tipo: 'lograda', escrito: false, pasos: [] },
+  fusion = { tipo: 'lograda', fundido: false, motivo: 'sin-contacto-viejo', pasos: [] },
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));
   const enCola = new Set(cola.map(String));
@@ -99,7 +103,7 @@ export function subidaQuoteEnMemoria({
     obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [],
     setFolioOperam: [], resolverClienteDeCotizacion: [], subirCotizacionOperam: [],
     corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], darDeAlta: [], obtenerListasPrecios: [],
-    escribirContactoEntrega: [],
+    escribirContactoEntrega: [], fundirContactos: [],
   };
   const secuencia = [];
   const anotar = (nombre, args) => {
@@ -173,6 +177,10 @@ export function subidaQuoteEnMemoria({
     async escribirContactoEntrega(solicitud) {
       anotar('escribirContactoEntrega', [solicitud]);
       return resolverValor(contactoEntrega, [solicitud]);
+    },
+    async fundirContactos(solicitud) {
+      anotar('fundirContactos', [solicitud]);
+      return resolverValor(fusion, [solicitud]);
     },
     async obtenerListasPrecios() {
       anotar('obtenerListasPrecios', []);

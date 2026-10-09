@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam, borrar } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam, borrar, moverContactoCelular } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -206,4 +206,16 @@ test('listar expone la etapa del pipeline derivada del estado de cada cotizacion
   assert.equal(porId[3].etapa, 'perdida');
   assert.equal(porId[4].etapa, 'perdida');
   assert.equal((await obtener(1)).etapa, 'seguimiento');
+});
+
+// Fusion de Contactos (#565): la UNICA excepcion a la liga fija de #342 -- el Contacto
+// cambio de numero, asi que todas sus cotizaciones lo siguen; las de otro no se tocan.
+test('moverContactoCelular pasa las cotizaciones de un Contacto a su numero nuevo y devuelve sus ids (#565)', async () => {
+  writeCots([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', cliente: 'A', data: {}, contactoCelular: '5588880000' },
+    { id: 2, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', cliente: 'B', data: {}, contactoCelular: '5599990000' },
+    { id: 3, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', cliente: 'C', data: {}, contactoCelular: '5588880000' },
+  ]);
+  assert.deepEqual(await moverContactoCelular('5588880000', '5512345678'), [1, 3]);
+  assert.deepEqual(readCots().map(c => [c.id, c.contactoCelular]), [[1, '5512345678'], [2, '5599990000'], [3, '5512345678']]);
 });

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/prospectos.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10, borrar, ligarCliente } from '../lib/prospectos-store.js';
+import { listar, crear, buscarPorCelular, obtener, registrarEvento, cambiarEtapa, actualizarDatos, asignarVendedor, moverASeguimientoConFolio, ultimos10, borrar, ligarCliente, cambiarCelular } from '../lib/prospectos-store.js';
 import { ETAPAS, SALIDAS } from '../lib/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -309,4 +309,29 @@ test('ligarCliente al mismo Cliente Operam no duplica la liga', async () => {
 test('ligarCliente sobre un prospecto inexistente devuelve false', async () => {
   writeProspectos([]);
   assert.equal(await ligarCliente(99, 555, { tipo: 'cliente' }), false);
+});
+
+// Fusion de Contactos (#565): el Contacto del numero viejo se MUDA al numero nuevo
+// cuando el nuevo no era Contacto, y la ficha que queda gana el Origen y el vendedor
+// que no tenia.
+test('cambiarCelular muda el Contacto al numero nuevo y su llave de 10 digitos, sin tocar lo demas (#565)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', celular: '+52 5588880000', celular10: '5588880000', nombre: 'Lucia', canal: 'expo', etapa: 'por_cotizar', eventos: [], data: { empresa: 'X' } },
+  ]);
+  assert.equal(await cambiarCelular(1, '+52 55 1234 5678'), true);
+  const [p] = readProspectos();
+  assert.deepEqual([p.celular, p.celular10, p.nombre, p.canal, p.data.empresa], ['+52 55 1234 5678', '5512345678', 'Lucia', 'expo', 'X']);
+  assert.equal((await buscarPorCelular('5512345678')).id, 1);
+  assert.equal(await buscarPorCelular('5588880000'), undefined);
+  assert.equal(await cambiarCelular(9, '5512345678'), false);
+});
+
+test('actualizarDatos llena canal y vendedor cuando vienen, y sin ellos no los toca (#565)', async () => {
+  writeProspectos([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: null, celular: '5512345678', celular10: '5512345678', nombre: 'Lucia', canal: null, etapa: 'por_cotizar', eventos: [], data: {} },
+  ]);
+  await actualizarDatos(1, { canal: 'expo', vendedor: 'Ana', data: {} });
+  await actualizarDatos(1, { nombre: 'Lucia R', data: {} });
+  const [p] = readProspectos();
+  assert.deepEqual([p.canal, p.vendedor, p.nombre], ['expo', 'Ana', 'Lucia R']);
 });
