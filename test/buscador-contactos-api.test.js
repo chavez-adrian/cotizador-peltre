@@ -39,14 +39,14 @@ function writeJson(p, data) { escribirArchivoSync(p, JSON.stringify(data, null, 
 const JORGE = {
   customer_id: '514', CustName: 'JORGE OREA', cust_ref: 'Jorge Orea',
   tax_id: 'XAXX010101000', country: 'Mexico',
-  contacts: [{ name: 'Jorge Orea', phone: '', phone2: '', fax: '+52 55 1234 5678', email: 'jorge@ejemplo.mx' }],
+  contacts: [{ id: '9001', name: 'Jorge Orea', phone: '', phone2: '', fax: '+52 55 1234 5678', email: 'jorge@ejemplo.mx' }],
   branches: [{ branch_code: '546', br_name: 'JORGE OREA', phone: '', email: '' }],
 };
 // Segunda razon social del MISMO comprador: su celular tambien esta aqui.
 const OREA_EVENTOS = {
   customer_id: '780', CustName: 'OREA EVENTOS SA DE CV', cust_ref: 'Orea Eventos',
   tax_id: 'OEV220101QX3', country: 'Mexico',
-  contacts: [{ name: 'Jorge Orea', phone: '+52 55 1234 5678', phone2: '', fax: '', email: '' }],
+  contacts: [{ id: '9002', name: 'Jorge Orea', phone: '+52 55 1234 5678', phone2: '', fax: '', email: '' }],
   branches: [{ branch_code: '781', br_name: 'MATRIZ', phone: '' }],
 };
 // La linea compartida de un restaurante: dos personas con el mismo numero
@@ -55,8 +55,8 @@ const RESTAURANTE = {
   customer_id: '233', CustName: 'HOTELERA DEL SUR SA DE CV', cust_ref: 'Hotelera del Sur',
   tax_id: 'HSU950101AB1', country: 'Mexico',
   contacts: [
-    { name: 'Laura', phone: '+52 55 1234 5678', phone2: '', fax: '', email: '' },
-    { name: 'Mario', phone: '+52 55 9999 8888', phone2: '', fax: '', email: '' },
+    { id: '9003', name: 'Laura', phone: '+52 55 1234 5678', phone2: '', fax: '', email: '' },
+    { id: '9004', name: 'Mario', phone: '+52 55 9999 8888', phone2: '', fax: '', email: '' },
   ],
   branches: [{ branch_code: '300', br_name: 'MATRIZ', phone: '' }],
 };

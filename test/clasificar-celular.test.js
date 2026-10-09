@@ -62,7 +62,7 @@ const PROSPECTO = {
 
 const CLIENTE_OPERAM = {
   customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV',
-  contacts: [{ phone: '+52 1 55 1234 5678 ext.4', phone2: '' }],
+  contacts: [{ id: '9001', phone: '+52 1 55 1234 5678 ext.4', phone2: '' }],
   branches: [],
 };
 

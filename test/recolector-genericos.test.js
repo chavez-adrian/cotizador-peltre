@@ -204,7 +204,7 @@ const QUOTE_1070 = {
 };
 const CLIENTE_PANZA = {
   customer_id: 600, CustName: 'PANZA DINING & BAR',
-  contacts: [{ name: 'Helena', phone: '9842417544' }], branches: [],
+  contacts: [{ id: '9001', name: 'Helena', phone: '9842417544' }], branches: [],
 };
 const PEDIDO_PANZA = { order_no: 7079, debtor_no: 600, ord_date: '2026-03-10', total: '421.00' };
 

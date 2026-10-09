@@ -293,6 +293,29 @@ test('B7: buscarClientes normaliza campos: id, name, rfc, calle, cp, municipio, 
   } finally { restore(); }
 });
 
+// #560: sin correo ni nombre en el primer domicilio, la fila cae al correo de la
+// primera persona del Cliente Operam y al General aplanado del domicilio, ahora
+// leidos por el modulo Contactos en Operam.
+test('B7b: la fila cae al correo de la primera persona y al General del domicilio', async () => {
+  resetSession();
+  resetIndice();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers': () => jsonResponse({ total: 1, data: [{
+      customer_id: '77', CustName: 'BANCO SIN DOMICILIO NOMBRADO', cust_ref: 'Banco Sin', tax_id: 'BSD821130AR3',
+      contacts: [{ id: '700', action: 'general', name: 'Ana Ruiz', phone: '', email: 'ana@banco.mx' }],
+      branches: [{ branch_code: '70', br_name: '', contact_name: 'Pedro Almacen', phone: '', email: '' }],
+    }] }),
+  });
+  try {
+    const res = await req.get('/api/operam/clientes?q=banco sin').set('Authorization', `Bearer ${TOKEN}`);
+    assert.equal(res.status, 200);
+    const c = res.body.find(f => f.id === '77');
+    assert.equal(c.email, 'ana@banco.mx');
+    assert.equal(c.nombreEntrega, 'Pedro Almacen');
+  } finally { restore(); }
+});
+
 // B8-B10: issue #97 -- el buscador de la UI resuelve por telefono de contacto y
 // nombre corto ademas de razon social, cableando el indice de #42 (matchCliente).
 
@@ -304,7 +327,7 @@ const GRUPO_URUGUAYO = {
   CustName: 'GRUPO URUGUAYO MINAS',
   cust_ref: 'Grupo Uruguayo',
   tax_id: 'GUM010101AB1',
-  contacts: [{ phone: '', phone2: '' }, { name: 'Flor Sosa', phone: '+52 55 1002 1463', phone2: '' }],
+  contacts: [{ id: '9001', phone: '', phone2: '' }, { id: '9002', name: 'Flor Sosa', phone: '+52 55 1002 1463', phone2: '' }],
   branches: [{ branch_code: '1', phone: '' }],
 };
 
@@ -401,7 +424,7 @@ test('B12 (#426): la fila del cliente 52 lleva su Cel y el paso Cliente lo encue
     CustName: 'G J Y ASOCIADOS ABOGADOS SC',
     cust_ref: 'Pizza Studio',
     tax_id: 'XAXX010101000',
-    contacts: [{ action: 'general', phone: '', phone2: '', fax: '' }],
+    contacts: [{ id: '9003', action: 'general', phone: '', phone2: '', fax: '' }],
     branches: [{ branch_code: '59', phone: '', fax: '+1(337)2924966' }],
   };
   resetSession();

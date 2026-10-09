@@ -7,15 +7,15 @@ import { celsNoAplicados } from '../lib/cel-operam.js';
 // sucursales) y devuelve lo que NO quedo escrito.
 
 test('el Cel guardado con otro formato cuenta como escrito: la llave es el celular, no el texto', () => {
-  const fresco = { contacts: [{ action: 'general', fax: '+52 55 3466 7682' }], branches: [] };
+  const fresco = { contacts: [{ id: '9001', action: 'general', fax: '+52 55 3466 7682' }], branches: [] };
   assert.deepEqual(celsNoAplicados(fresco, { celCliente: '5534667682' }), []);
 });
 
 test('con varios Contactos en Operam basta que uno traiga el Cel', () => {
   const fresco = {
     contacts: [
-      { action: 'invoice', fax: '' },
-      { action: 'general', fax: '5534667682' },
+      { id: '9002', action: 'invoice', fax: '' },
+      { id: '9003', action: 'general', fax: '5534667682' },
     ],
     branches: [],
   };
@@ -23,7 +23,7 @@ test('con varios Contactos en Operam basta que uno traiga el Cel', () => {
 });
 
 test('sin el Cel en ningun Contacto lo reporta como campo no aplicado', () => {
-  const fresco = { contacts: [{ action: 'general', fax: '', phone: '5534667682' }], branches: [] };
+  const fresco = { contacts: [{ id: '9004', action: 'general', fax: '', phone: '5534667682' }], branches: [] };
   assert.deepEqual(celsNoAplicados(fresco, { celCliente: '5534667682' }), [
     { campo: 'fax', label: 'Cel del contacto', nuevo: '5534667682' },
   ]);

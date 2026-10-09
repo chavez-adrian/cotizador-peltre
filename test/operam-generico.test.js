@@ -168,7 +168,7 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       if (opts?.method === 'PUT') { llamadas.push('PUT customer'); return jsonResponse({ result: true }); }
       // El Cel (#339) viaja en `fax` y solo el GET del CLIENTE lo expone, tanto del
       // Contacto en Operam auto-generado como de la sucursal.
-      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', contacts: [{ action: 'general', fax: CELULAR }], branches: [{ branch_code: 911, fax: CELULAR, phone: CELULAR }] }] }); }
+      if (u.includes('/910')) { llamadas.push('GET customer'); return jsonResponse({ data: [{ sales_type: '12', contacts: [{ id: '9001', action: 'general', fax: CELULAR }], branches: [{ branch_code: 911, fax: CELULAR, phone: CELULAR }] }] }); }
       // MINA (#81): la dedup por RFC EXACTO de crearCliente matchearia este otro
       // generico y reutilizaria el cliente EQUIVOCADO. El flujo debe saltarla.
       if (u.includes('tax_id=')) { llamadas.push('GET tax_id'); return jsonResponse({ total: 1, data: [{ customer_id: 444, CustName: 'OTRO GENERICO SA', tax_id: 'XAXX010101000', sales_type: '12', branches: [{ branch_code: 445 }] }] }); }
@@ -333,7 +333,7 @@ test('G3b: el 409 de candidatos viaja con diferenciaNombre y celular/correoMatch
       return jsonResponse({ total: 1, data: [
         {
           customer_id: 10, CustName: 'HOTEL AZUL NORTE', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000',
-          contacts: [{ phone: '5588776655', email: 'ventas@hotelazul.mx' }],
+          contacts: [{ id: '9002', phone: '5588776655', email: 'ventas@hotelazul.mx' }],
         },
       ] });
     },

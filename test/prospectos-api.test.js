@@ -964,7 +964,7 @@ test('registrar otro siguiente contacto manda sobre el anterior', async () => {
 
 const CLIENTE_OPERAM = {
   customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV',
-  contacts: [{ phone: '+52 1 55 1234 5678 ext.4', phone2: '' }],
+  contacts: [{ id: '9001', phone: '+52 1 55 1234 5678 ext.4', phone2: '' }],
   branches: [{ branch_code: '7', phone: '' }],
 };
 
@@ -1001,7 +1001,7 @@ test('si Operam falla, la captura procede sin bloquear (best effort)', async () 
 
 test('si el celular no matchea ningun cliente Operam, la captura procede', async () => {
   writeProspectos([]);
-  mockListadoClientes([{ ...CLIENTE_OPERAM, contacts: [{ phone: '+52 5599887766' }] }]);
+  mockListadoClientes([{ ...CLIENTE_OPERAM, contacts: [{ id: '9002', phone: '+52 5599887766' }] }]);
   const res = await supertest(app).post('/api/prospectos')
     .set('Authorization', `Bearer ${MEMO_TOKEN}`).send(CAPTURA);
   assert.equal(res.status, 201);

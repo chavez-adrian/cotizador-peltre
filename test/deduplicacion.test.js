@@ -242,7 +242,7 @@ test('D10: detectarDuplicados marca candidato por telefono aunque el nombre no s
   const clientes = [
     {
       RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Grupo ABC', cust_ref: 'ABC', id: 40,
-      contacts: [{ phone: '55 1234 5678' }],
+      contacts: [{ id: '9001', phone: '55 1234 5678' }],
     },
   ];
   const result = detectarDuplicados('NUE990101ZZZ', 'Nombre Totalmente Distinto', clientes, '5512345678');
@@ -255,7 +255,7 @@ test('D11: detectarDuplicados retorna libre cuando ni nombre ni telefono coincid
   const clientes = [
     {
       RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Grupo ABC', cust_ref: 'ABC', id: 40,
-      contacts: [{ phone: '55 1234 5678' }],
+      contacts: [{ id: '9002', phone: '55 1234 5678' }],
     },
   ];
   const result = detectarDuplicados('NUE990101ZZZ', 'Nombre Totalmente Distinto', clientes, '5599998888');
@@ -332,7 +332,7 @@ test('D16: el telefono sigue marcando candidato con un solo token compartido', (
   const clientes = [
     {
       RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Siscani Group SA de CV', cust_ref: 'SISCANI', id: 30,
-      contacts: [{ phone: '55 1234 5678' }],
+      contacts: [{ id: '9003', phone: '55 1234 5678' }],
     },
   ];
   const result = detectarDuplicados('ISI1801183Z4', 'Importaciones Siscani', clientes, '5512345678');
@@ -406,11 +406,11 @@ test('D19b: hechosCandidato compara contra cust_ref cuando fue ese el que gano e
 test('D20: hechosCandidato distingue coincide / no_coincide / sin_dato en celular y correo', () => {
   const conMatch = {
     RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-A', id: 80,
-    contacts: [{ phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
+    contacts: [{ id: '9004', phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
   };
   const sinMatch = {
     RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-B', id: 81,
-    contacts: [{ phone: '55 9999 0000', email: 'otro@dominio.mx' }],
+    contacts: [{ id: '9005', phone: '55 9999 0000', email: 'otro@dominio.mx' }],
   };
   const sinFicha = { RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-C', id: 82 };
   const tokensInput = normalizarNombre('Ojo de Agua Sur');
@@ -434,7 +434,7 @@ test('D20: hechosCandidato distingue coincide / no_coincide / sin_dato en celula
 test('D21: hechosCandidato da sin_dato sin telefono/correo en el input aunque la ficha si tenga dato', () => {
   const cliente = {
     RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Ojo de Agua Sur', cust_ref: 'OJOAGUA-SUR', id: 90,
-    contacts: [{ phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
+    contacts: [{ id: '9006', phone: '55 1234 5678', email: 'ventas@ojodeagua.mx' }],
   };
   const hechos = hechosCandidato(cliente, normalizarNombre('Ojo de Agua Sur'));
   assert.strictEqual(hechos.celularMatch, 'sin_dato');
@@ -451,7 +451,7 @@ test('D22: detectarDuplicados sin telefono no marca candidato aunque la ficha co
   const clientes = [
     {
       RFC: 'XAXX010101000', rfc: 'XAXX010101000', CustName: 'Nombre Sin Relacion', cust_ref: 'NSR', id: 95,
-      contacts: [{ phone: '55 1234 5678' }],
+      contacts: [{ id: '9007', phone: '55 1234 5678' }],
     },
   ];
   const result = detectarDuplicados('XAXX010101000', 'Otro Nombre Distinto', clientes);

@@ -295,7 +295,7 @@ test('un Contacto de cliente produce ficha con la persona y el nombre corto', ()
 test('un celular que SOLO vive en el Cel (fax) de Operam produce la misma ficha que si viniera de Telefono (#338)', () => {
   const clienteSoloCel = {
     customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
-    contacts: [{ action: 'general', name: 'Laura Mendez', phone: '', fax: '55 4444 1111', email: 'laura@cocinas.mx' }],
+    contacts: [{ id: '9001', action: 'general', name: 'Laura Mendez', phone: '', fax: '55 4444 1111', email: 'laura@cocinas.mx' }],
     branches: [],
   };
   const [entradaDeCel] = enumerarTelefonosClientes([clienteSoloCel]);

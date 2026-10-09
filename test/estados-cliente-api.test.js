@@ -41,7 +41,7 @@ function writeJson(p, data) { escribirArchivoSync(p, JSON.stringify(data, null, 
 const JORGE = {
   customer_id: '514', CustName: 'JORGE OREA', cust_ref: 'Jorge Orea',
   tax_id: 'XAXX010101000', country: 'Mexico',
-  contacts: [{ name: 'Jorge Orea', phone: '', phone2: '', fax: '+52 55 1234 5678', email: 'jorge@ejemplo.mx' }],
+  contacts: [{ id: '9001', name: 'Jorge Orea', phone: '', phone2: '', fax: '+52 55 1234 5678', email: 'jorge@ejemplo.mx' }],
   branches: [{ branch_code: '546', br_name: 'JORGE OREA', phone: '', email: '' }],
 };
 const HISTORICO = {

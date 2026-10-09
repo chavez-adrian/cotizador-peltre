@@ -81,7 +81,7 @@ function operamFalso(clientes = [], estado = {}) {
 
 const CLIENTE_OPERAM = {
   customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
-  contacts: [{ action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', email: 'laura@cocinas.mx' }],
+  contacts: [{ id: '9001', action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', email: 'laura@cocinas.mx' }],
   branches: [{ branch_code: '1', br_name: 'Almacen Norte', phone: '55 7777 2222' }],
 };
 
@@ -447,7 +447,7 @@ test('un fallo de Operam no impide que los prospectos lleguen a la libreta', asy
 test('un celular que es prospecto y cliente a la vez produce UNA ficha, la del cliente', async () => {
   const mismoCelular = {
     ...CLIENTE_OPERAM,
-    contacts: [{ action: 'general', name: 'Laura Mendez', phone: '5512345678' }],
+    contacts: [{ id: '9002', action: 'general', name: 'Laura Mendez', phone: '5512345678' }],
     branches: [],
   };
   const { handlers, estado } = libretaFalsa({ clientes: [mismoCelular] });

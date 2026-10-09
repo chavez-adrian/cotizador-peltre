@@ -256,7 +256,7 @@ test('un celular que ya es cliente de Operam se descarta con motivo', async () =
     '/api/v3/login': () => jsonResponse({ token: 'tok', result: true }),
     '/api/v3/sales/customers': () => jsonResponse({
       total: 1,
-      data: [{ customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV', contacts: [{ phone: '+52 5512421575' }], branches: [] }],
+      data: [{ customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV', contacts: [{ id: '9001', phone: '+52 5512421575' }], branches: [] }],
     }),
   });
   const res = await importar(ADMIN_TOKEN, xlsxBuffer([

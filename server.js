@@ -64,6 +64,7 @@ import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { leerContactos } from './lib/contactos-operam.js';
+import { contactosDeClienteOperam } from './lib/contactos-operam-logica.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -2961,7 +2962,10 @@ function celularesDeClienteOperam(c) {
 // Sin las etiquetas: esas son del CONTACTO (ADR-0016) y las agrega quien sabe
 // de quien es la fila.
 function filaClienteOperam(c, estadoOperam) {
-  const branch = c.branches?.[0] || {};
+  // La primera persona del Cliente Operam y el General aplanado de su primer
+  // domicilio los lee el modulo Contactos en Operam (#560).
+  const { cliente: personas, generales } = contactosDeClienteOperam(c);
+  const general = generales[0];
   // OJO: telefonos trae los de TODAS las casillas (#426: el Cel incluido) --
   // buscarClientesPorTexto puede matchear por cualquiera y el navegador vuelve a
   // filtrar sobre este campo.
@@ -2976,8 +2980,8 @@ function filaClienteOperam(c, estadoOperam) {
     estado: titleCase(c.state || ''),
     telefono: telefonos[0] || '',
     telefonos,
-    email: branch.email || c.contacts?.[0]?.email || '',
-    nombreEntrega: branch.br_name || branch.contact_name || '',
+    email: general?.casillas.correo || personas[0]?.casillas.correo || '',
+    nombreEntrega: general?.domicilio.nombre || general?.nombre || '',
     // #245: pais ISO (MX/US/CA) derivado del texto libre country, o null si
     // no se puede determinar (ver paisDeClienteOperam). El frontend fija
     // cl-pais solo cuando esto viene no nulo.

@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leerContactos } from '../lib/contactos-operam.js';
+import { contactosDeClienteOperam } from '../lib/contactos-operam-logica.js';
 import { contactosOperamEnMemoria } from './helpers/contactos-operam-memoria.js';
 
 const PERSONAS = [
@@ -124,4 +125,35 @@ test('CO9: el rol sale de action y nunca de ref', async () => {
   const r = await leerContactos('15', op.deps);
   assert.deepEqual(r.cliente.find(p => p.personId === '1400').roles, []);
   assert.deepEqual(r.domicilios['564'].find(p => p.personId === '1400').roles, []);
+});
+
+// #560: los lectores del padron (indice de telefonos, dedup, cruce por identidad, la
+// fila del Cliente Operam) ya traen al Cliente Operam en la mano -- el listado
+// paginado y el de `?tax_id=` lo traen con `contacts[]` y `branches[]` inline -- y
+// no pueden leerlo otra vez por cliente. El nucleo puro lo traduce sin IO; sin las
+// filas de contact_list los domicilios no se saben (null).
+test('CO10: el Cliente Operam en la mano se traduce sin IO, con el General aplanado de cada domicilio y su Cel', () => {
+  const cliente = {
+    customer_id: '15',
+    contacts: [
+      { id: '61', action: 'general', ref: 'Adrian Cliente Referencia', name: 'Adrian Cliente Nombre', name2: '', phone: '+52 55 3466 7682', phone2: '', fax: '', email: '', notes: '' },
+      { id: '61', action: 'order', ref: 'Adrian Cliente Referencia', name: 'Adrian Cliente Nombre', name2: '', phone: '+52 55 3466 7682', phone2: '', fax: '', email: '', notes: '' },
+    ],
+    branches: [
+      { branch_code: '564', br_name: 'Bosques de Europa', branch_ref: 'BOSQUES', contact_name: 'Rosa Almacen', phone: '', fax: '5500000031', email: 'rosa@example.com' },
+      { br_name: '', branch_ref: 'AUTO', contact_name: '', phone: '55 7777 2222' },
+    ],
+  };
+  const r = contactosDeClienteOperam(cliente);
+  assert.deepEqual(r.cliente.map(p => [p.personId, p.roles, p.casillas.telefono]), [['61', ['general', 'order'], '+52 55 3466 7682']]);
+  assert.equal(r.domicilios, null);
+  assert.deepEqual(r.generales, [
+    { branchCode: '564', domicilio: { nombre: 'Bosques de Europa', referencia: 'BOSQUES' }, nombre: 'Rosa Almacen', casillas: { cel: '5500000031', telefono: '', secundario: '', correo: 'rosa@example.com' } },
+    { branchCode: '', domicilio: { nombre: '', referencia: 'AUTO' }, nombre: '', casillas: { cel: '', telefono: '55 7777 2222', secundario: '', correo: '' } },
+  ]);
+});
+
+test('CO11: leerContactos trae tambien el General aplanado de cada domicilio', async () => {
+  const r = await leerContactos('15', operam().deps);
+  assert.deepEqual(r.generales.map(g => g.branchCode), ['564', '15']);
 });

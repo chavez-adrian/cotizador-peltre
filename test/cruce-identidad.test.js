@@ -105,14 +105,14 @@ const RUIDO_CATALOGO = [
     customer_id: 900,
     CustName: 'DISTRIBUIDORA DEL BAJIO SA DE CV',
     cust_ref: 'Bajio',
-    contacts: [{ name: 'Roberto Paredes', phone: '4771230000' }],
+    contacts: [{ id: '9001', name: 'Roberto Paredes', phone: '4771230000' }],
     branches: [{ phone: '477 123 0001' }],
   },
   {
     customer_id: 901,
     CustName: 'GRUPO HOTELERO COSTA AZUL',
     cust_ref: 'Costa Azul',
-    contacts: [{ name: 'Mostrador digital', phone: '' }],
+    contacts: [{ id: '9002', name: 'Mostrador digital', phone: '' }],
     branches: [],
   },
 ];
@@ -130,14 +130,14 @@ const CASOS_LIGADOS = [
   {
     caso: 'apellido con dedazo en el alta: rescata el telefono, no el nombre',
     quote: { folio: '765', total: 28891.06, ord_date: '2025-01-13', deliver_to: 'Hortensia Barrera', contact_phone: '+52 1 614 555 0195', cust_ref: 'Hortensia Barrera' },
-    cliente: { customer_id: 102, CustName: 'Hortencia Barreda', cust_ref: '', contacts: [{ name: 'Hortencia Barreda', phone: '614 555 0195' }], branches: [] },
+    cliente: { customer_id: 102, CustName: 'Hortencia Barreda', cust_ref: '', contacts: [{ id: '9003', name: 'Hortencia Barreda', phone: '614 555 0195' }], branches: [] },
     pedido: { order_no: '5253', debtor_no: 102, ord_date: '2025-01-20', total: 28891.06 },
     esperada: CERRO,
   },
   {
     caso: 'el cliente factura a otro nombre: liga por el CONTACTO del catalogo',
     quote: { folio: '778', total: 1204.90, ord_date: '2025-01-30', deliver_to: 'Marycarmen Aguilar', contact_phone: '', cust_ref: 'Ensaladas y Alas' },
-    cliente: { customer_id: 103, CustName: 'LAURA DANIRA GALINDO FERRER', cust_ref: '', contacts: [{ name: 'Marycarmen Aguilar', phone: '' }], branches: [] },
+    cliente: { customer_id: 103, CustName: 'LAURA DANIRA GALINDO FERRER', cust_ref: '', contacts: [{ id: '9004', name: 'Marycarmen Aguilar', phone: '' }], branches: [] },
     pedido: { order_no: '5319', debtor_no: 103, ord_date: '2025-02-04', total: 1204.86 },
     esperada: CERRO,
   },
@@ -151,7 +151,7 @@ const CASOS_LIGADOS = [
   {
     caso: 'razon social sin relacion con el contacto: liga el celular 521',
     quote: { folio: '812', total: 20394.50, ord_date: '2025-04-07', deliver_to: 'Luis Enrique Guerra', contact_phone: '+52 1 55 1731 5503', cust_ref: 'Mezcal Destreza' },
-    cliente: { customer_id: 105, CustName: 'FRACTAL WEALTH MANAGEMENT', cust_ref: '', contacts: [{ name: 'Compras', phone: '5517315503' }], branches: [] },
+    cliente: { customer_id: 105, CustName: 'FRACTAL WEALTH MANAGEMENT', cust_ref: '', contacts: [{ id: '9005', name: 'Compras', phone: '5517315503' }], branches: [] },
     pedido: { order_no: '5561', debtor_no: 105, ord_date: '2025-04-11', total: 20394.49 },
     esperada: CERRO,
   },
@@ -172,35 +172,35 @@ const CASOS_LIGADOS = [
   {
     caso: 'proyecto = razon social, con telefono fijo de 10 digitos',
     quote: { folio: '854', total: 39050.40, ord_date: '2025-06-03', deliver_to: 'Claudia Gonzalez', contact_phone: '55 5281 5518 ', cust_ref: 'Cafebreria El Pendulo' },
-    cliente: { customer_id: 108, CustName: 'CAFEBRERIA EL PENDULO', cust_ref: 'Pendulo', contacts: [{ name: 'Vianey', phone: '5552815518' }], branches: [] },
+    cliente: { customer_id: 108, CustName: 'CAFEBRERIA EL PENDULO', cust_ref: 'Pendulo', contacts: [{ id: '9006', name: 'Vianey', phone: '5552815518' }], branches: [] },
     pedido: { order_no: '5807', debtor_no: 108, ord_date: '2025-06-09', total: 39045.60 },
     esperada: CERRO,
   },
   {
     caso: 'telefono con lada entre parentesis contra el mismo numero pegado',
     quote: { folio: '866', total: 953.00, ord_date: '2025-06-24', deliver_to: 'Luisa Cabral', contact_phone: '+52(871)1445591', cust_ref: 'Monica Ferrer' },
-    cliente: { customer_id: 109, CustName: 'GALERIA JUAREZ 2525', cust_ref: '', contacts: [{ name: 'Recepcion', phone: '8711445591' }], branches: [] },
+    cliente: { customer_id: 109, CustName: 'GALERIA JUAREZ 2525', cust_ref: '', contacts: [{ id: '9007', name: 'Recepcion', phone: '8711445591' }], branches: [] },
     pedido: { order_no: '5886', debtor_no: 109, ord_date: '2025-06-26', total: 953.00 },
     esperada: CERRO,
   },
   {
     caso: 'persona fisica con razon social propia: liga por el contacto',
     quote: { folio: '895', total: 24562.54, ord_date: '2025-07-24', deliver_to: 'Thiaren Villalobos', contact_phone: '8115550207', cust_ref: 'La Mananera' },
-    cliente: { customer_id: 110, CustName: 'MARTIN ALEJANDRO IBARRA SALDANA', cust_ref: '', contacts: [{ name: 'Thiaren Villalobos', phone: '' }], branches: [] },
+    cliente: { customer_id: 110, CustName: 'MARTIN ALEJANDRO IBARRA SALDANA', cust_ref: '', contacts: [{ id: '9008', name: 'Thiaren Villalobos', phone: '' }], branches: [] },
     pedido: { order_no: '5991', debtor_no: 110, ord_date: '2025-07-29', total: 24562.54 },
     esperada: CERRO,
   },
   {
     caso: 'la lada se capturo en un lado y no en el otro: rescate por sufijo 8',
     quote: { folio: '900', total: 7415.45, ord_date: '2025-07-31', deliver_to: 'Pablo Quiroz', contact_phone: '81 1555 0443', cust_ref: 'Mr Wasabi' },
-    cliente: { customer_id: 111, CustName: 'OPERADORA VALIENTE', cust_ref: '', contacts: [{ name: 'Compras', phone: '1555 0443' }], branches: [] },
+    cliente: { customer_id: 111, CustName: 'OPERADORA VALIENTE', cust_ref: '', contacts: [{ id: '9009', name: 'Compras', phone: '1555 0443' }], branches: [] },
     pedido: { order_no: '6021', debtor_no: 111, ord_date: '2025-08-05', total: 7415.45 },
     esperada: CERRO,
   },
   {
     caso: 'celular con lada de 3 digitos y espacios contra el numero pegado',
     quote: { folio: '992', total: 38676.65, ord_date: '2025-10-27', deliver_to: 'Sofia Menge', contact_phone: '+52 984 555 1685', cust_ref: 'Grupo Ballena' },
-    cliente: { customer_id: 112, CustName: 'MUUCH HOTEL GROUP', cust_ref: '', contacts: [{ name: 'Reservas', phone: '9845551685' }], branches: [] },
+    cliente: { customer_id: 112, CustName: 'MUUCH HOTEL GROUP', cust_ref: '', contacts: [{ id: '9010', name: 'Reservas', phone: '9845551685' }], branches: [] },
     pedido: { order_no: '6367', debtor_no: 112, ord_date: '2025-11-03', total: 38676.65 },
     esperada: CERRO,
   },
@@ -274,7 +274,7 @@ test('T7: los campos que el pedido hereda del quote no son senal de identidad', 
   };
   const clienteSinIdentidad = {
     customer_id: 500, CustName: 'ABARROTES DEL PONIENTE SA DE CV', cust_ref: 'Poniente',
-    contacts: [{ name: 'Jorge Iturbe', phone: '5544332211' }],
+    contacts: [{ id: '9011', name: 'Jorge Iturbe', phone: '5544332211' }],
     branches: [{ phone: '55 4433 2210' }],
   };
 
@@ -294,7 +294,7 @@ test('T7: los campos que el pedido hereda del quote no son senal de identidad', 
 
   const clienteConIdentidad = {
     ...clienteSinIdentidad,
-    contacts: [{ name: 'Jorge Iturbe', phone: '5551110022' }],
+    contacts: [{ id: '9012', name: 'Jorge Iturbe', phone: '5551110022' }],
   };
   const control = cruzarIdentidad({
     quote, clientes: [...RUIDO_CATALOGO, clienteConIdentidad], pedidos: [pedidoHeredado],
@@ -313,7 +313,7 @@ function escenarioMonto(totalQuote, totalPedido) {
   };
   const cliente = {
     customer_id: 600, CustName: 'COMERCIALIZADORA VIDACA MEXICO', cust_ref: '',
-    contacts: [{ name: 'Compras', phone: '5528925550' }], branches: [],
+    contacts: [{ id: '9013', name: 'Compras', phone: '5528925550' }], branches: [],
   };
   const pedido = { order_no: '6621', debtor_no: 600, ord_date: '2026-02-18', total: totalPedido };
   return { quote, clientes: [...RUIDO_CATALOGO, cliente], pedidos: [pedido] };

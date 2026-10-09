@@ -18,6 +18,7 @@ const MODULOS_DE_DOMINIO = [
   'lib/alta-cliente.js',
   'lib/subida-quote.js',
   'lib/contactos-operam.js',
+  'lib/contactos-operam-logica.js',
   'public/js/modo-alta-logica.js',
 ];
 

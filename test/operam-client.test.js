@@ -408,6 +408,30 @@ test('obtenerDomicilios: devuelve { domicilios, cliente } con contacts[] crudo y
   }
 });
 
+// #560: el General del domicilio lo lee el modulo Contactos en Operam con la misma
+// precedencia de antes: lo del detalle del branch primero y, campo por campo, la
+// copia aplanada de `branches[]` del cliente.
+test('obtenerDomicilios: el nombre del General del detalle del branch gana; lo que el detalle no trae sale de branches[]', async () => {
+  resetSession();
+  const restore = mockFetchByUrl({
+    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
+    '/api/v3/sales/customers/901': () => jsonResponse({
+      data: [{
+        customer_id: 901,
+        branches: [{ branch_code: '2', br_name: 'Bodega Sur', contact_name: 'Rosa Copia', phone: '55 1111 2222', fax: '5500000032', email: 'rosa@bodega.mx' }],
+        contacts: [],
+      }],
+    }),
+    '/api/v3/sales/branches/2': () => jsonResponse({ data: [{ br_name: 'Bodega Sur', contact_name: 'Rosa Detalle' }] }),
+  });
+  try {
+    const [d] = (await obtenerDomicilios(901)).domicilios;
+    assert.deepEqual([d.contacto, d.telefono, d.cel, d.email], ['Rosa Detalle', '55 1111 2222', '5500000032', 'rosa@bodega.mx']);
+  } finally {
+    restore();
+  }
+});
+
 test('actualizarClienteDirecto: lanza error si Operam responde result: false', async () => {
   resetSession();
   const restore = mockFetchByUrl({
@@ -462,6 +486,10 @@ test('buscarClientePorRFC: retorna encontrado:true con datos del cliente', async
     assert.equal(res.encontrado, true);
     assert.equal(res.cliente_id, 101);
     assert.equal(res.branch.addr_zip, '03100');
+    // #560: el telefono y el correo del General aplanado del domicilio los lee el
+    // modulo Contactos en Operam y siguen llegando igual.
+    assert.equal(res.branch.phone, '5512345678');
+    assert.equal(res.branch.email, 'contacto@test.com');
   } finally {
     restore();
   }

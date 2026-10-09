@@ -38,7 +38,7 @@ function writeJson(p, data) { escribirArchivoSync(p, JSON.stringify(data, null, 
 const ROYAL_TABLE = {
   customer_id: '517', CustName: 'ROYAL TABLE', cust_ref: 'Royal Table',
   tax_id: 'RTA200101AB1', country: 'Mexico',
-  contacts: [{ name: 'Luis Emilio', phone: '', phone2: '', fax: '+52 55 4444 3333', email: '' }],
+  contacts: [{ id: '9001', name: 'Luis Emilio', phone: '', phone2: '', fax: '+52 55 4444 3333', email: '' }],
   branches: [{ branch_code: '518', br_name: 'MATRIZ', phone: '' }],
 };
 

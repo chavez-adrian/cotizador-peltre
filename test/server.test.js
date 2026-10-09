@@ -2220,7 +2220,7 @@ test('E6: GET /api/buscar-cliente-duplicado con RFC real, sin match de nombre pe
       if (u.includes('tax_id=NUE990101ZZZ')) return { ok: true, json: async () => ({ total: 0, data: [] }) };
       if (u.includes('tax_id=XAXX010101000')) return { ok: true, json: async () => ({
         total: 1,
-        data: [{ customer_id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', tax_id: 'XAXX010101000', contacts: [{ phone: '55 1234 5678' }] }],
+        data: [{ customer_id: 40, CustName: 'Grupo ABC', cust_ref: 'ABC', tax_id: 'XAXX010101000', contacts: [{ id: '9001', phone: '55 1234 5678' }] }],
       }) };
       return { ok: true, json: async () => ({ total: 0, data: [] }) };
     },

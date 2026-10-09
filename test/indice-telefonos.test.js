@@ -80,8 +80,8 @@ const CLIENTES = [
   {
     customer_id: '101', CustName: 'UTILITARIO MEXICANO SA DE CV', cust_ref: 'Utilitario',
     contacts: [
-      { phone: '', phone2: '', email: 'facturas@x.com' },
-      { phone: '+52 1 55 6207 1948', phone2: '55 4039 4937' },
+      { id: '9001', phone: '', phone2: '', email: 'facturas@x.com' },
+      { id: '9002', phone: '+52 1 55 6207 1948', phone2: '55 4039 4937' },
     ],
     branches: [{ branch_code: '1', phone: '' }],
   },
@@ -92,7 +92,7 @@ const CLIENTES = [
   },
   {
     customer_id: '303', CustName: 'SIN TELEFONOS', cust_ref: '',
-    contacts: [{ phone: '1234' }],
+    contacts: [{ id: '9003', phone: '1234' }],
     branches: [],
   },
 ];
@@ -107,8 +107,8 @@ test('construirIndice: indexa contacts.phone, contacts.phone2 y branches.phone p
 
 test('construirIndice: ante el mismo telefono en dos clientes gana el primero', () => {
   const idx = construirIndice([
-    { customer_id: '1', CustName: 'PRIMERO', contacts: [{ phone: '5511111111' }], branches: [] },
-    { customer_id: '2', CustName: 'SEGUNDO', contacts: [{ phone: '+52 55 1111 1111' }], branches: [] },
+    { customer_id: '1', CustName: 'PRIMERO', contacts: [{ id: '9004', phone: '5511111111' }], branches: [] },
+    { customer_id: '2', CustName: 'SEGUNDO', contacts: [{ id: '9005', phone: '+52 55 1111 1111' }], branches: [] },
   ]);
   assert.equal(idx.get('5511111111').customer_id, '1');
 });
@@ -117,7 +117,7 @@ test('construirIndice: ante el mismo telefono en dos clientes gana el primero', 
 
 test('construirIndice: un celular que SOLO vive en el Cel (fax) de un Contacto en Operam liga al cliente', () => {
   const idx = construirIndice([
-    { customer_id: '9', CustName: 'SOLO EN CEL', contacts: [{ phone: '', fax: '5551112233' }], branches: [] },
+    { customer_id: '9', CustName: 'SOLO EN CEL', contacts: [{ id: '9006', phone: '', fax: '5551112233' }], branches: [] },
   ]);
   assert.deepEqual(idx.get('5551112233'), { customer_id: '9', cust_name: 'SOLO EN CEL' });
 });
@@ -131,7 +131,7 @@ test('construirIndice: un celular que SOLO vive en el Cel (fax) de una sucursal 
 
 test('construirIndice: el mismo numero en Telefono y Cel de la misma persona produce una sola llave', () => {
   const idx = construirIndice([
-    { customer_id: '9', CustName: 'REPETIDO', contacts: [{ phone: '5551112233', fax: '5551112233' }], branches: [] },
+    { customer_id: '9', CustName: 'REPETIDO', contacts: [{ id: '9007', phone: '5551112233', fax: '5551112233' }], branches: [] },
   ]);
   assert.equal(idx.size, 1);
   assert.equal(idx.get('5551112233').customer_id, '9');
@@ -146,8 +146,8 @@ test('construirIndice: el mismo numero en Telefono y Cel de la misma persona pro
 const CLIENTE_RICO = {
   customer_id: '101', CustName: 'COCINAS DEL VALLE SA DE CV', cust_ref: 'Cocinas del Valle',
   contacts: [
-    { action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', phone2: '55 4444 2222', fax: '55 8888 1111', email: 'laura@cocinas.mx' },
-    { action: 'invoice', name: '', phone: '', email: 'pagos@cocinas.mx' },
+    { id: '9008', action: 'general', name: 'Laura Mendez', phone: '55 4444 1111', phone2: '55 4444 2222', fax: '55 8888 1111', email: 'laura@cocinas.mx' },
+    { id: '9009', action: 'invoice', name: '', phone: '', email: 'pagos@cocinas.mx' },
   ],
   branches: [
     { branch_code: '1', br_name: 'Almacen Norte', contact_name: 'Beto Ramos', phone: '55 7777 2222', fax: '55 9999 3333', email: 'almacen@cocinas.mx' },
@@ -229,7 +229,7 @@ test('telefonosDeClienteOperam: el Cel de una sucursal, unico numero del cliente
   // El cliente 52 (G J Y ASOCIADOS ABOGADOS SC), medido 2026-09-22.
   const cliente52 = {
     customer_id: '52', CustName: 'G J Y ASOCIADOS ABOGADOS SC',
-    contacts: [{ action: 'general', phone: '', phone2: '', fax: '' }],
+    contacts: [{ id: '9010', action: 'general', phone: '', phone2: '', fax: '' }],
     branches: [{ branch_code: '59', phone: '', fax: '+1(337)2924966' }],
   };
   assert.deepEqual(telefonosDeClienteOperam(cliente52), ['+1(337)2924966']);
@@ -243,7 +243,7 @@ test('telefonosDeClienteOperam: Cel primero, luego Telefono y al final el Telefo
 test('telefonosDeClienteOperam: un numero repetido sale una vez, con el texto de su casilla de mayor precedencia', () => {
   const cliente = {
     customer_id: '9',
-    contacts: [{ phone: '55 1111 2233', phone2: '55 3333 4444', fax: '+52 55 1111 2233' }],
+    contacts: [{ id: '9011', phone: '55 1111 2233', phone2: '55 3333 4444', fax: '+52 55 1111 2233' }],
     branches: [{ phone: '5533334444' }],
   };
   // Telefono y Cel del contacto: gana el Cel. Secundario del contacto y Telefono
@@ -252,7 +252,7 @@ test('telefonosDeClienteOperam: un numero repetido sale una vez, con el texto de
 });
 
 test('telefonosDeClienteOperam: sin ningun numero devuelve la lista vacia', () => {
-  assert.deepEqual(telefonosDeClienteOperam({ customer_id: '1', contacts: [{ phone: '' }], branches: [] }), []);
+  assert.deepEqual(telefonosDeClienteOperam({ customer_id: '1', contacts: [{ id: '9012', phone: '' }], branches: [] }), []);
 });
 
 // === matchCliente: cache, refresh y best effort ===
@@ -301,7 +301,7 @@ test('refrescarIndice: reconstruye el indice bajo demanda', async () => {
   restore = mockListado([CLIENTES[0]], contadores);
   assert.equal((await matchCliente('5562071948')).customer_id, '101');
   restore();
-  restore = mockListado([{ customer_id: '9', CustName: 'NUEVO', contacts: [{ phone: '5599999999' }], branches: [] }], contadores);
+  restore = mockListado([{ customer_id: '9', CustName: 'NUEVO', contacts: [{ id: '9013', phone: '5599999999' }], branches: [] }], contadores);
   await refrescarIndice();
   assert.equal(await matchCliente('5562071948'), null);
   assert.equal((await matchCliente('+52 5599999999')).customer_id, '9');
@@ -438,8 +438,8 @@ test('clientesCacheados: si Operam falla devuelve [] sin lanzar (best effort)', 
 // entrada al final o que extienda el TTL.
 
 const DOS_CON_EL_MISMO_TELEFONO = () => ([
-  { customer_id: '1', CustName: 'PRIMERO', cust_ref: 'Primero', contacts: [{ phone: '5511111111' }], branches: [] },
-  { customer_id: '2', CustName: 'SEGUNDO', cust_ref: 'Segundo', contacts: [{ phone: '5511111111' }], branches: [] },
+  { customer_id: '1', CustName: 'PRIMERO', cust_ref: 'Primero', contacts: [{ id: '9014', phone: '5511111111' }], branches: [] },
+  { customer_id: '2', CustName: 'SEGUNDO', cust_ref: 'Segundo', contacts: [{ id: '9015', phone: '5511111111' }], branches: [] },
 ]);
 
 test('actualizarClienteEnCache: conserva la POSICION, asi que no cambia quien gana un telefono compartido', async () => {
@@ -451,9 +451,9 @@ test('actualizarClienteEnCache: conserva la POSICION, asi que no cambia quien ga
     assert.equal((await matchCliente('5511111111')).customer_id, '1');
     // Se actualiza el SEGUNDO: si la implementacion lo moviera al final del arreglo el
     // ganador no cambiaria, pero si moviera al PRIMERO si -- por eso se prueban los dos.
-    actualizarClienteEnCache({ customer_id: '2', CustName: 'SEGUNDO SA DE CV', cust_ref: 'Segundo', contacts: [{ phone: '5511111111' }], branches: [] });
+    actualizarClienteEnCache({ customer_id: '2', CustName: 'SEGUNDO SA DE CV', cust_ref: 'Segundo', contacts: [{ id: '9016', phone: '5511111111' }], branches: [] });
     assert.equal((await matchCliente('5511111111')).customer_id, '1', 'actualizar al segundo no debe robarle el telefono al primero');
-    actualizarClienteEnCache({ customer_id: '1', CustName: 'PRIMERO SA DE CV', cust_ref: 'Primero', contacts: [{ phone: '5511111111' }], branches: [] });
+    actualizarClienteEnCache({ customer_id: '1', CustName: 'PRIMERO SA DE CV', cust_ref: 'Primero', contacts: [{ id: '9017', phone: '5511111111' }], branches: [] });
     assert.equal((await matchCliente('5511111111')).customer_id, '1', 'actualizar al primero tampoco debe cederlo');
     assert.equal((await matchCliente('5511111111')).cust_name, 'PRIMERO SA DE CV', 'y el nombre cacheado si es el nuevo');
   } finally {
@@ -464,12 +464,12 @@ test('actualizarClienteEnCache: conserva la POSICION, asi que no cambia quien ga
 test('actualizarClienteEnCache: reemplaza los datos del cliente sin releer el padron', async () => {
   const contadores = { login: 0, paginas: 0 };
   const restore = mockListado([
-    { customer_id: '9', CustName: 'LUIS EMILIO ZARABOZO', cust_ref: 'Luis Emilio Zarabozo', tax_id: 'XAXX010101000', contacts: [{ phone: '5554368426' }], branches: [] },
+    { customer_id: '9', CustName: 'LUIS EMILIO ZARABOZO', cust_ref: 'Luis Emilio Zarabozo', tax_id: 'XAXX010101000', contacts: [{ id: '9018', phone: '5554368426' }], branches: [] },
   ], contadores);
   try {
     await refrescarIndice();
     const paginasAntes = contadores.paginas;
-    actualizarClienteEnCache({ customer_id: '9', CustName: 'ROYAL TABLE', cust_ref: 'Royal Table', tax_id: 'RTA910503989', contacts: [{ phone: '5554368426' }], branches: [] });
+    actualizarClienteEnCache({ customer_id: '9', CustName: 'ROYAL TABLE', cust_ref: 'Royal Table', tax_id: 'RTA910503989', contacts: [{ id: '9019', phone: '5554368426' }], branches: [] });
     assert.equal(contadores.paginas, paginasAntes, 'no debe releer el padron paginado');
     const porNombreNuevo = await buscarClientesPorTexto('Royal');
     assert.equal(porNombreNuevo.length, 1);
@@ -488,7 +488,7 @@ test('actualizarClienteEnCache: con el padron vacio NO inserta (no fabrica un pa
   const restore = mockListado([], contadores);
   try {
     await refrescarIndice();
-    actualizarClienteEnCache({ customer_id: '9', CustName: 'UNO', cust_ref: 'Uno', contacts: [{ phone: '5554368426' }], branches: [] });
+    actualizarClienteEnCache({ customer_id: '9', CustName: 'UNO', cust_ref: 'Uno', contacts: [{ id: '9020', phone: '5554368426' }], branches: [] });
     assert.deepEqual(await clientesCacheados(), [], 'el padron sigue vacio');
   } finally {
     restore();

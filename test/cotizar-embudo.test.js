@@ -70,7 +70,7 @@ function mockListadoClientes(clientes) {
 
 const CLIENTE_OPERAM = {
   customer_id: '77', CustName: 'HOTELERA DEL SUR SA DE CV',
-  contacts: [{ phone: '+52 55 1234 5678', phone2: '' }],
+  contacts: [{ id: '9001', phone: '+52 55 1234 5678', phone2: '' }],
   branches: [],
 };
 
@@ -140,7 +140,7 @@ test('E4: celular de cliente Operam clasifica como cliente con su nombre', async
 // numero desconocido.
 const CLIENTE_SOLO_CEL = {
   customer_id: '78', CustName: 'MOLINOS DEL BAJIO SA DE CV',
-  contacts: [{ phone: '', fax: '+52 55 9988 7766' }],
+  contacts: [{ id: '9002', phone: '', fax: '+52 55 9988 7766' }],
   branches: [],
 };
 
