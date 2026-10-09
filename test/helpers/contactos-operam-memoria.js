@@ -26,10 +26,19 @@
 //     domicilio (Operam no liga una persona existente). `ignoraAlCrear` (lista de
 //     casillas: 'cel', 'telefono', 'secundario', 'correo') simula a Operam guardando
 //     sin ellas: el 200 que no garantiza nada.
+//   - `leerPersona(personId)` (#562): el formulario de EDITAR de una persona del
+//     domicilio, el unico lugar que trae sus Notas: `{ personId, nombre, apellido,
+//     referencia, roles, casillas, notas }`. Una persona que no esta en el domicilio
+//     lanza, como la web (no hay boton contactsEdit para ella).
+//   - `editar(personId, { roles, notas })` (#562): repostea ese formulario con los
+//     roles (assgn[] es REPLACE: los renglones de la persona en el domicilio quedan
+//     exactamente esos) y las notas; lo demas de la persona no cambia.
+//     `ignoraAlEditar` (lista: 'roles', 'notas') simula a Operam guardando sin ellos.
 //   - `cerrar()`: cierra la sesion web; queda en `sesiones`.
 // Un domicilio que no es del Cliente Operam lanza, como la guarda del adaptador real.
 // `falla: { abrirDomicilioWeb | leer | crear: 'mensaje' }` hace lanzar a esa llamada;
-// `falla.releer` solo a la lectura que sigue a una escritura.
+// `falla.releer` solo a la lectura que sigue a una escritura; `falla.leerPersona` y
+// `falla.editar` a esas llamadas.
 
 const CASILLAS = ['name', 'name2', 'ref', 'phone', 'phone2', 'fax', 'email', 'notes'];
 
@@ -43,6 +52,7 @@ export function contactosOperamEnMemoria({
   padronDomicilios = true,
   renglonesGeneralVacios = [],
   ignoraAlCrear = [],
+  ignoraAlEditar = [],
   falla = {},
 } = {}) {
   const estado = {
@@ -136,6 +146,31 @@ export function contactosOperamEnMemoria({
           estado.personas.set(personId, crudo);
           for (const rol of nueva.roles || []) {
             estado.renglones.push({ id: String(6000 + estado.renglones.length), personId, tipo: 'cust_branch', entidad: code, rol });
+          }
+        },
+        async leerPersona(personId) {
+          registrar('leerPersona', code, personId);
+          const id = String(personId);
+          const suyos = renglonesDe('cust_branch', code).filter(r => r.personId === id);
+          if (!suyos.length) throw new Error(`la persona ${id} no esta en el domicilio ${code}`);
+          const p = persona(id);
+          return {
+            personId: id, nombre: p.name, apellido: p.name2, referencia: p.ref,
+            roles: [...new Set(suyos.map(r => r.rol))],
+            casillas: { cel: p.fax, telefono: p.phone, secundario: p.phone2, correo: p.email },
+            notas: p.notes,
+          };
+        },
+        async editar(personId, cambios) {
+          registrar('editar', code, personId, cambios);
+          const id = String(personId);
+          if (!renglonesDe('cust_branch', code).some(r => r.personId === id)) throw new Error(`la persona ${id} no esta en el domicilio ${code}`);
+          if (!ignoraAlEditar.includes('notas')) estado.personas.get(id).notes = cambios.notas ?? '';
+          if (!ignoraAlEditar.includes('roles')) {
+            estado.renglones = estado.renglones.filter(r => !(r.personId === id && r.tipo === 'cust_branch' && r.entidad === code));
+            for (const rol of cambios.roles || []) {
+              estado.renglones.push({ id: String(6000 + estado.renglones.length), personId: id, tipo: 'cust_branch', entidad: code, rol });
+            }
           }
         },
         async cerrar() {

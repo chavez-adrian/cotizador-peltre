@@ -882,3 +882,121 @@ test('#561 crear: sin folio no hay quote, y el Contacto de entrega no se escribe
   await subirQuote(21, {}, m.deps);
   assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
 });
+
+// --- #562: el General que ya estaba es una pregunta al vendedor -----------------
+// El modulo Contactos en Operam (sustituido) devuelve la pregunta sin escribir nada.
+// El quote ya esta en Operam, asi que la pregunta viaja en la subida LOGRADA (nunca en
+// un desenlace sin folio) y el registro guarda la marca "Contacto de entrega
+// pendiente" con lo que se pregunto: por ahi entra el reintento con la decision.
+
+const PREGUNTA_ALFA = {
+  tipo: 'pregunta', motivo: 'general-existente',
+  desplazados: [{ personId: '1294', nombre: 'Alfa G Prueba', roles: ['general'] }],
+  mensaje: 'Lucia Recibe queda como contacto General y de Entrega del domicilio de entrega en Operam. Alfa G Prueba deja de ser el contacto General de este domicilio y queda como contacto de Entrega.',
+  detalle: 'domicilio 564 del cliente 15: General actual persona 1294; un segundo General no se escribe',
+  pasos: [{ name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes si Alfa G Prueba deja de ser el contacto General del domicilio de entrega.', detalle: 'domicilio 564 del cliente 15: pendiente' }],
+};
+
+const MARCA_ALFA = {
+  fecha: '2026-10-03T12:00:00.000Z', clienteId: 15, domicilioId: 564, motivo: 'general-existente',
+  contacto: { nombre: 'Lucia Recibe' },
+  desplazados: PREGUNTA_ALFA.desplazados, mensaje: PREGUNTA_ALFA.mensaje, detalle: PREGUNTA_ALFA.detalle,
+};
+
+const PREGUNTA_DE_LA_MARCA = {
+  motivo: 'general-existente', contacto: { nombre: 'Lucia Recibe' },
+  desplazados: PREGUNTA_ALFA.desplazados, mensaje: PREGUNTA_ALFA.mensaje, detalle: PREGUNTA_ALFA.detalle,
+};
+
+test('#562 crear con un General previo: la subida queda lograda con folio, la pregunta y el aviso, y el registro guarda el contacto pendiente', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_ALFA });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
+  assert.deepEqual(r.preguntaContacto, PREGUNTA_DE_LA_MARCA);
+  assert.deepEqual(r.pasos.find((p) => p.name === 'contacto de entrega'), PREGUNTA_ALFA.pasos[0]);
+  assert.equal(m.registro(21).folioOperam, '1330');
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_ALFA);
+});
+
+// El reintento con la decision entra por la ENTRADA UNICA (#528): con folio y la marca
+// "Contacto de entrega pendiente" la subida no vuelve a subir nada, solo atiende al
+// contacto, en el Cliente Operam y el domicilio de la marca.
+const subida = (marca = MARCA_ALFA, extra = {}) => nueva(LUCIA, { folioOperam: '1330', data: { ...nueva(LUCIA).data, contactoEntregaPendiente: marca, ...extra } });
+const DESPLAZAR_ALFA = { contactoEntrega: { desplazar: ['1294'] } };
+const DESPLAZADO = {
+  tipo: 'lograda', escrito: true, personId: '1301', desplazados: [{ personId: '1294', nombre: 'Alfa G Prueba', roles: ['delivery'] }], noAplicados: [],
+  pasos: [{ name: 'contacto de entrega', status: 'ok', mensaje: 'Lucia Recibe quedo en Operam como contacto General y de Entrega del domicilio de entrega; Alfa G Prueba dejo de ser General y quedo como contacto de Entrega.', detalle: 'domicilio 564 del cliente 15: persona 1301' }],
+};
+
+test('#562 reintento confirmado: escribe el Contacto de entrega con la decision en el domicilio de la marca, sin volver a subir el quote, y quita la marca', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], contactoEntrega: DESPLAZADO });
+  const r = await subirQuote(21, DESPLAZAR_ALFA, m.deps);
+  assert.deepEqual(m.llamadas.escribirContactoEntrega, [[{
+    clienteId: 15, domicilioId: 564,
+    contacto: { nombre: 'Lucia Recibe', telefono: '+52 55 1234 5678', correo: 'lucia@example.com' },
+    cotizacion: { id: 21, folio: '1330' },
+    decision: { desplazar: ['1294'] },
+  }]]);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.equal(r.folio, '1330');
+  assert.deepEqual(r.pasos, DESPLAZADO.pasos);
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.llamadas.subirCotizacionOperam.length, 0);
+  assert.equal(m.llamadas.corregirVigenciaQuote.length, 0);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+});
+
+// Sin contestar, el contacto sigue pendiente: regenerar sin cambios (ya-subida) vuelve a
+// traer la pregunta de la marca, sin leer Operam.
+test('#562 con folio, sin cambios y sin decision: ya-subida trae otra vez la pregunta pendiente sin tocar Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'ya-subida');
+  assert.deepEqual(r.preguntaContacto, PREGUNTA_DE_LA_MARCA);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+});
+
+test('#562 el vendedor conserva al General: no toca Operam, quita la marca y el paso lo dice', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()] });
+  const r = await subirQuote(21, { contactoEntrega: { conservar: true } }, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+  assert.equal(r.pasos.length, 1);
+  assert.equal(r.pasos[0].name, 'contacto de entrega');
+  assert.equal(r.pasos[0].status, 'omitido');
+  assert.match(r.pasos[0].mensaje, /Alfa G Prueba sigue como contacto General/);
+});
+
+// Revalida (patron de #368): si el General cambio, el modulo vuelve a preguntar y la
+// marca se reemplaza con la pregunta nueva.
+test('#562 reintento cuando el General cambio: la marca se reemplaza con la pregunta nueva y viaja en la respuesta', async () => {
+  const otra = { ...PREGUNTA_ALFA, desplazados: [{ personId: '1297', nombre: 'Beta Nueva General', roles: ['general'] }], mensaje: 'Beta Nueva General deja de ser el contacto General', detalle: 'persona 1297' };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], contactoEntrega: otra });
+  const r = await subirQuote(21, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.deepEqual(r.preguntaContacto.desplazados, otra.desplazados);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente.desplazados, otra.desplazados);
+  assert.deepEqual([m.registro(21).data.contactoEntregaPendiente.clienteId, m.registro(21).data.contactoEntregaPendiente.domicilioId], [15, 564]);
+});
+
+// Si la web legacy falla, la decision no se pierde: la marca se queda y el vendedor
+// puede volver a contestar.
+test('#562 reintento con la web legacy caida: la marca se queda y el paso avisa', async () => {
+  const bloqueo = { tipo: 'bloqueo', motivo: 'operam', mensaje: 'No se pudo escribir', detalle: 'FA 500', pasos: [{ name: 'contacto de entrega', status: 'error', mensaje: 'No se pudo escribir el Contacto de entrega en el domicilio de entrega en Operam.', detalle: 'FA 500' }] };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], contactoEntrega: bloqueo });
+  const r = await subirQuote(21, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.deepEqual(r.pasos, bloqueo.pasos);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_ALFA);
+  assert.deepEqual(r.preguntaContacto, PREGUNTA_DE_LA_MARCA);
+});
+
+test('#562 una decision sin contacto pendiente no escribe nada: es ya-subida', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA, { folioOperam: '1330' })] });
+  const r = await subirQuote(21, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.tipo, 'ya-subida');
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+});

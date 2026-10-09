@@ -145,9 +145,17 @@ function estadoVigencia(steps) {
 // salida valida.
 const PASO_CON_AVISO_PROPIO = new Set(['post-fix vigencia']);
 
-export function pasosParaMostrar(steps) {
+// `okQueSeLeen` agrega, para UNA respuesta, pasos en ok que se tienen que leer (#562: la
+// respuesta a la pregunta del General dice que paso con el contacto).
+const PASO_CONTACTO_ENTREGA = 'contacto de entrega';
+
+function pasosVisibles(steps, okQueSeLeen = []) {
   return (Array.isArray(steps) ? steps : [])
-    .filter(s => s && (s.status === 'warn' || s.status === 'error' || (s.status === 'ok' && PASOS_OK_QUE_SE_LEEN.has(s.name))) && !PASO_CON_AVISO_PROPIO.has(s.name))
+    .filter(s => s && (s.status === 'warn' || s.status === 'error' || (s.status === 'ok' && (PASOS_OK_QUE_SE_LEEN.has(s.name) || okQueSeLeen.includes(s.name)))) && !PASO_CON_AVISO_PROPIO.has(s.name));
+}
+
+export function pasosParaMostrar(steps, okQueSeLeen = []) {
+  return pasosVisibles(steps, okQueSeLeen)
     .map(s => ({
       estado: s.status,
       mensaje: s.mensaje || 'Un paso del alta del Cliente Operam no se completo.',
@@ -174,7 +182,17 @@ export function interpretarSubidaOperam(resultado) {
   // customerId/clienteGenerico (#93): la subida con alta generica (#81) devuelve
   // el customer_id creado/reutilizado; con clienteGenerico se ofrece la CSF junto
   // al folio (mismo criterio que el chip Fiscal de la tarjeta).
-  if (r.ok) return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps), pasos };
+  // #562: el domicilio de entrega ya tenia un contacto General. La subida se logro y la
+  // pregunta viaja junto al folio; el aviso de "contacto pendiente" ya lo dice la
+  // pregunta, asi que no se repite como paso. La respuesta a la decision
+  // (contactoEntrega) muestra el paso del contacto aunque haya salido bien: es lo que el
+  // vendedor acaba de pedir.
+  if (r.ok) {
+    const conPregunta = r.preguntaContacto ? { preguntaContacto: r.preguntaContacto } : {};
+    const pasosFolio = r.preguntaContacto ? pasosParaMostrar((r.steps || []).filter(st => st?.name !== PASO_CONTACTO_ENTREGA))
+      : r.contactoEntrega ? pasosParaMostrar(r.steps, [PASO_CONTACTO_ENTREGA]) : pasos;
+    return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps), pasos: pasosFolio, ...conPregunta };
+  }
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];
   if (r.status === 409 && candidatos.length) {
     // Las salidas que ofrece el modulo del alta (#377), tal cual: la vista no las
@@ -395,6 +413,26 @@ function buildOtraRazonSocialHtml(id, vista) {
   </div>`;
 }
 
+// La pregunta del General del domicilio de entrega (#562, ADR-0024 regla 4): el quote
+// ya esta subido y el Contacto de entrega quedo pendiente. Dos salidas, cada una con el
+// cuerpo que dicto el servidor (`reintentar`), serializado en el onclick como en la
+// otra razon social; el navegador no lo arma. El detalle tecnico va plegado (Mensaje en
+// dos capas). Sin pregunta no pinta nada.
+function buildPreguntaContactoEntregaHtml(id, p) {
+  if (!p || !p.reintentar) return '';
+  const cuerpo = (x) => JSON.stringify(x || {}).replace(/"/g, '&quot;');
+  const desplazados = (p.desplazados || []).map(d => escapeHtml(d.nombre || '')).join(' y ');
+  const detalle = p.detalle
+    ? `<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(p.detalle)}</div></details>`
+    : '';
+  return `<div class="operam-status operam-status-candidatos">
+    <div class="operam-candidatos-msg">${escapeHtml(p.mensaje || '')}</div>
+    <div>El Contacto de entrega queda pendiente en Operam hasta que contestes.</div>${detalle}
+    <button class="btn btn-sm btn-primary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.confirmar)}, this)">S&iacute;, ${escapeHtml(p.nuevo || 'el Contacto de entrega')} queda como General</button>
+    <button class="btn btn-sm btn-secondary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.conservar)}, this)">No, ${desplazados || 'el General actual'} sigue como General</button>
+  </div>`;
+}
+
 // Estado de la auto-subida (#83) para pintar en el resumen (al generar) o en la
 // tarjeta del historial (al reintentar). Unica fuente del bloque de estado, sobre
 // la vista pura de interpretarSubidaOperam. 'folio' = subio (verde), con nota si
@@ -442,7 +480,7 @@ export function buildOperamStatusHtml(id, vista) {
     const vig = v.vigencia === 'revisar'
       ? ` <span class="operam-status-nota">Revisa el campo &laquo;V&aacute;lido hasta&raquo; en Operam: pudo no quedar corregido. El PDF y las notas de la cotizacion si llevan la vigencia correcta.</span>`
       : '';
-    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}${pasos}`;
+    return `<span class="operam-status operam-status-ok">Subida a Operam${folio}</span>${nota}${vig}${csf}${pasos}${buildPreguntaContactoEntregaHtml(id, v.preguntaContacto)}`;
   }
   if (v.estado === 'candidatos') {
     return buildCandidatosOperamHtml(id, v.candidatos, v.mensaje, v.opciones);

@@ -4,24 +4,14 @@
 // botones que guardan (Update, UPDATE_ITEM), crean (ADD_ITEM) o borran (Delete564)
 // el domicilio: el adaptador nunca los manda, cierra su sesion web y relee la tabla.
 //
-// Se mockea globalThis.fetch con una web legacy de mentiras que sirve las paginas
-// REALES medidas el 2026-10-09 sobre el Cliente Operam 15, domicilio 564 (recortadas
-// y en ASCII: test/fixtures/operam-domicilios-*.html) y responde segun el boton que
+// Se mockea globalThis.fetch con la web legacy de mentiras de
+// test/helpers/domicilios-web-mentira.js, que sirve las paginas REALES medidas el
+// 2026-10-09 sobre el Cliente Operam 15, domicilio 564, y responde segun el boton que
 // trae el body, como FrontAccounting. --test-concurrency=1: fetch es global.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { abrirDomicilioWeb, serializarBodyDomicilios, personasDeContactos } from '../lib/contactos-operam-web.js';
-
-const DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
-const pagina = (n) => readFileSync(join(DIR, n), 'utf8');
-const LISTA = pagina('operam-domicilios-15.html');
-const GENERAL_564 = pagina('operam-domicilios-564-general.html');
-const CONTACTOS_564 = pagina('operam-domicilios-564-contactos.html');
-const NUEVO_564 = pagina('operam-domicilios-564-contacto-nuevo.html');
-const ROLES_564 = pagina('operam-domicilios-564-contactos-roles.html');
+import { webDeMentiras, GENERAL_564, ROLES_564, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
 process.env.OPERAM_URL = 'https://fa.mentira.test';
 process.env.OPERAM_USER = 'usuario_de_prueba';
@@ -30,43 +20,9 @@ process.env.OPERAM_PASSWORD = 'clave_de_prueba';
 // Los botones del formulario que NO son del contacto: guardar, crear o borrar el
 // domicilio, y los de editar o borrar un contacto existente.
 const PROHIBIDOS = /^(Update|UPDATE_ITEM|ADD_ITEM|Delete\d+|contactsDelete\[\d+\]|contactsEdit\[\d+\]|contactsUPDATE\[\d+\]|contactsRESET|process|delete)$/;
-const ETIQUETA_ROL = { 1: 'General', 2: 'Invoices', 3: 'Orders', 4: 'Deliveries' };
 
 let fetchOriginal;
 let fa;
-
-function webDeMentiras({ despuesDeEditar = GENERAL_564, errorAlAgregar = null } = {}) {
-  const estado = { pedidos: [], agregadas: [] };
-  const conAgregadas = () => estado.agregadas.reduce((html, p, i) => {
-    const etiquetas = p.getAll('assgn[]').map((c) => ETIQUETA_ROL[c]).join(',');
-    const pid = String(1300 + i);
-    const fila = `<tr class='oddrow'  >\n<td >${etiquetas}</td>\n<td >${p.get('ref')}</td>\n<td >${[p.get('name'), p.get('name2')].join(' ')}</td>\n` +
-      `<td >${p.get('phone')}</td>\n<td >${p.get('phone2')}</td>\n<td >${p.get('fax')}</td>\n<td ><a href='mailto:${p.get('email')}'>${p.get('email')}</a></td>\n` +
-      `<td align='center'><button type='submit' class='editbutton' name='contactsEdit[${pid}]' value='1' title='Editar' /></button>\n</td>` +
-      `<td align='center'><button type='submit' class='editbutton' name='contactsDelete[${pid}]' value='1' title='Eliminar' /></button>\n</td></tr>\n`;
-    return html.replace(/<\/table><\/center>(\s*<br><center><button)/, (_, resto) => fila.repeat(p.getAll('assgn[]').length) + '</table></center>' + resto);
-  }, CONTACTOS_564);
-  estado.fetch = async (url, init = {}) => {
-    const u = String(url);
-    const metodo = (init.method || 'GET').toUpperCase();
-    const params = new URLSearchParams(init.body ? String(init.body) : '');
-    estado.pedidos.push({ url: u, metodo, params });
-    if (u.includes('trans_no=1&trans_type=30')) return new Response('<html><body>login de mentira</body></html>');
-    if (u.includes('/access/logout.php')) return new Response('<html><body>sesion cerrada</body></html>');
-    if (!u.includes('/sales/manage/customer_branches.php')) throw new Error('pagina inesperada ' + u);
-    if (metodo === 'GET') return new Response(LISTA);
-    if (params.has('Edit564')) return new Response(despuesDeEditar);
-    if (params.has('tabs_contacts')) return new Response(conAgregadas());
-    if (params.has('contactsNEW')) return new Response(NUEVO_564);
-    if (params.has('contactsADD')) {
-      if (errorAlAgregar) return new Response(NUEVO_564.replace('<form', `<div class='err_msg'>${errorAlAgregar}</div><form`));
-      estado.agregadas.push(params);
-      return new Response(conAgregadas());
-    }
-    throw new Error('submit inesperado: ' + [...params.keys()].join(','));
-  };
-  return estado;
-}
 
 beforeEach(() => {
   fetchOriginal = globalThis.fetch;
@@ -154,4 +110,72 @@ test('W7: la relectura despues de crear trae a la persona nueva con General y En
     personId: '1300', nombreCompleto: 'Lucia Recibe Almacen', referencia: 'Lucia Recibe Almacen', roles: ['general', 'delivery'],
     casillas: { cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678', secundario: '', correo: 'lucia@example.com' },
   });
+});
+
+// --- #562: editar al General desplazado -----------------------------------------
+// Las Notas y los roles marcados solo existen en el formulario de EDITAR
+// (contactsEdit[N]); se guarda con contactsUPDATE[N] y assgn[] es REPLACE. Medido el
+// 2026-10-09 sobre la 1289 del domicilio 564 (medicion-556b, editar-contacto564).
+
+test('W8: leerPersona trae del formulario de editar las Notas, los roles marcados y las casillas de la persona', async () => {
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const web = await abrirDomicilioWeb('15', '564');
+  const persona = await web.leerPersona('1289');
+  await web.cerrar();
+  assert.deepEqual(persona, {
+    personId: '1289', nombre: 'MEDICION556b General', apellido: 'Prueba', referencia: 'MEDICION556BG', roles: ['general'],
+    casillas: { cel: '5500000022', telefono: '55 0000 0021', secundario: '', correo: 'g564@example.com' },
+    notas: 'medicion 556b, borrar',
+  });
+});
+
+test('W9: editar manda solo el boton de actualizar ESA persona, los roles como assgn[] y las notas, y deja intactos sus demas datos', async () => {
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const web = await abrirDomicilioWeb('15', '564');
+  await web.leerPersona('1289');
+  await web.editar('1289', { roles: ['delivery'], notas: 'medicion 556b, borrar\nlinea nueva' });
+  const despues = await web.leer();
+  await web.cerrar();
+  const update = posts().find((p) => p.params.has('contactsUPDATE[1289]'));
+  const botones = [...update.params.keys()].filter((k) => /^(contacts(NEW|ADD|UPDATE|RESET|CLONE|Edit|Delete)|tabs_|Edit|Delete|Update|UPDATE|ADD_ITEM)/.test(k));
+  assert.deepEqual(botones, ['contactsUPDATE[1289]']);
+  for (const p of posts()) {
+    const prohibidas = [...p.params.keys()].filter((k) => PROHIBIDOS.test(k) && !/^contacts(Edit|UPDATE)\[1289\]$/.test(k));
+    assert.deepEqual(prohibidas, [], `POST con ${[...p.params.keys()].join(',')}`);
+  }
+  assert.deepEqual(update.params.getAll('assgn[]'), ['4']);
+  assert.deepEqual(
+    ['name', 'name2', 'ref', 'phone', 'phone2', 'fax', 'email', 'notes', 'contactsMode[1289]', 'customer_id', 'selected_id', 'branch_code'].map((k) => update.params.get(k)),
+    ['MEDICION556b General', 'Prueba', 'MEDICION556BG', '55 0000 0021', '', '5500000022', 'g564@example.com', 'medicion 556b, borrar\nlinea nueva', 'Edit', '15', '564', '564'],
+  );
+  assert.deepEqual(despues.find((p) => p.personId === '1289').roles, ['delivery']);
+});
+
+test('W10: si la web legacy rechaza la edicion, editar lanza con su motivo', async () => {
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564, errorAlActualizar: 'El nombre del contacto no puede estar vacio.' });
+  const web = await abrirDomicilioWeb('15', '564');
+  await assert.rejects(web.editar('1289', { roles: ['delivery'], notas: '' }), /El nombre del contacto no puede estar vacio/);
+  await web.cerrar();
+});
+
+// Cada pagina que devuelve una escritura YA es la pestana Contactos con la tabla
+// releida (medido: la respuesta de contactsADD y de contactsUPDATE trae la tabla con el
+// cambio), asi que la sesion navega al domicilio UNA vez y cada paso sigue desde la
+// pagina en la que quedo: la subida cabe en el tiempo que el navegador espera.
+test('W11: desplazar al General navega al domicilio una sola vez y relee desde la pagina que devolvio cada escritura', async () => {
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const web = await abrirDomicilioWeb('15', '564');
+  await web.leer();
+  await web.crear(LUCIA);
+  const trasCrear = await web.leer();
+  await web.leerPersona('1289');
+  await web.editar('1289', { roles: ['delivery'], notas: 'nota' });
+  const trasEditar = await web.leer();
+  await web.leerPersona('1289');
+  await web.cerrar();
+  assert.ok(trasCrear.some((p) => p.nombreCompleto === 'Lucia Recibe Almacen'));
+  assert.deepEqual(trasEditar.find((p) => p.personId === '1289').roles, ['delivery']);
+  const boton = (p) => [...p.params.keys()].find((k) => /^(Edit\d+|tabs_contacts|contacts(NEW|ADD|Edit|UPDATE))/.test(k));
+  assert.deepEqual(posts().map(boton), ['Edit564', 'tabs_contacts', 'contactsNEW', 'contactsADD', 'contactsEdit[1289]', 'contactsUPDATE[1289]', 'contactsEdit[1289]']);
+  assert.equal(fa.pedidos.filter((p) => p.metodo === 'GET' && p.url.includes('customer_branches.php')).length, 1);
 });

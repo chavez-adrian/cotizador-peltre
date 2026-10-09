@@ -472,3 +472,23 @@ test('#561 alta lograda: despues del quote pide escribir el Contacto de entrega 
   assert.ok(nombres(m.secuencia).indexOf('corregirVigenciaQuote') < nombres(m.secuencia).indexOf('escribirContactoEntrega'));
   assert.deepEqual(r.pasos.at(-1), paso);
 });
+
+// #562: por el camino del alta la pregunta del General viaja igual en la subida lograda,
+// y la marca "Contacto de entrega pendiente" lleva el Cliente Operam y el domicilio que
+// dejo el alta: el reintento escribe ahi.
+test('#562 alta lograda con un General previo en el domicilio: la subida lleva la pregunta y la marca el cliente y el domicilio del alta', async () => {
+  const pregunta = {
+    tipo: 'pregunta', motivo: 'general-existente',
+    desplazados: [{ personId: '1501', nombre: 'La Esquina', roles: ['general'] }],
+    mensaje: 'Lucia Recibe queda como contacto General y de Entrega del domicilio de entrega en Operam. La Esquina deja de ser el contacto General de este domicilio y queda como contacto de Entrega.',
+    detalle: 'domicilio 800 del cliente 900: General actual persona 1501',
+    pasos: [{ name: 'contacto de entrega', status: 'warn', mensaje: 'falta que confirmes', detalle: 'domicilio 800' }],
+  };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [sinCliente({ nombreEntrega: 'Lucia Recibe' })], contactoEntrega: pregunta });
+  const r = await subirQuote(31, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.camino, 'alta');
+  assert.deepEqual(r.preguntaContacto.desplazados, pregunta.desplazados);
+  const marca = m.registro(31).data.contactoEntregaPendiente;
+  assert.deepEqual([marca.clienteId, marca.domicilioId, marca.contacto], [900, 800, { nombre: 'Lucia Recibe' }]);
+});

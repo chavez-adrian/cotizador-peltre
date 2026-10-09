@@ -4981,6 +4981,9 @@ async function operarEnOperam(id, slot, { conFolio = false, extraBody } = {}) {
     // fallo solo viviria en los logs del servidor y el vendedor mandaria la
     // cotizacion sin saber que en Operam se ve vencida.
     steps: data.steps,
+    // #562: la pregunta del General del domicilio de entrega (con los cuerpos de
+    // reintento que dicta el servidor) y la respuesta a esa decision.
+    preguntaContacto: data.preguntaContacto, contactoEntrega: data.contactoEntrega,
   });
 }
 
@@ -5070,6 +5073,10 @@ window.marcarSucursalOperam = (id, customerId, el) => operarEnOperam(id, slotOpe
 // confirmacion el server agrega la liga a las que el Contacto ya tenia (nunca
 // reemplaza). Sin este click no se sube nada ni se crea ningun Cliente Operam.
 window.confirmarOtraRazonSocialOperam = (id, cuerpo, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: cuerpo });
+// #562: "si, que el Contacto de entrega quede como General" o "no, el General actual se
+// queda". El cuerpo lo dicta el SERVIDOR en `preguntaContacto.reintentar`, como el de la
+// otra razon social. Sin `conFolio`: la respuesta trae la forma de la subida.
+window.responderContactoEntregaOperam = (id, cuerpo, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: cuerpo });
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);
   if (slot) slot.innerHTML = buildOperamStatusHtml(id, { estado: 'sin_datos', mensaje: 'Queda como PRE. Puedes reintentar la subida desde el historial.' });

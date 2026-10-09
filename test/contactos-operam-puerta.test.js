@@ -11,8 +11,9 @@ import { fileURLToPath } from 'url';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// El modulo: su nucleo puro y su envoltura con IO.
-const MODULO = new Set(['lib/contactos-operam.js', 'lib/contactos-operam-logica.js']);
+// El modulo: su nucleo puro, su envoltura con IO y su adaptador real de la web legacy,
+// que lee las casillas del formulario de editar de una persona (#562).
+const MODULO = new Set(['lib/contactos-operam.js', 'lib/contactos-operam-logica.js', 'lib/contactos-operam-web.js']);
 
 // Lecturas de Operam crudo que dan una persona o un telefono.
 const LECTURAS = [

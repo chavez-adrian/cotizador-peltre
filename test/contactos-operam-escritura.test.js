@@ -54,22 +54,26 @@ test('CE1: en un domicilio sin General, el Contacto de entrega nuevo queda como 
   assert.deepEqual(enOperam(op, '1249'), { nombre: 'Adrian Bosques Nombre', cel: '', telefono: '', secundario: '', correo: '', roles: ['delivery'] });
 });
 
-// Un solo General por domicilio (ADR-0024 regla 4). Desplazar al que ya esta lleva
-// la pregunta al vendedor (#562); mientras tanto el modulo no escribe: nunca deja dos.
-test('CE2: en un domicilio que ya tiene General no escribe nada y lo reporta omitido, nombrando al General', async () => {
+// Un solo General por domicilio (ADR-0024 regla 4). Desplazar al que ya esta pisa un
+// dato de Operam, asi que antes se pregunta al vendedor (#562) y no se escribe nada.
+test('CE2: en un domicilio que ya tiene General devuelve la pregunta al vendedor con el nombre del desplazado y no escribe nada', async () => {
   const op = operam({
     personas: [...PERSONAS, { personId: '1294', name: 'Alfa G', name2: 'Prueba', fax: '5500000292' }],
     renglones: [...RENGLONES, { id: '3590', personId: '1294', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
   });
   const r = await escribirContactoEntrega(solicitud(), op.deps);
-  assert.equal(r.tipo, 'lograda');
-  assert.equal(r.escrito, false);
+  assert.equal(r.tipo, 'pregunta');
   assert.equal(r.motivo, 'general-existente');
+  assert.deepEqual(r.desplazados, [{ personId: '1294', nombre: 'Alfa G Prueba', roles: ['general'] }]);
+  assert.match(r.mensaje, /Alfa G Prueba deja de ser el contacto General de este domicilio y queda como contacto de Entrega/);
+  assert.match(r.detalle, /1294/);
   assert.equal(op.pedidos('crear').length, 0);
+  assert.equal(op.pedidos('editar').length, 0);
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
   assert.equal(r.pasos.length, 1);
-  assert.equal(r.pasos[0].status, 'omitido');
+  assert.equal(r.pasos[0].name, 'contacto de entrega');
+  assert.equal(r.pasos[0].status, 'warn');
   assert.match(r.pasos[0].mensaje, /Alfa G Prueba/);
-  assert.match(r.pasos[0].mensaje, /General/);
 });
 
 // La cotizacion no guarda a quien eligio el vendedor en el selector, solo el nombre y
@@ -210,4 +214,115 @@ test('CE13: si el Contacto de entrega ES el General del domicilio, se reconoce c
   const r = await escribirContactoEntrega(solicitud({ contacto: { nombre: 'Alfa G', telefono: '+52 55 1234 5678' } }), op.deps);
   assert.equal(r.motivo, 'persona-existente');
   assert.equal(op.pedidos('crear').length, 0);
+});
+
+// --- #562: el vendedor confirma y el General que estaba se desplaza ------------
+// La decision viaja en la solicitud con los person_id por los que se le pregunto, y la
+// cotizacion de la que sale, para la nota. ADR-0024 regla 4: la persona nueva queda
+// como unico General (y Entrega); al desplazado se le quita el General, pasa a Entrega
+// si no tenia otro rol, y en sus Notas queda una linea fechada con quien lo reemplazo y
+// desde que cotizacion, sin borrar las previas.
+
+// 2026-10-10T03:00Z son las 21:00 del 9 de octubre en la Ciudad de Mexico: la fecha de
+// la nota es la de la fabrica, no la de UTC.
+const AHORA = () => new Date('2026-10-10T03:00:00.000Z');
+const LINEA_1357 = '2026-10-09: deja de ser el contacto General de este domicilio; lo reemplaza Lucia Recibe Almacen desde la Cotizaci\u00f3n 1357.';
+
+function conGeneral(general, extra = {}) {
+  return operam({
+    personas: [...PERSONAS, { personId: '1294', name: 'Alfa G', name2: 'Prueba', fax: '5500000292', ...general }],
+    renglones: [...RENGLONES, ...(general.roles || ['general']).map((rol, i) => ({ id: String(3590 + i), personId: '1294', tipo: 'cust_branch', entidad: '564', rol }))],
+    ...extra,
+  });
+}
+
+const CONFIRMADA = { cotizacion: { id: 21, folio: '1357' }, decision: { desplazar: ['1294'] } };
+
+const generalesDe = (op, domicilio = '564') =>
+  op.estado.renglones.filter(r => r.tipo === 'cust_branch' && r.entidad === domicilio && r.rol === 'general').map(r => r.personId);
+
+test('CE14: confirmado, el Contacto de entrega queda como el unico General del domicilio, con Entrega', async () => {
+  const op = conGeneral({});
+  const r = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...op.deps, ahora: AHORA });
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.deepEqual(generalesDe(op), [r.personId]);
+  assert.deepEqual(enOperam(op, r.personId).roles, ['general', 'delivery']);
+  assert.deepEqual(r.noAplicados, []);
+  assert.equal(r.pasos[0].status, 'ok');
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+});
+
+test('CE15: el desplazado sin otro rol queda como contacto de Entrega; con otros roles solo pierde el General', async () => {
+  const solo = conGeneral({});
+  await escribirContactoEntrega(solicitud(CONFIRMADA), { ...solo.deps, ahora: AHORA });
+  assert.deepEqual(enOperam(solo, '1294').roles, ['delivery']);
+
+  const conOtros = conGeneral({ roles: ['general', 'invoice'] });
+  await escribirContactoEntrega(solicitud(CONFIRMADA), { ...conOtros.deps, ahora: AHORA });
+  assert.deepEqual(enOperam(conOtros, '1294').roles, ['invoice']);
+  // Sus datos no cambian: solo se le quita el rol.
+  assert.deepEqual({ ...enOperam(conOtros, '1294'), roles: null }, { nombre: 'Alfa G', cel: '5500000292', telefono: '', secundario: '', correo: '', roles: null });
+});
+
+test('CE16: las Notas del desplazado ganan la linea fechada con quien lo reemplazo y desde que cotizacion, sin perder las previas', async () => {
+  const conNotas = conGeneral({ notes: 'Compra los lunes' });
+  await escribirContactoEntrega(solicitud(CONFIRMADA), { ...conNotas.deps, ahora: AHORA });
+  assert.equal(conNotas.estado.personas.get('1294').notes, `Compra los lunes\n${LINEA_1357}`);
+
+  const sinNotas = conGeneral({});
+  await escribirContactoEntrega(solicitud(CONFIRMADA), { ...sinNotas.deps, ahora: AHORA });
+  assert.equal(sinNotas.estado.personas.get('1294').notes, LINEA_1357);
+});
+
+// Revalida al reintentar (patron de #368): la decision vale para los Generales por los
+// que se pregunto. Si entre la pregunta y la respuesta el General cambio, se vuelve a
+// preguntar y nunca se escribe sobre otro desplazado.
+test('CE17: si el General del domicilio ya no es el que el vendedor confirmo, vuelve a preguntar por el nuevo y no escribe nada', async () => {
+  const op = operam({
+    personas: [...PERSONAS, { personId: '1297', name: 'Beta Nueva', name2: 'General' }],
+    renglones: [...RENGLONES, { id: '3595', personId: '1297', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
+  });
+  const r = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...op.deps, ahora: AHORA });
+  assert.equal(r.tipo, 'pregunta');
+  assert.deepEqual(r.desplazados.map(d => d.personId), ['1297']);
+  assert.match(r.mensaje, /Beta Nueva General/);
+  assert.equal(op.pedidos('crear').length, 0);
+  assert.equal(op.pedidos('editar').length, 0);
+});
+
+test('CE18: si al reintentar el domicilio ya no tiene General, el Contacto de entrega se crea como General sin desplazar a nadie', async () => {
+  const op = operam();
+  const r = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...op.deps, ahora: AHORA });
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.deepEqual(generalesDe(op), [r.personId]);
+  assert.equal(op.pedidos('editar').length, 0);
+});
+
+// Relee y compara siempre (CODING_STANDARDS.md regla 6): la web puede guardar sin los
+// roles o sin la nota y responder normal.
+test('CE19: si Operam no guarda los roles o la nota del desplazado, la relectura lo reporta y el paso avisa', async () => {
+  const sinRoles = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...conGeneral({}, { ignoraAlEditar: ['roles'] }).deps, ahora: AHORA });
+  assert.equal(sinRoles.pasos[0].status, 'warn');
+  assert.deepEqual(sinRoles.noAplicados.map(n => n.campo), ['roles-desplazado', 'general-unico']);
+  assert.match(sinRoles.pasos[0].mensaje, /unico contacto General/);
+
+  const sinNota = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...conGeneral({}, { ignoraAlEditar: ['notas'] }).deps, ahora: AHORA });
+  assert.equal(sinNota.pasos[0].status, 'warn');
+  assert.deepEqual(sinNota.noAplicados.map(n => [n.campo, n.esperado]), [['notas-desplazado', LINEA_1357]]);
+});
+
+// Creada la persona nueva, una falla al desplazar puede dejar dos Generales: el aviso
+// lo dice para que el vendedor lo revise, sin afirmar que nada se escribio.
+test('CE20: si falla quitarle el General al desplazado, el aviso dice que puede haber dos contactos General', async () => {
+  const op = conGeneral({}, { falla: { editar: 'FA respondio 500' } });
+  const r = await escribirContactoEntrega(solicitud(CONFIRMADA), { ...op.deps, ahora: AHORA });
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.pasos[0].status, 'warn');
+  assert.match(r.pasos[0].mensaje, /Lucia Recibe Almacen/);
+  assert.match(r.pasos[0].mensaje, /Alfa G Prueba/);
+  assert.match(r.pasos[0].mensaje, /dos contactos General/);
+  assert.match(r.pasos[0].detalle, /FA respondio 500/);
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
 });

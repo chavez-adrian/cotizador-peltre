@@ -15,6 +15,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
+import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -446,4 +447,71 @@ test('#558 la Pre-cotizacion no se bloquea: guardar sin telefono ni domicilio de
   const html = await supertest(app).get(`/api/cotizacion/html/${guardar.body.id}`);
   assert.equal(html.status, 200);
   assert.ok(html.text.includes('Hotel Azul Centro'));
+});
+
+// --- Contacto de entrega pendiente (#562) --------------------------------------
+// La pregunta del General del domicilio viaja en una respuesta 200 (el quote YA esta
+// subido) junto al folio, y el cuerpo con el que se reintenta lo dicta el SERVIDOR,
+// como en CONFIRMAR_OTRA_RAZON_SOCIAL: una salida para confirmar y otra para conservar.
+
+const MARCA_562 = {
+  fecha: '2026-10-09T18:00:00.000Z', clienteId: 15, domicilioId: 564, motivo: 'general-existente',
+  contacto: { nombre: 'Lucia Recibe' },
+  desplazados: [{ personId: '1289', nombre: 'MEDICION556b General Prueba', roles: ['general'] }],
+  mensaje: 'Lucia Recibe queda como contacto General y de Entrega del domicilio de entrega en Operam. MEDICION556b General Prueba deja de ser el contacto General de este domicilio y queda como contacto de Entrega.',
+  detalle: 'domicilio 564 del cliente 15: General actual persona 1289; un segundo General no se escribe',
+};
+
+function conContactoPendiente() {
+  const id = agregarCotizacion({ folioOperam: '1330', cliente: { customerId: 15, nombreEntrega: 'Lucia Recibe' } });
+  marcar(id, { contactoEntregaPendiente: MARCA_562 });
+  return id;
+}
+
+test('#562 con el Contacto de entrega pendiente, la ruta de crear responde yaSubida con la pregunta y los dos cuerpos de reintento, sin tocar Operam', async () => {
+  const id = conContactoPendiente();
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, {
+    ok: true, folio: '1330', yaSubida: true, customer_id: 15,
+    preguntaContacto: {
+      codigo: 'CONFIRMAR_DESPLAZAR_GENERAL', mensaje: MARCA_562.mensaje, detalle: MARCA_562.detalle,
+      nuevo: 'Lucia Recibe', desplazados: [{ nombre: 'MEDICION556b General Prueba', roles: ['general'] }],
+      reintentar: {
+        confirmar: { contactoEntrega: { desplazar: ['1289'] } },
+        conservar: { contactoEntrega: { conservar: true } },
+      },
+    },
+  });
+});
+
+test('#562 conservar al General: 200 con el paso omitido y la marca fuera, sin tocar Operam', async () => {
+  const id = conContactoPendiente();
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({ contactoEntrega: { conservar: true } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.folio, '1330');
+  assert.equal(res.body.contactoEntrega, true);
+  assert.equal(res.body.preguntaContacto, undefined);
+  assert.deepEqual(res.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'omitido']]);
+  assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
+});
+
+// De punta a punta con el adaptador REAL de la web legacy (paginas medidas del
+// domicilio 564): la decision llega al modulo, que crea a la persona, desplaza a la
+// 1289 y relee. Una sola sesion web, que se cierra.
+test('#562 confirmar: el reintento escribe el Contacto de entrega como unico General y desplaza a la 1289 por la web legacy', async () => {
+  const id = conContactoPendiente();
+  const fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  globalThis.fetch = fa.fetch;
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({ contactoEntrega: { desplazar: ['1289'] } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.contactoEntrega, true);
+  assert.deepEqual(res.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok']]);
+  assert.match(res.body.steps[0].mensaje, /MEDICION556b General Prueba dejo de ser General y quedo como contacto de Entrega/);
+  const update = fa.pedidos.find(p => p.params.has('contactsUPDATE[1289]'));
+  assert.deepEqual(update.params.getAll('assgn[]'), ['4']);
+  assert.match(update.params.get('notes'), /^medicion 556b, borrar\n\d{4}-\d{2}-\d{2}: deja de ser el contacto General de este domicilio; lo reemplaza Lucia Recibe desde la Cotizaci\u00f3n 1330\.$/);
+  assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
+  assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
 });

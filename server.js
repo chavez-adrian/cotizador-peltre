@@ -3498,6 +3498,29 @@ function cuerpoContactoEntrega(r) {
   return { error: r.mensaje, detalle: r.detalle, codigo: CODIGO_ENTREGA_INCOMPLETA, campo: r.campo, faltan: r.faltan };
 }
 
+// El domicilio de entrega ya tenia un contacto General (#562): la pregunta viaja en una
+// respuesta 200 junto al folio -- el quote YA esta subido, y un 428 haria que el
+// navegador lo tratara como no subido -- y el cuerpo con el que se reintenta lo dicta el
+// SERVIDOR, como en la otra razon social (#345): `confirmar` (deja de ser General) o
+// `conservar` (se queda). El navegador solo reenvia el que elija el vendedor.
+const CODIGO_DESPLAZAR_GENERAL = 'CONFIRMAR_DESPLAZAR_GENERAL';
+
+function conPreguntaContacto(p) {
+  if (!p) return {};
+  const desplazados = p.desplazados || [];
+  return {
+    preguntaContacto: {
+      codigo: CODIGO_DESPLAZAR_GENERAL, mensaje: p.mensaje, detalle: p.detalle,
+      nuevo: p.contacto?.nombre || '',
+      desplazados: desplazados.map(d => ({ nombre: d.nombre, roles: d.roles })),
+      reintentar: {
+        confirmar: { contactoEntrega: { desplazar: desplazados.map(d => d.personId) } },
+        conservar: { contactoEntrega: { conservar: true } },
+      },
+    },
+  };
+}
+
 // Subir la cotizacion a Operam (#83): la secuencia vive en lib/subida-quote.js
 // (subirQuote, #525/#526, ADR-0022) y aqui solo se traduce su valor a la respuesta
 // de siempre. El modulo toma el candado, lee el registro, corta "ya subida" y
@@ -3521,7 +3544,9 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   const crearNuevo = req.body?.crearNuevo === true;
   const sucursalDe = req.body?.sucursalDe ?? null;
   const otraRazonSocial = req.body?.otraRazonSocial === true;
-  const r = await subirQuote(id, { customerIdElegido, sucursalDe, crearNuevo, otraRazonSocial }, {
+  // #562: la respuesta del vendedor a la pregunta del General (la valida el modulo).
+  const contactoEntrega = req.body?.contactoEntrega ?? null;
+  const r = await subirQuote(id, { customerIdElegido, sucursalDe, crearNuevo, otraRazonSocial, contactoEntrega }, {
     listaDelQuote, transportistaDelQuote, obtenerListasPrecios,
   });
   if (r === OCUPADO) {
@@ -3536,7 +3561,9 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   }
   // #167 causa 3: eco del customer_id ya ligado -- terminarSubida (app.js) lo lee de esta
   // misma respuesta para refrescar el chip Fiscal (ver app.js #93).
-  if (r.tipo === 'ya-subida') return res.json({ ok: true, folio: r.folio, yaSubida: true, customer_id: r.clienteId });
+  if (r.tipo === 'ya-subida') return res.json({ ok: true, folio: r.folio, yaSubida: true, customer_id: r.clienteId, ...conPreguntaContacto(r.preguntaContacto) });
+  // #562: la respuesta a la pregunta del General, sobre una cotizacion ya subida.
+  if (r.tipo === 'contacto-entrega') return res.json({ ok: true, folio: r.folio, contactoEntrega: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) });
   if (r.tipo === 'pregunta' && r.motivo === 'otra-razon-social') {
     // El cuerpo del reintento lo dicta el SERVIDOR (#345): en el camino del alta la
     // pregunta puede nacer de un candidato elegido, de "es otro domicilio de este
@@ -3554,8 +3581,8 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   if (r.tipo === 'bloqueo' && r.etapa === 'alta') return responderBloqueoAlta(res, r);
   const delAlta = r.camino === 'alta' ? { customer_id: r.clienteId, steps: r.pasos } : {};
   if (r.tipo === 'lograda') {
-    if (r.camino === 'alta') return res.json({ ok: true, folio: r.folio, customer_id: r.clienteId, clienteGenerico: true, steps: r.pasos });
-    return res.json({ ok: true, folio: r.folio, steps: r.pasos });
+    if (r.camino === 'alta') return res.json({ ok: true, folio: r.folio, customer_id: r.clienteId, clienteGenerico: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) });
+    return res.json({ ok: true, folio: r.folio, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) });
   }
   // Bloqueos del quote. El cliente no identificado (#68) es un problema de datos de
   // la cotizacion: 422 solo con el mensaje (solo ocurre en el camino normal). El
