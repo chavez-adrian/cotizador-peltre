@@ -515,3 +515,53 @@ test('#562 confirmar: el reintento escribe el Contacto de entrega como unico Gen
   assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
   assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
 });
+
+// --- #563: la pregunta por los datos de la persona elegida ---------------------
+// Mismo canal que #562: la marca, la pregunta junto al folio y los cuerpos de
+// reintento que dicta el servidor. Con casillas que se pisarian, cada una viaja con su
+// valor viejo y el nuevo, y `confirmar` lleva lo que se pregunto (el modulo lo revalida).
+const MARCA_563 = {
+  fecha: '2026-10-09T18:00:00.000Z', clienteId: '15', domicilioId: '564', motivo: 'pisa-datos',
+  contacto: { nombre: 'Lucia Recibe' }, persona: { personId: '1249', nombre: 'Adrian Bosques Nombre' },
+  desplazados: [{ personId: '1289', nombre: 'MEDICION556b General Prueba', roles: ['general'] }],
+  pisa: [
+    { personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '5512345678' },
+    { personId: '1249', campo: 'secundario', viejo: '55 7777 0000', nuevo: '55 8888 0000', pierde: true },
+  ],
+  mensaje: 'Se cambian datos que Adrian Bosques Nombre ya tenia en Operam.', detalle: 'persona 1249',
+};
+
+test('#563 con casillas que se pisarian, yaSubida trae cada una con su valor viejo y el nuevo y confirmar lleva lo que se pregunto', async () => {
+  const id = agregarCotizacion({ folioOperam: '1330', cliente: { customerId: 15, nombreEntrega: 'Lucia Recibe' } });
+  marcar(id, { contactoEntregaPendiente: MARCA_563 });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.preguntaContacto, {
+    codigo: 'CONFIRMAR_PISAR_CONTACTO', mensaje: MARCA_563.mensaje, detalle: MARCA_563.detalle,
+    nuevo: 'Adrian Bosques Nombre', desplazados: [{ nombre: 'MEDICION556b General Prueba', roles: ['general'] }],
+    pisa: [
+      { campo: 'telefono', viejo: '55 8888 0000', nuevo: '5512345678' },
+      { campo: 'secundario', viejo: '55 7777 0000', nuevo: '55 8888 0000', pierde: true },
+    ],
+    reintentar: {
+      confirmar: { contactoEntrega: { desplazar: ['1289'], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }, { personId: '1249', campo: 'secundario', viejo: '55 7777 0000' }] } },
+      conservar: { contactoEntrega: { conservar: true } },
+    },
+  });
+});
+
+// La persona elegida en el selector viaja con la cotizacion: el guardado la conserva y
+// Editar (GET /api/cotizaciones/:id) la devuelve, para que el navegador la reponga y la
+// actualizacion edite a ESA persona.
+test('#563 el person_id de la persona elegida se guarda con la cotizacion y Editar lo devuelve', async () => {
+  const guardar = await supertest(app).post('/api/cotizacion').set('Authorization', TOKEN).send({
+    fecha: '2026-10-09', vigencia: '2026-11-08', tier: 'M100',
+    cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', calle: 'Av. Juarez 45', cpEntrega: '56530', nombreEntrega: 'Lucia Recibe', celEntrega: '5512345678', contactoEntregaPersonId: '1249' },
+    items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, unidad: 'pza', precio: 100, descuento: 0 }],
+    subtotal: 10000, iva: 1600, total: 11600, notas: [],
+  });
+  assert.equal(guardar.status, 200, JSON.stringify(guardar.body));
+  const editar = await supertest(app).get(`/api/cotizaciones/${guardar.body.id}`).set('Authorization', TOKEN);
+  assert.equal(editar.status, 200);
+  assert.equal(editar.body.cliente.contactoEntregaPersonId, '1249');
+});

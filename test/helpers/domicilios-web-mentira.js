@@ -30,11 +30,23 @@ const ETIQUETA_ROL = { 1: 'General', 2: 'Invoices', 3: 'Orders', 4: 'Deliveries'
 export function webDeMentiras({ despuesDeEditar = GENERAL_564, errorAlAgregar = null, tabla = CONTACTOS_564, errorAlActualizar = null } = {}) {
   const estado = { pedidos: [], agregadas: [], editadas: [] };
   // Lo que la web pinta tras actualizar a una persona: sus Asignaciones son las del
-  // assgn[] que llego (REPLACE).
+  // assgn[] que llego (REPLACE) y sus casillas (#563) las que llegaron: Telefono,
+  // Telefono Secundario, Cel y email son las columnas 4 a 7 de la tabla.
+  const CELDAS_CASILLAS = { 3: 'phone', 4: 'phone2', 5: 'fax', 6: 'email' };
+  const conCasillas = (fila, p) => {
+    let i = -1;
+    return fila.replace(/<td[^>]*>[\s\S]*?<\/td>/g, (td) => {
+      i += 1;
+      const llave = CELDAS_CASILLAS[i];
+      if (!llave) return td;
+      const v = p.get(llave) ?? '';
+      return llave === 'email' ? `<td ><a href='mailto:${v}'>${v}</a></td>` : `<td >${v}</td>`;
+    });
+  };
   const conEditadas = (html) => estado.editadas.reduce((h, p) => {
     const pid = [...p.keys()].find((k) => k.startsWith('contactsUPDATE[')).slice('contactsUPDATE['.length, -1);
     const etiquetas = p.getAll('assgn[]').map((c) => ETIQUETA_ROL[c]).join(',');
-    return h.split(/(?=<tr class=')/).map((fila) => (fila.includes(`contactsEdit[${pid}]`) ? fila.replace(/<td >[^<]*<\/td>/, `<td >${etiquetas}</td>`) : fila)).join('');
+    return h.split(/(?=<tr class=')/).map((fila) => (fila.includes(`contactsEdit[${pid}]`) ? conCasillas(fila.replace(/<td >[^<]*<\/td>/, `<td >${etiquetas}</td>`), p) : fila)).join('');
   }, html);
   const conAgregadas = () => conEditadas(estado.agregadas.reduce((html, p, i) => {
     const etiquetas = p.getAll('assgn[]').map((c) => ETIQUETA_ROL[c]).join(',');
@@ -45,14 +57,15 @@ export function webDeMentiras({ despuesDeEditar = GENERAL_564, errorAlAgregar = 
       `<td align='center'><button type='submit' class='editbutton' name='contactsDelete[${pid}]' value='1' title='Eliminar' /></button>\n</td></tr>\n`;
     return html.replace(/<\/table><\/center>(\s*<br><center><button)/, (_, resto) => fila.repeat(p.getAll('assgn[]').length) + '</table></center>' + resto);
   }, tabla));
-  // El formulario de editar de la 1289 despues de la ultima actualizacion: sus Notas y
-  // sus roles marcados son los que se mandaron.
+  // El formulario de editar de la 1289 despues de la ultima actualizacion: sus Notas,
+  // sus roles marcados y sus casillas (#563) son los que se mandaron.
   const formularioDeEditar = () => {
     const ultima = estado.editadas.at(-1);
     if (!ultima) return EDITAR_1289;
     const marcados = ultima.getAll('assgn[]');
     return EDITAR_1289
       .replace(/(<textarea name='notes'[^>]*>)[^<]*(<\/textarea>)/, (_, a, b) => `${a}${ultima.get('notes')}${b}`)
+      .replace(/(<input [^>]*name="(phone|phone2|fax|email)"[^>]*value=")[^"]*(")/g, (_, a, llave, b) => `${a}${ultima.get(llave) ?? ''}${b}`)
       .replace(/<option groupid='(\d)'\s*(?:selected)?\s*value='(\d)'>/g, (_, g, v) => `<option groupid='${g}' ${marcados.includes(v) ? 'selected ' : ''} value='${v}'>`);
   };
   estado.fetch = async (url, init = {}) => {

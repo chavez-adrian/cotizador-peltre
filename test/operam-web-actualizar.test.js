@@ -666,3 +666,29 @@ test('#409 actualizarQuoteOperam: un domicilio ajeno al cliente no se escribe y 
     globalThis.fetch = fetchOriginal;
   }
 });
+
+// === #563: a quien quedo el quote ===
+// Escrito el quote, la Subida del quote deja el Contacto de entrega en el domicilio de
+// entrega del quote. El camino normal de crear no guarda el Cliente Operam que salio del
+// RFC, asi que la actualizacion devuelve el Cliente Operam y el domicilio que viajaron
+// en el ProcessOrder, como la creacion devuelve los suyos.
+test('#563 actualizarQuoteOperam: devuelve el Cliente Operam y el domicilio del ProcessOrder', async () => {
+  _resetSesionWeb();
+  const fetchOriginal = globalThis.fetch;
+  const { fetchMock } = crearServidorFA({
+    lineasIniciales: [{ stockId: 'VIEJO1', desc: 'x', qty: 1, price: 1, disc: 0 }],
+  });
+  globalThis.fetch = fetchMock;
+  try {
+    const data = dataDe([{ codigo: 'TA14Y31111', descripcion: 'Taza', cantidad: 1, precio: 100, descuento: 0 }]);
+    data.cliente.branchId = '15';
+    const r = await actualizarQuoteOperam(QUOTE_NO, data);
+    assert.deepEqual([r.customerId, r.branchId], [CUSTOMER_ID, '15']);
+
+    _resetSesionWeb();
+    const sinElegir = await actualizarQuoteOperam(QUOTE_NO, dataDe([{ codigo: 'TA14Y31111', descripcion: 'Taza', cantidad: 1, precio: 100, descuento: 0 }]));
+    assert.deepEqual([sinElegir.customerId, sinElegir.branchId], [CUSTOMER_ID, BRANCH_INICIAL]);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});

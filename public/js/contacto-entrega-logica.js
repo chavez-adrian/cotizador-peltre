@@ -73,6 +73,44 @@ export function bloqueoContactoEntrega(cliente) {
 // le manda las personas (server.js), para que los dos digan el mismo numero.
 const ORDEN_TELEFONO_PERSONA = ['cel', 'telefono', 'secundario'];
 
+// La persona que el vendedor eligio en el selector (#563, ADR-0024 reglas 5 y 7): la
+// cotizacion la guarda por su person_id (data.cliente.contactoEntregaPersonId), la
+// identidad de un Contacto en Operam, y la Subida del quote edita a ESA persona en vez
+// de crear otra. Se fija al ELEGIR una opcion y no se deduce del <select> al guardar:
+// la repintada del selector deja de reconocer la opcion en cuanto el vendedor le cambia
+// el celular, que es justo lo que viene a hacer.
+//
+// La opcion elegida -> su person_id; "+ Nuevo contacto" o una opcion que no es una
+// persona de Operam (el Contacto del cotizador) -> null.
+export function personIdDeOpcion(contactos, valor) {
+  if (valor === 'nuevo') return null;
+  const c = (contactos || [])[parseInt(valor, 10)];
+  return c?.personId != null && String(c.personId).trim() !== '' ? String(c.personId) : null;
+}
+
+// La repintada del selector con la persona ya elegida. `base` es lo que decide la regla
+// de siempre (seleccionContactoEntrega o, al cambiar de domicilio,
+// contactoAlCambiarDomicilio): `{ indice, aplicar }`. Devuelve `{ indice, aplicar,
+// personId }`:
+//   - "+ Nuevo contacto": sin persona.
+//   - el selector aplica una opcion (pone sus datos en los campos): su persona.
+//   - si no, la persona elegida sigue en la lista: el selector se queda en ella SIN
+//     aplicar (lo capturado manda) y conserva su person_id. Cambiarle el nombre no la
+//     vuelve otra persona: el nombre de la cotizacion es el del documento y el de
+//     Operam no se toca (regla 5).
+//   - la persona elegida no esta en la lista: al cambiar de domicilio se suelta (las
+//     personas son de cada domicilio); en otra repintada se conserva (al Editar, la
+//     lista llega despues que la cotizacion).
+export function personaContactoEntrega({ contactos, base, personId, capturaManual, cambioDeDomicilio = false }) {
+  const lista = contactos || [];
+  if (capturaManual) return { ...base, personId: null };
+  if (base.aplicar) return { ...base, personId: base.indice == null ? null : personIdDeOpcion(lista, String(base.indice)) };
+  if (personId == null || String(personId) === '') return { ...base, personId: null };
+  const i = lista.findIndex(c => c?.personId != null && String(c.personId) === String(personId));
+  if (i !== -1) return { indice: i, aplicar: false, personId: String(personId) };
+  return { ...base, personId: cambioDeDomicilio ? null : String(personId) };
+}
+
 export function telefonoDePersona(casillas) {
   for (const llave of ORDEN_TELEFONO_PERSONA) {
     const numero = String(casillas?.[llave] ?? '').trim();

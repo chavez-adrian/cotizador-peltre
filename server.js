@@ -3474,7 +3474,9 @@ export async function barrerCotizacionesDedupVencidas(ahora = new Date()) {
 function respuestaActualizacion(r) {
   if (r.tipo === 'bloqueo' && esBloqueoContactoEntrega(r)) return { status: 422, cuerpo: cuerpoContactoEntrega(r) };
   if (r.tipo === 'bloqueo') return { status: 409, cuerpo: { error: r.mensaje } };
-  if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos } };
+  // #563: reescrito el quote, el Contacto de entrega puede quedar pendiente de la
+  // pregunta al vendedor, que viaja junto al folio como al crear.
+  if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) } };
   return {
     status: 200,
     cuerpo: {
@@ -3504,17 +3506,28 @@ function cuerpoContactoEntrega(r) {
 // SERVIDOR, como en la otra razon social (#345): `confirmar` (deja de ser General) o
 // `conservar` (se queda). El navegador solo reenvia el que elija el vendedor.
 const CODIGO_DESPLAZAR_GENERAL = 'CONFIRMAR_DESPLAZAR_GENERAL';
+// #563: la persona elegida ya tenia en Operam datos que se pisarian (y quiza tambien
+// hay un General a desplazar): la pregunta lleva cada casilla con su valor viejo y el
+// nuevo, y `confirmar` lleva lo que se pregunto, que el modulo revalida.
+const CODIGO_PISAR_CONTACTO = 'CONFIRMAR_PISAR_CONTACTO';
 
 function conPreguntaContacto(p) {
   if (!p) return {};
   const desplazados = p.desplazados || [];
+  const pisa = p.pisa || [];
   return {
     preguntaContacto: {
-      codigo: CODIGO_DESPLAZAR_GENERAL, mensaje: p.mensaje, detalle: p.detalle,
-      nuevo: p.contacto?.nombre || '',
+      codigo: pisa.length ? CODIGO_PISAR_CONTACTO : CODIGO_DESPLAZAR_GENERAL, mensaje: p.mensaje, detalle: p.detalle,
+      nuevo: p.persona?.nombre || p.contacto?.nombre || '',
       desplazados: desplazados.map(d => ({ nombre: d.nombre, roles: d.roles })),
+      ...(pisa.length ? { pisa: pisa.map(x => ({ campo: x.campo, viejo: x.viejo, nuevo: x.nuevo, ...(x.pierde ? { pierde: true } : {}) })) } : {}),
       reintentar: {
-        confirmar: { contactoEntrega: { desplazar: desplazados.map(d => d.personId) } },
+        confirmar: {
+          contactoEntrega: {
+            desplazar: desplazados.map(d => d.personId),
+            ...(pisa.length ? { pisar: pisa.map(x => ({ personId: x.personId, campo: x.campo, viejo: x.viejo })) } : {}),
+          },
+        },
         conservar: { contactoEntrega: { conservar: true } },
       },
     },

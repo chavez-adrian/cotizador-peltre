@@ -1000,3 +1000,111 @@ test('#562 una decision sin contacto pendiente no escribe nada: es ya-subida', a
   assert.equal(r.preguntaContacto, undefined);
   assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
 });
+
+// --- #563: la persona elegida y la actualizacion -------------------------------
+// La cotizacion guarda el person_id de la persona que el vendedor eligio en el
+// selector (data.cliente.contactoEntregaPersonId) y viaja al modulo, que la edita en
+// vez de crear otra. La Subida del quote cubre crear Y actualizar (ADR-0022): al
+// reescribir el quote el Contacto de entrega tambien se escribe, en el Cliente Operam
+// y el domicilio a los que quedo el quote, con la misma pregunta, marca y reintento.
+
+const PREGUNTA_PISA = {
+  tipo: 'pregunta', motivo: 'pisa-datos',
+  persona: { personId: '1249', nombre: 'Adrian Bosques Nombre' }, desplazados: [],
+  pisa: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' }],
+  mensaje: 'Se cambian datos que Adrian Bosques Nombre ya tenia en Operam: el Telefono pasa de 55 8888 0000 a +52 55 1234 5678 (55 8888 0000 queda en Telefono Secundario).',
+  detalle: 'domicilio 564 del cliente 15: persona 1249: phone "55 8888 0000" -> "+52 55 1234 5678"',
+  pasos: [{ name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes los cambios a los datos de Adrian Bosques Nombre.', detalle: 'pendiente' }],
+};
+
+test('#563 crear: el person_id de la persona elegida viaja al modulo con el Contacto de entrega', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ ...LUCIA, contactoEntregaPersonId: '1249' })], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: CONTACTO_ESCRITO });
+  await subirQuote(21, {}, m.deps);
+  assert.deepEqual(m.llamadas.escribirContactoEntrega[0][0].contacto, { nombre: 'Lucia Recibe', telefono: '+52 55 1234 5678', correo: 'lucia@example.com', personId: '1249' });
+});
+
+const ACTUALIZADO_EN_564 = () => ({ ...RESULTADOS_ACTUALIZAR.exito(), customerId: '15', branchId: '564' });
+
+test('#563 actualizar: despues de reescribir el quote escribe el Contacto de entrega en el Cliente Operam y el domicilio del quote', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion({ cliente: { ...cotizacion().data.cliente, ...LUCIA, contactoEntregaPersonId: '1249' } })],
+    actualizar: ACTUALIZADO_EN_564(), contactoEntrega: CONTACTO_ESCRITO,
+  });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.deepEqual(m.llamadas.escribirContactoEntrega, [[{
+    clienteId: '15', domicilioId: '564',
+    contacto: { nombre: 'Lucia Recibe', telefono: '+52 55 1234 5678', correo: 'lucia@example.com', personId: '1249' },
+  }]]);
+  assert.deepEqual(r.pasos.at(-1), CONTACTO_ESCRITO.pasos[0]);
+  assert.equal(r.preguntaContacto, undefined);
+});
+
+test('#563 actualizar: si el quote no se reescribio, el Contacto de entrega no se escribe', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion()], actualizar: RESULTADOS_ACTUALIZAR.escritoSinVerificar(), contactoEntrega: CONTACTO_ESCRITO });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'no-actualizada');
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+});
+
+test('#563 actualizar con datos que se pisarian: actualizada con la pregunta junto al folio y la marca del contacto pendiente', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion()], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: PREGUNTA_PISA });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.deepEqual(r.preguntaContacto, {
+    motivo: 'pisa-datos', contacto: { nombre: '' }, desplazados: [], persona: PREGUNTA_PISA.persona, pisa: PREGUNTA_PISA.pisa,
+    mensaje: PREGUNTA_PISA.mensaje, detalle: PREGUNTA_PISA.detalle,
+  });
+  const marca = m.registro(7).data.contactoEntregaPendiente;
+  assert.deepEqual([marca.clienteId, marca.domicilioId, marca.motivo, marca.pisa], ['15', '564', 'pisa-datos', PREGUNTA_PISA.pisa]);
+  assert.equal(m.registro(7).data.quoteDesactualizado, null);
+});
+
+test('#563 la entrada unica con la marca del guardado actualiza y trae la pregunta del contacto con operacion actualizar', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ quoteDesactualizado: { fecha: '2026-10-04T10:00:00.000Z', pendiente: true } })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: PREGUNTA_PISA });
+  const r = await subirQuote(7, {}, m.deps);
+  assert.equal(r.operacion, 'actualizar');
+  assert.equal(r.tipo, 'actualizada');
+  assert.deepEqual(r.preguntaContacto.pisa, PREGUNTA_PISA.pisa);
+});
+
+test('#563 actualizar: el contacto escrito quita la marca pendiente que quedaba; si la web legacy falla, la marca se queda', async () => {
+  const escrito = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ contactoEntregaPendiente: MARCA_ALFA })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: CONTACTO_ESCRITO });
+  await actualizarQuote(7, escrito.deps);
+  assert.equal(escrito.registro(7).data.contactoEntregaPendiente, null);
+
+  const bloqueo = { tipo: 'bloqueo', motivo: 'operam', mensaje: 'No se pudo', detalle: 'FA 500', pasos: [{ name: 'contacto de entrega', status: 'error', mensaje: 'No se pudo escribir el Contacto de entrega en el domicilio de entrega en Operam.', detalle: 'FA 500' }] };
+  const caida = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ contactoEntregaPendiente: MARCA_ALFA })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: bloqueo });
+  const r = await actualizarQuote(7, caida.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.deepEqual(caida.registro(7).data.contactoEntregaPendiente, MARCA_ALFA);
+  assert.deepEqual(r.pasos.at(-1), bloqueo.pasos[0]);
+});
+
+// El reintento con la decision del vendedor: el cuerpo que dicta el servidor lleva lo
+// que se pregunto (las casillas con su valor viejo), y el modulo revalida contra Operam.
+const MARCA_PISA = {
+  fecha: '2026-10-03T12:00:00.000Z', clienteId: '15', domicilioId: '564', motivo: 'pisa-datos',
+  contacto: { nombre: 'Lucia Recibe' }, desplazados: [], persona: PREGUNTA_PISA.persona, pisa: PREGUNTA_PISA.pisa,
+  mensaje: PREGUNTA_PISA.mensaje, detalle: PREGUNTA_PISA.detalle,
+};
+
+test('#563 reintento confirmado con casillas a pisar: la decision llega al modulo con lo que se pregunto', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)], contactoEntrega: CONTACTO_ESCRITO });
+  const r = await subirQuote(21, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] } }, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.deepEqual(solicitud.decision, { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] });
+  assert.deepEqual([solicitud.clienteId, solicitud.domicilioId], ['15', '564']);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+});
+
+test('#563 conservar con casillas a pisar: no toca Operam y el paso dice que sus datos se quedan como estaban', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)] });
+  const r = await subirQuote(21, { contactoEntrega: { conservar: true } }, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.equal(r.pasos[0].status, 'omitido');
+  assert.match(r.pasos[0].mensaje, /Adrian Bosques Nombre conserva sus datos en Operam/);
+  assert.doesNotMatch(r.pasos[0].mensaje, /sigue como contacto General/);
+});

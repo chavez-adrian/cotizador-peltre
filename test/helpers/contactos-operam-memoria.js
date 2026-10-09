@@ -30,15 +30,17 @@
 //     domicilio, el unico lugar que trae sus Notas: `{ personId, nombre, apellido,
 //     referencia, roles, casillas, notas }`. Una persona que no esta en el domicilio
 //     lanza, como la web (no hay boton contactsEdit para ella).
-//   - `editar(personId, { roles, notas })` (#562): repostea ese formulario con los
-//     roles (assgn[] es REPLACE: los renglones de la persona en el domicilio quedan
-//     exactamente esos) y las notas; lo demas de la persona no cambia.
-//     `ignoraAlEditar` (lista: 'roles', 'notas') simula a Operam guardando sin ellos.
+//   - `editar(personId, { roles, notas, casillas })` (#562, #563): repostea ese
+//     formulario con los roles (assgn[] es REPLACE: los renglones de la persona en el
+//     domicilio quedan exactamente esos), las notas y las casillas que vengan (Cel,
+//     Telefono, Secundario, correo); lo que no viene, y el nombre siempre, no cambia.
+//     `ignoraAlEditar` (lista: 'roles', 'notas', 'cel', 'telefono', 'secundario',
+//     'correo') simula a Operam guardando sin ellos.
 //   - `cerrar()`: cierra la sesion web; queda en `sesiones`.
 // Un domicilio que no es del Cliente Operam lanza, como la guarda del adaptador real.
 // `falla: { abrirDomicilioWeb | leer | crear: 'mensaje' }` hace lanzar a esa llamada;
-// `falla.releer` solo a la lectura que sigue a una escritura; `falla.leerPersona` y
-// `falla.editar` a esas llamadas.
+// `falla.releer` solo a la lectura que sigue a una escritura (crear o editar);
+// `falla.leerPersona` y `falla.editar` a esas llamadas.
 
 const CASILLAS = ['name', 'name2', 'ref', 'phone', 'phone2', 'fax', 'email', 'notes'];
 
@@ -114,7 +116,7 @@ export function contactosOperamEnMemoria({
       return {
         async leer() {
           registrar('leer', code);
-          if (falla.releer && op.pedidos('crear').length) throw new Error(falla.releer);
+          if (falla.releer && (op.pedidos('crear').length || op.pedidos('editar').length)) throw new Error(falla.releer);
           const vistas = new Map();
           for (const r of renglonesDe('cust_branch', code)) {
             if (!vistas.has(r.personId)) {
@@ -165,8 +167,12 @@ export function contactosOperamEnMemoria({
           registrar('editar', code, personId, cambios);
           const id = String(personId);
           if (!renglonesDe('cust_branch', code).some(r => r.personId === id)) throw new Error(`la persona ${id} no esta en el domicilio ${code}`);
-          if (!ignoraAlEditar.includes('notas')) estado.personas.get(id).notes = cambios.notas ?? '';
-          if (!ignoraAlEditar.includes('roles')) {
+          const crudo = estado.personas.get(id);
+          if (cambios.notas !== undefined && !ignoraAlEditar.includes('notas')) crudo.notes = cambios.notas ?? '';
+          for (const [casilla, llave] of Object.entries(LLAVE_DE_CASILLA)) {
+            if (cambios.casillas?.[casilla] !== undefined && !ignoraAlEditar.includes(casilla)) crudo[llave] = cambios.casillas[casilla];
+          }
+          if (cambios.roles !== undefined && !ignoraAlEditar.includes('roles')) {
             estado.renglones = estado.renglones.filter(r => !(r.personId === id && r.tipo === 'cust_branch' && r.entidad === code));
             for (const rol of cambios.roles || []) {
               estado.renglones.push({ id: String(6000 + estado.renglones.length), personId: id, tipo: 'cust_branch', entidad: code, rol });

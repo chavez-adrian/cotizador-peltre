@@ -179,3 +179,46 @@ test('W11: desplazar al General navega al domicilio una sola vez y relee desde l
   assert.deepEqual(posts().map(boton), ['Edit564', 'tabs_contacts', 'contactsNEW', 'contactsADD', 'contactsEdit[1289]', 'contactsUPDATE[1289]', 'contactsEdit[1289]']);
   assert.equal(fa.pedidos.filter((p) => p.metodo === 'GET' && p.url.includes('customer_branches.php')).length, 1);
 });
+
+// #563: editar tambien escribe las casillas de la persona (Cel, Telefono, Secundario,
+// correo) en el MISMO formulario medido (contactsUPDATE), y nunca su nombre, apellido
+// ni Referencia; sin notas ni roles en la llamada, se repostean los del formulario.
+test('W12: editar con casillas manda phone, phone2, fax y email y deja nombre, apellido, Referencia, notas y roles como venian', async () => {
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const web = await abrirDomicilioWeb('15', '564');
+  await web.editar('1289', { casillas: { cel: '5512345678', telefono: '5512345678', secundario: '55 0000 0021', correo: 'lucia@example.com' } });
+  const despues = await web.leer();
+  await web.cerrar();
+  const update = posts().find((p) => p.params.has('contactsUPDATE[1289]'));
+  assert.deepEqual(
+    ['name', 'name2', 'ref', 'phone', 'phone2', 'fax', 'email', 'notes'].map((k) => update.params.get(k)),
+    ['MEDICION556b General', 'Prueba', 'MEDICION556BG', '5512345678', '55 0000 0021', '5512345678', 'lucia@example.com', 'medicion 556b, borrar'],
+  );
+  assert.deepEqual(update.params.getAll('assgn[]'), ['1']);
+  assert.deepEqual(despues.find((p) => p.personId === '1289').casillas, { cel: '5512345678', telefono: '5512345678', secundario: '55 0000 0021', correo: 'lucia@example.com' });
+});
+
+// #563, de punta a punta con el modulo: editar a la persona elegida del domicilio es la
+// pregunta (una sesion: navegar y leer la tabla) y, con la decision, la misma navegacion
+// mas el formulario de editar y su actualizacion, cuya respuesta YA es la tabla releida.
+// Es el paso del contacto que agrega la actualizacion del quote: 6 peticiones a la web
+// legacy si pregunta, 8 si escribe (con el login y la salida).
+test('W13: editar a la persona elegida por la web legacy: la pregunta son 6 peticiones y la escritura confirmada 8, y la relectura trae las casillas nuevas', async () => {
+  const { escribirContactoEntrega } = await import('../lib/contactos-operam.js');
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const solicitud = { clienteId: '15', domicilioId: '564', contacto: { nombre: 'MEDICION556b General', telefono: '5512345678', correo: '', personId: '1289' } };
+  const pregunta = await escribirContactoEntrega(solicitud);
+  assert.equal(pregunta.tipo, 'pregunta');
+  assert.deepEqual(pregunta.pisa.map((p) => [p.campo, p.viejo, p.nuevo]), [['cel', '5500000022', '5512345678']]);
+  assert.equal(fa.pedidos.length, 6);
+
+  fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const decision = { desplazar: [], pisar: pregunta.pisa.map((p) => ({ personId: p.personId, campo: p.campo, viejo: p.viejo })) };
+  const r = await escribirContactoEntrega({ ...solicitud, decision });
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.noAplicados, []);
+  assert.equal(fa.pedidos.length, 8);
+  const update = posts().find((p) => p.params.has('contactsUPDATE[1289]'));
+  assert.deepEqual(['name', 'fax', 'phone', 'email'].map((k) => update.params.get(k)), ['MEDICION556b General', '5512345678', '5512345678', 'g564@example.com']);
+  assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
+});

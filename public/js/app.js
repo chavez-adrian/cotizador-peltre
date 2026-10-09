@@ -149,7 +149,7 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 // Moneda del cliente (#297, ADR-0015): el MISMO juicio que aplica el servidor al
 // subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
-import { bloqueoContactoEntrega } from './contacto-entrega-logica.js';
+import { bloqueoContactoEntrega, personaContactoEntrega, personIdDeOpcion } from './contacto-entrega-logica.js';
 // Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
 // Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
 import { MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
@@ -436,6 +436,10 @@ function leerClienteFormulario(leyenda) {
     estado: document.getElementById('cl-estado').value,
     celEntrega: telefonoDeCampo('cl-cel-entrega'),
     emailEntrega: document.getElementById('cl-email-entrega').value,
+    // #563: la persona de Operam que el vendedor eligio en el selector (su person_id),
+    // para que la Subida del quote la edite en vez de crear otra. null = "+ Nuevo
+    // contacto" o nadie de Operam.
+    contactoEntregaPersonId: pcState.contactoEntregaPersonId ?? null,
     emailFactura: document.getElementById('cl-email-factura').value,
     referencias: document.getElementById('cl-referencias').value,
     referencia: document.getElementById('cl-referencia').value,
@@ -877,6 +881,7 @@ function restaurarClienteDelBorrador(borrador) {
   const paisEl = document.getElementById('cl-pais');
   if (paisEl) paisEl.value = campos.pais || 'MX';
   pcState.cliente = pcCliente || null;
+  pcState.contactoEntregaPersonId = campos.contactoEntregaPersonId ?? null;
   // La direccion restaurada la escribio alguien -- el vendedor o el cliente de
   // Operam de la sesion que se interrumpio -- y el selector no es dueno de
   // ninguno de los seis campos (#409).
@@ -3576,7 +3581,9 @@ function aplicarDomicilio(d) {
 // Lo lee seleccionContactoEntrega y lo limpian los dos cambios que lo desmienten:
 // otra opcion del selector y otro cliente. Otro domicilio ya no (#422): la captura
 // a mano sobrevive al cambio de domicilio.
-const pcState = { cliente: null, domicilioIdx: 0, contactoManual: false };
+// `contactoEntregaPersonId` (#563) = la persona de Operam que el vendedor eligio en ese
+// selector; la decide personaContactoEntrega (contacto-entrega-logica.js).
+const pcState = { cliente: null, domicilioIdx: 0, contactoManual: false, contactoEntregaPersonId: null };
 
 function pcEl() { return document.getElementById('pc-root'); }
 
@@ -3637,6 +3644,7 @@ function pcLimpiarCamposCliente() {
   // Los campos de entrega que este limpiador acaba de vaciar ya no son la captura
   // a mano de nadie: el cliente que sigue arranca con su autollenado (#355).
   pcState.contactoManual = false;
+  pcState.contactoEntregaPersonId = null;
 }
 
 // Punto UNICO de preparacion antes de seleccionar/crear un cliente: limpia los
@@ -4390,9 +4398,16 @@ function pcRenderContactoSelect({ contactosAntes } = {}) {
   const slot = document.getElementById('pc-contacto-slot');
   if (!slot) return;
   const contactos = pcContactosDisponibles();
-  const sel = contactosAntes
+  const base = contactosAntes
     ? contactoAlCambiarDomicilio(contactosAntes, contactos, pcCamposContactoEntrega(), pcState.contactoManual)
     : seleccionContactoEntrega(contactos, pcCamposContactoEntrega(), pcState.contactoManual);
+  // #563: la persona elegida sobrevive a la repintada aunque su celular ya no sea el
+  // de Operam, y se suelta al cambiar a un domicilio donde no esta.
+  const sel = personaContactoEntrega({
+    contactos, base, personId: pcState.contactoEntregaPersonId,
+    capturaManual: pcState.contactoManual, cambioDeDomicilio: !!contactosAntes,
+  });
+  pcState.contactoEntregaPersonId = sel.personId;
   if (contactos.length === 0) {
     slot.innerHTML = '';
     if (sel.aplicar) pcAplicarContacto(null);
@@ -4440,12 +4455,15 @@ function pcCambiarContacto() {
     // repintada leeria esos tres vacios como "todavia no hay nada" y volveria a
     // aplicar la opcion 0 encima de la decision del vendedor (#355).
     pcState.contactoManual = true;
+    pcState.contactoEntregaPersonId = null;
     pcAplicarContacto(null);
     document.getElementById('cl-nombre-entrega')?.focus();
     return;
   }
   pcState.contactoManual = false;
-  pcAplicarContacto(pcContactosDisponibles()[parseInt(val)]);
+  const contactos = pcContactosDisponibles();
+  pcState.contactoEntregaPersonId = personIdDeOpcion(contactos, val);
+  pcAplicarContacto(contactos[parseInt(val)]);
 }
 window.pcCambiarContacto = pcCambiarContacto;
 
@@ -4965,6 +4983,9 @@ async function operarEnOperam(id, slot, { conFolio = false, extraBody } = {}) {
       // #403: los pasos que hay que leer (la lista del encabezado puede no quedar
       // sin que la actualizacion falle). Descartarlos aqui los volvia invisibles.
       steps: data.steps,
+      // #563: reescrito el quote, la pregunta del Contacto de entrega (con los cuerpos
+      // de reintento que dicta el servidor), igual que al crear.
+      preguntaContacto: data.preguntaContacto,
     });
   }
   return terminarSubida(id, key, pintar, errorRed != null ? { ok: false, status: 0, error: errorRed } : {
@@ -7763,6 +7784,9 @@ async function cargarCotizacion(id, modo = 'nueva') {
     // arriba se olvida lo que habia puesto el indice del CP).
     olvidarDomicilioAsistido();
     pcState.cliente = clienteAlCargarCotizacion(c, pcState.cliente);
+    // #563: la persona de Operam que se eligio al cotizar; al repintar el selector con
+    // los contactos vivos sigue elegida aunque sus datos en Operam hayan cambiado.
+    pcState.contactoEntregaPersonId = c.contactoEntregaPersonId ?? null;
 
     // Poblar carrito
     vaciarCarrito();

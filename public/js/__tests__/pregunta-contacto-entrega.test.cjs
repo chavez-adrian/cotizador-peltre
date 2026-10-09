@@ -70,3 +70,42 @@ test('PCE5: una subida lograda sin pregunta no pinta botones del contacto', () =
   const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', steps: [] }));
   assert.deepEqual(cuerposDeLosBotones(html), []);
 });
+
+// #563: la persona elegida ya tenia datos en Operam que se pisarian. La pregunta llega
+// por el MISMO canal, tambien al Editar (la actualizacion del quote), y sus botones no
+// hablan de un General cuando no hay a quien desplazar.
+const PREGUNTA_PISA = {
+  codigo: 'CONFIRMAR_PISAR_CONTACTO',
+  mensaje: 'Se cambian datos que Adrian Bosques Nombre ya tenia en Operam: el Telefono pasa de 55 8888 0000 a 5512345678 (55 8888 0000 queda en Telefono Secundario).',
+  detalle: 'persona 1249', nuevo: 'Adrian Bosques Nombre', desplazados: [],
+  pisa: [{ campo: 'telefono', viejo: '55 8888 0000', nuevo: '5512345678' }],
+  reintentar: {
+    confirmar: { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] } },
+    conservar: { contactoEntrega: { conservar: true } },
+  },
+};
+const PASO_PISA = { name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes los cambios a los datos de Adrian Bosques Nombre.', detalle: 'pendiente' };
+
+test('PCE6: con casillas que se pisarian los botones confirman o conservan sus datos, sin hablar de un General, y reenvian el cuerpo del servidor', () => {
+  const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', yaSubida: true, steps: [], preguntaContacto: PREGUNTA_PISA }));
+  assert.match(html, /el Telefono pasa de 55 8888 0000 a 5512345678/);
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar, PREGUNTA_PISA.reintentar.conservar]);
+  assert.doesNotMatch(html, /queda como General|sigue como General/);
+  assert.match(html, /actualiza sus datos en Operam/);
+  assert.match(html, /deja sus datos en Operam como est/);
+});
+
+let interpretarActualizacionOperam, buildActualizacionStatusHtml;
+before(async () => {
+  ({ interpretarActualizacionOperam, buildActualizacionStatusHtml } = await import('../pipeline-logica.js'));
+});
+
+test('PCE7: la actualizacion lograda trae la pregunta del contacto junto al folio y el aviso pendiente no se repite como paso', () => {
+  const vista = interpretarActualizacionOperam({ ok: true, status: 200, folio: '1330', steps: [{ name: 'actualizar quote', status: 'ok' }, PASO_PISA], preguntaContacto: PREGUNTA_PISA });
+  assert.equal(vista.estado, 'actualizada');
+  assert.deepEqual(vista.preguntaContacto, PREGUNTA_PISA);
+  assert.deepEqual(vista.pasos, []);
+  const html = buildActualizacionStatusHtml(21, vista);
+  assert.match(html, /actualizada en Operam/);
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar, PREGUNTA_PISA.reintentar.conservar]);
+});

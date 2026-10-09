@@ -1706,8 +1706,14 @@ export function contactosEntregaDisponibles(domicilio, contactosCliente, contact
   const lista = [];
   for (const c of candidatos) {
     const igual = lista.find(o => mismaPersonaDeEntrega(o, c));
-    if (!igual) lista.push({ ...c, tags: c.tag ? [c.tag] : [] });
-    else if (c.tag && !igual.tags.includes(c.tag)) igual.tags.push(c.tag);
+    if (!igual) {
+      lista.push({ ...c, tags: c.tag ? [c.tag] : [] });
+      continue;
+    }
+    if (c.tag && !igual.tags.includes(c.tag)) igual.tags.push(c.tag);
+    // #563: la copia del General que guarda el domicilio llega primero y sin person_id;
+    // la opcion fundida es la persona, y su identidad viaja con ella.
+    if (igual.personId == null && c.personId != null) igual.personId = c.personId;
   }
   return lista;
 }

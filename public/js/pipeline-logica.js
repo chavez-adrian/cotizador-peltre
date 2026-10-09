@@ -422,14 +422,24 @@ function buildPreguntaContactoEntregaHtml(id, p) {
   if (!p || !p.reintentar) return '';
   const cuerpo = (x) => JSON.stringify(x || {}).replace(/"/g, '&quot;');
   const desplazados = (p.desplazados || []).map(d => escapeHtml(d.nombre || '')).join(' y ');
+  // #563: con casillas que se pisarian, las salidas son actualizar los datos de la
+  // persona elegida (y, si hay, quitarle el General al que lo era) o dejarlos como estan.
+  const nuevo = escapeHtml(p.nuevo || 'el Contacto de entrega');
+  const pisa = Array.isArray(p.pisa) && p.pisa.length > 0;
+  const si = pisa
+    ? `S&iacute;, actualiza sus datos en Operam${desplazados ? ` y ${nuevo} queda como General` : ''}`
+    : `S&iacute;, ${nuevo} queda como General`;
+  const no = pisa
+    ? `No, deja sus datos en Operam como est&aacute;n${desplazados ? ` y ${desplazados} sigue como General` : ''}`
+    : `No, ${desplazados || 'el General actual'} sigue como General`;
   const detalle = p.detalle
     ? `<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(p.detalle)}</div></details>`
     : '';
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(p.mensaje || '')}</div>
     <div>El Contacto de entrega queda pendiente en Operam hasta que contestes.</div>${detalle}
-    <button class="btn btn-sm btn-primary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.confirmar)}, this)">S&iacute;, ${escapeHtml(p.nuevo || 'el Contacto de entrega')} queda como General</button>
-    <button class="btn btn-sm btn-secondary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.conservar)}, this)">No, ${desplazados || 'el General actual'} sigue como General</button>
+    <button class="btn btn-sm btn-primary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.confirmar)}, this)">${si}</button>
+    <button class="btn btn-sm btn-secondary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.conservar)}, this)">${no}</button>
   </div>`;
 }
 
@@ -525,7 +535,15 @@ export function buildOperamStatusHtml(id, vista) {
 export function interpretarActualizacionOperam(resultado) {
   const r = resultado || {};
   const pasos = pasosParaMostrar(r.steps);
-  if (r.ok) return { estado: 'actualizada', folio: r.folio ?? null, pasos };
+  // #563: reescrito el quote, el Contacto de entrega puede quedar pendiente de la
+  // pregunta al vendedor; viaja junto al folio y el aviso pendiente no se repite.
+  if (r.ok) {
+    if (!r.preguntaContacto) return { estado: 'actualizada', folio: r.folio ?? null, pasos };
+    return {
+      estado: 'actualizada', folio: r.folio ?? null, preguntaContacto: r.preguntaContacto,
+      pasos: pasosParaMostrar((r.steps || []).filter(st => st?.name !== PASO_CONTACTO_ENTREGA)),
+    };
+  }
   if (r.status === 409) {
     return { estado: 'bloqueada', mensaje: r.error || 'Esta cotizacion no se puede actualizar en Operam', pasos };
   }
@@ -544,7 +562,7 @@ export function buildActualizacionStatusHtml(id, vista) {
   const pasos = buildPasosAltaHtml(v.pasos);
   if (v.estado === 'actualizada') {
     const folio = v.folio != null && v.folio !== '' ? ` — <strong>${escapeHtml(etiquetaFolioOperam({ folioOperam: v.folio }))}</strong>` : '';
-    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>${pasos}`;
+    return `<span class="operam-status operam-status-ok">Cotizaci&oacute;n actualizada en Operam${folio}</span>${pasos}${buildPreguntaContactoEntregaHtml(id, v.preguntaContacto)}`;
   }
   // Bloqueada = el quote ya se convirtio en pedido y Operam no deja editarlo. Desde
   // #504 no se entrega documento (seria un folio con un contenido que el quote no

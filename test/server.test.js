@@ -11,6 +11,7 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import supertest from 'supertest';
 import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
+import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
@@ -2397,7 +2398,7 @@ test('O68: subir a Operam con RFC que matchea sube al cliente correcto y persist
 // `conSelectListas` pone el `<select name='sales_type'>` que el formulario REAL de FA
 // trae (#403): sin el, la lista del encabezado no se puede escribir y el mock solo
 // prueba el camino de la abstencion. `lista` es la que el quote tiene antes.
-function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false, conSelectListas = false, lista = '12' } = {}) {
+function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = false, conSelectListas = false, lista = '12', cliente = '376', domicilio = null } = {}) {
   const sesion = { carrito: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })) };
   const doc = { lineas: lineasIniciales.map(s => ({ stockId: s, qty: 1, price: 1, disc: 0 })), comments: 'viejo', custRef: '', vigencia: '2026-01-01', deliverTo: 'VIEJO', deliveryAddress: 'DOMICILIO VIEJO', phone: 'TEL VIEJO', email: 'viejo@ejemplo.mx', lista };
   const bitacora = [];
@@ -2407,7 +2408,8 @@ function mockOperamWebLegacy({ lineasIniciales = ['SKU-VIEJO'], romperAddItem = 
     : '');
   const formHtml = () => `<form method='post' action='/sales/sales_order_entry.php'>
 <input type="hidden" name="cart_id" value='CART1'>
-<input type="hidden" name="customer_id" value='376'>
+<input type="hidden" name="customer_id" value='${cliente}'>
+${domicilio ? `<select name='branch_id'><option selected value='${domicilio}'>Domicilio ${domicilio}</option></select>` : ''}
 <input type="hidden" name="_token" value='TOK'>
 ${selectListas()}
 ${sesion.carrito.map((l, i) => `<a href='../inventory/inquiry/stock_status.php?stock_id=${l.stockId}'>x</a><button type='submit' name='Delete${i}' value='1'></button>`).join('\n')}
@@ -3098,4 +3100,49 @@ test('#528 por la ruta de crear, la escrita sin verificar responde lo de /actual
   assert.strictEqual(crear.body.escrito, true);
   assert.deepStrictEqual(crear.body, { ...actualizar.body, operacion: 'actualizar' });
   assert.strictEqual(readCots().find(c => c.id === viaCrear).data.quoteDesactualizado.escrito, true);
+});
+
+// === #563: Editar cambia el celular de una persona que ya esta en el domicilio ===
+// De punta a punta con los dos dobles de la web legacy: el del quote (la actualizacion)
+// y el de la pagina de domicilios (paginas medidas del 564). La cotizacion trae el
+// person_id de la 1289, que el vendedor eligio en el selector, y un celular distinto
+// de su Cel: la actualizacion reescribe el quote y trae la pregunta con el valor viejo
+// y el nuevo; el reintento con el cuerpo que dicto el servidor edita a ESA persona.
+test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la confirmacion lo escribe en la misma persona', async () => {
+  const { _resetSesionWeb } = await import('../lib/operam-web.js');
+  _resetSesionWeb();
+  const id = cotizacionActualizable({
+    cliente: {
+      rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Juarez 45',
+      customerId: '15', branchId: '564', nombreEntrega: 'MEDICION556b General', celEntrega: '5512345678', contactoEntregaPersonId: '1289',
+    },
+  });
+  const quote = mockOperamWebLegacy({ cliente: '15', domicilio: '564' });
+  let fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+  const delQuote = globalThis.fetch;
+  globalThis.fetch = (u, opts) => (/customer_branches\.php|logout\.php/.test(String(u)) ? fa.fetch(u, opts) : delQuote(u, opts));
+  try {
+    const res = await supertest(app).post(`/api/cotizacion/operam/${id}/actualizar`).set('Authorization', `Bearer ${TEST_TOKEN}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.actualizada, true, JSON.stringify(res.body));
+    const p = res.body.preguntaContacto;
+    assert.strictEqual(p.codigo, 'CONFIRMAR_PISAR_CONTACTO');
+    assert.strictEqual(p.nuevo, 'MEDICION556b General Prueba');
+    assert.deepStrictEqual(p.pisa, [{ campo: 'cel', viejo: '5500000022', nuevo: '5512345678' }]);
+    assert.deepStrictEqual(p.reintentar.confirmar, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1289', campo: 'cel', viejo: '5500000022' }] } });
+    assert.match(p.mensaje, /5500000022/);
+    assert.strictEqual(fa.pedidos.filter(x => x.params.has('contactsUPDATE[1289]')).length, 0);
+    assert.strictEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente.motivo, 'pisa-datos');
+
+    fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+    const confirmar = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`).send(p.reintentar.confirmar);
+    assert.strictEqual(confirmar.status, 200);
+    assert.strictEqual(confirmar.body.contactoEntrega, true, JSON.stringify(confirmar.body));
+    assert.deepStrictEqual(confirmar.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok']]);
+    const update = fa.pedidos.find(x => x.params.has('contactsUPDATE[1289]'));
+    assert.deepStrictEqual(['name', 'name2', 'fax'].map(k => update.params.get(k)), ['MEDICION556b General', 'Prueba', '5512345678']);
+    assert.strictEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
+  } finally {
+    quote.restore();
+  }
 });

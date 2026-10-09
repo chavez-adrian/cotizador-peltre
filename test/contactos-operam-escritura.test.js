@@ -326,3 +326,193 @@ test('CE20: si falla quitarle el General al desplazado, el aviso dice que puede 
   assert.match(r.pasos[0].detalle, /FA respondio 500/);
   assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
 });
+
+// --- #563: el vendedor eligio a una persona que ya esta en el domicilio ---------
+// La cotizacion trae su person_id (la identidad de un Contacto en Operam, ADR-0024) y
+// el modulo EDITA a esa persona en vez de crear otra: el numero capturado va a Cel y a
+// Telefono principal, un Telefono distinto que ya estaba pasa a Secundario (si el
+// Secundario estaba lleno, ese valor se pierde) y el correo capturado ocupa su casilla.
+// Llenar una casilla vacia no pregunta; pisar un valor no vacio si, con el viejo y el
+// nuevo a la vista. El nombre de la persona nunca se toca (regla 5).
+
+const ELEGIDA_1249 = { nombre: 'Lucia Recibe Almacen', telefono: '+52 55 1234 5678', correo: 'lucia@example.com', personId: '1249' };
+
+function conPersona(datos, extra = {}) {
+  return operam({
+    personas: [PERSONAS[0], { personId: '1249', name: 'Adrian Bosques Nombre', ref: 'Adrian Bosques Referencia', ...datos }],
+    ...extra,
+  });
+}
+
+test('CE21: la persona elegida sin numeros queda con el numero en Cel y Telefono, el correo y General y Entrega, sin pregunta y sin crear otra', async () => {
+  const op = conPersona({});
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, true);
+  assert.equal(r.personId, '1249');
+  assert.equal(op.pedidos('crear').length, 0);
+  assert.deepEqual(enOperam(op, '1249'), {
+    nombre: 'Adrian Bosques Nombre', cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678', secundario: '',
+    correo: 'lucia@example.com', roles: ['delivery', 'general'],
+  });
+  assert.deepEqual(r.noAplicados, []);
+  assert.equal(r.pasos[0].status, 'ok');
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+});
+
+// Pisar el Telefono que ya estaba es un dato de Operam: primero la pregunta, con el
+// valor viejo y el nuevo, y nada escrito; la decision lleva lo que se pregunto.
+const decisionDe = (pregunta, extra = {}) => ({
+  decision: {
+    desplazar: pregunta.desplazados.map(d => d.personId),
+    pisar: pregunta.pisa.map(p => ({ personId: p.personId, campo: p.campo, viejo: p.viejo })),
+  },
+  cotizacion: { id: 21, folio: '1357' },
+  ...extra,
+});
+
+test('CE22: un numero distinto al Telefono que ya tenia pregunta con el viejo y el nuevo; al confirmar el previo queda en Secundario', async () => {
+  const op = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.deepEqual(r.pisa.map(p => [p.personId, p.campo, p.viejo, p.nuevo]), [
+    ['1249', 'cel', '55 8888 0000', '+52 55 1234 5678'],
+    ['1249', 'telefono', '55 8888 0000', '+52 55 1234 5678'],
+  ]);
+  assert.match(r.mensaje, /55 8888 0000/);
+  assert.match(r.mensaje, /\+52 55 1234 5678/);
+  assert.match(r.mensaje, /Secundario/);
+  assert.equal(op.pedidos('editar').length, 0);
+  assert.equal(op.pedidos('crear').length, 0);
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+
+  const confirmada = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(r) }), op.deps);
+  assert.equal(confirmada.tipo, 'lograda');
+  assert.deepEqual(enOperam(op, '1249'), {
+    nombre: 'Adrian Bosques Nombre', cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678', secundario: '55 8888 0000',
+    correo: 'lucia@example.com', roles: ['delivery', 'general'],
+  });
+  assert.deepEqual(confirmada.noAplicados, []);
+});
+
+test('CE23: con el Secundario lleno, la pregunta dice que ese valor se pierde y al confirmar queda el Telefono previo en su lugar', async () => {
+  const op = conPersona({ phone: '55 8888 0000', phone2: '55 7777 0000' });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  const secundario = r.pisa.find(p => p.campo === 'secundario');
+  assert.deepEqual([secundario.viejo, secundario.nuevo, secundario.pierde], ['55 7777 0000', '55 8888 0000', true]);
+  assert.match(r.mensaje, /Secundario 55 7777 0000 se pierde/);
+
+  await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(r) }), op.deps);
+  assert.deepEqual([enOperam(op, '1249').telefono, enOperam(op, '1249').secundario], ['+52 55 1234 5678', '55 8888 0000']);
+});
+
+test('CE24: un correo distinto al que tenia pregunta con el viejo y el nuevo; un correo en casilla vacia no pregunta y un correo vacio no borra', async () => {
+  const distinto = conPersona({ fax: '5512345678', phone: '5512345678', email: 'bosques@example.com' });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), distinto.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.deepEqual(r.pisa.map(p => [p.campo, p.viejo, p.nuevo]), [['correo', 'bosques@example.com', 'lucia@example.com']]);
+  assert.match(r.mensaje, /bosques@example\.com/);
+
+  const vacio = conPersona({ fax: '5512345678', phone: '5512345678' });
+  const lleno = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), vacio.deps);
+  assert.equal(lleno.tipo, 'lograda');
+  assert.equal(enOperam(vacio, '1249').correo, 'lucia@example.com');
+
+  const sinCorreo = conPersona({ fax: '5512345678', phone: '5512345678', email: 'bosques@example.com' });
+  const conservado = await escribirContactoEntrega(solicitud({ contacto: { ...ELEGIDA_1249, correo: '' } }), sinCorreo.deps);
+  assert.equal(conservado.tipo, 'lograda');
+  assert.equal(enOperam(sinCorreo, '1249').correo, 'bosques@example.com');
+});
+
+// El nombre que trae la cotizacion es el del documento; el de la persona en Operam no
+// se toca (ADR-0024 regla 5), ni al llenar casillas ni al pisarlas.
+test('CE25: el nombre de la persona elegida nunca cambia, aunque la cotizacion traiga otro', async () => {
+  const op = conPersona({ phone: '55 8888 0000' });
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  const p = op.estado.personas.get('1249');
+  assert.deepEqual([p.name, p.name2, p.ref], ['Adrian Bosques Nombre', '', 'Adrian Bosques Referencia']);
+  for (const { args: [, , cambios] } of op.pedidos('editar')) {
+    assert.deepEqual(Object.keys(cambios).sort(), ['casillas', 'roles']);
+  }
+  assert.match(r.pasos[0].mensaje, /Adrian Bosques Nombre/);
+});
+
+// Relee y compara siempre (CODING_STANDARDS.md regla 6).
+test('CE26: si Operam no guarda una casilla de la persona editada, la relectura lo reporta como no aplicado y el paso avisa', async () => {
+  const op = conPersona({}, { ignoraAlEditar: ['cel'] });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(r.noAplicados.map(n => [n.campo, n.esperado, n.encontrado]), [['cel', '+52 55 1234 5678', '']]);
+  assert.equal(r.pasos[0].status, 'warn');
+  assert.match(r.pasos[0].mensaje, /Cel/);
+  assert.match(r.pasos[0].detalle, /1249/);
+});
+
+// Revalida al reintentar: si el valor viejo que vio el vendedor ya no es el de Operam,
+// la decision no vale y se vuelve a preguntar con el valor de ahora.
+test('CE27: si el valor viejo cambio en Operam entre la pregunta y la respuesta, vuelve a preguntar y no escribe nada', async () => {
+  const op = conPersona({ phone: '55 8888 0000' });
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  op.estado.personas.get('1249').phone = '55 6666 0000';
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.deepEqual(r.pisa.map(p => [p.campo, p.viejo]), [['telefono', '55 6666 0000']]);
+  assert.equal(op.pedidos('editar').length, 0);
+});
+
+// Una sola pregunta lleva las casillas a pisar y al General que dejaria de serlo.
+test('CE28: la persona elegida que no es General pregunta una sola vez por sus datos y por el General; al confirmar queda como unico General', async () => {
+  const op = conPersona({ phone: '55 8888 0000' }, {
+    personas: [PERSONAS[0], { personId: '1249', name: 'Adrian Bosques Nombre', phone: '55 8888 0000' }, { personId: '1294', name: 'Alfa G', name2: 'Prueba', fax: '5500000292' }],
+    renglones: [...RENGLONES, { id: '3590', personId: '1294', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
+  });
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), { ...op.deps, ahora: AHORA });
+  assert.equal(pregunta.tipo, 'pregunta');
+  assert.deepEqual(pregunta.desplazados.map(d => d.personId), ['1294']);
+  assert.deepEqual(pregunta.pisa.map(p => p.campo), ['telefono']);
+  assert.match(pregunta.mensaje, /Alfa G Prueba deja de ser el contacto General/);
+
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), { ...op.deps, ahora: AHORA });
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(generalesDe(op), ['1249']);
+  assert.deepEqual(enOperam(op, '1294').roles, ['delivery']);
+  assert.match(op.estado.personas.get('1294').notes, /lo reemplaza Adrian Bosques Nombre desde la Cotizaci\u00f3n 1357/);
+  assert.deepEqual(r.desplazados.map(d => [d.personId, d.roles]), [['1294', ['delivery']]]);
+  assert.deepEqual(r.noAplicados, []);
+});
+
+test('CE29: una persona elegida que no esta en el domicilio (del Cliente Operam) se escribe como antes: persona nueva', async () => {
+  const op = operam();
+  const r = await escribirContactoEntrega(solicitud({ contacto: { ...LUCIA, personId: '61' } }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.notEqual(r.personId, '61');
+  assert.equal(op.pedidos('crear').length, 1);
+  assert.equal(op.pedidos('editar').length, 0);
+  assert.equal(op.estado.personas.get('61').phone, '+52 55 3466 7682');
+});
+
+test('CE30: la persona elegida que ya esta al dia (numeros, correo, General y Entrega) no se escribe y se reporta omitida', async () => {
+  const op = conPersona({ fax: '5512345678', phone: '55 1234 5678', email: 'LUCIA@example.com' }, {
+    renglones: [RENGLONES[0], { id: '3462', personId: '1249', tipo: 'cust_branch', entidad: '564', rol: 'delivery' }, { id: '3463', personId: '1249', tipo: 'cust_branch', entidad: '564', rol: 'general' }],
+  });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.escrito, false);
+  assert.equal(r.motivo, 'sin-cambios');
+  assert.equal(r.pasos[0].status, 'omitido');
+  assert.equal(op.pedidos('editar').length, 0);
+  assert.deepEqual(op.estado.sesiones.map(s => s.cerrada), [true]);
+});
+
+// Al formulario de editar solo viajan las casillas que cambian; las que ya estaban
+// (aunque Operam las guarde con otro formato) se repostean como las trae la web.
+test('CE31: a la edicion solo viajan las casillas que cambian', async () => {
+  const op = conPersona({ phone2: '55 7777 0000', email: 'LUCIA@example.com' });
+  await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  const [{ args: [, , cambios] }] = op.pedidos('editar');
+  assert.deepEqual(cambios.casillas, { cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678' });
+  assert.deepEqual([enOperam(op, '1249').secundario, enOperam(op, '1249').correo], ['55 7777 0000', 'LUCIA@example.com']);
+});
