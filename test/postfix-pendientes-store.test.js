@@ -59,3 +59,24 @@ test('guardar actualiza el estado y borrar lo saca de la cola', async () => {
   await store.borrar('1263');
   assert.deepEqual((await store.listar()).map(f => f.folio), ['1270']);
 });
+
+// #556: el telefono y el correo del Contacto de entrega viajan en la fila, cada uno en
+// su columna. El vacio es un valor que se intento escribir y se conserva como '';
+// null es la fila encolada antes de #556 (no se intento, no se escribe).
+test('#556 encolar conserva el telefono y el correo intentados, el vacio como vacio', async () => {
+  await store.encolar({ ...PENDIENTE, telefonoEntrega: '', correoEntrega: 'recibe@cliente.test' });
+  const [fila] = await store.listar();
+  assert.equal(fila.telefonoEntrega, '');
+  assert.equal(fila.correoEntrega, 'recibe@cliente.test');
+  await store.guardar({ ...fila, intentos: 1 });
+  const [guardada] = await store.listar();
+  assert.equal(guardada.telefonoEntrega, '');
+  assert.equal(guardada.correoEntrega, 'recibe@cliente.test');
+});
+
+test('#556 una fila sin telefono ni correo (encolada antes de #556) los lee en null', async () => {
+  await store.encolar(PENDIENTE);
+  const [fila] = await store.listar();
+  assert.equal(fila.telefonoEntrega, null);
+  assert.equal(fila.correoEntrega, null);
+});

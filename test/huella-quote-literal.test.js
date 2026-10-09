@@ -46,3 +46,17 @@ test('#522 contenidoQuoteCambio: una huella anterior a #403 sin los campos tardi
   assert.equal(contenidoQuoteCambio(cotizacion(), HUELLA_ANTES_DE_403, { listaId: 9, shipVia: 3 }), false);
   assert.equal(contenidoQuoteCambio({ ...cotizacion(), total: 99 }, HUELLA_ANTES_DE_403, { listaId: 9, shipVia: 3 }), true);
 });
+
+// #556: telefono y correo del Contacto de entrega entran al post-fix como filas de la
+// tabla, pero su lugar en la huella sigue siendo el contactPhone/contactEmail del
+// objeto base (#329). Capturada con el codigo de 532d3f83 (antes de #556) para una
+// cotizacion con telefono y correo del Contacto de entrega: la de hoy sale identica y
+// una cotizacion ya subida no se lee como cambiada.
+const HUELLA_CON_CONTACTO_ENTREGA = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"+52 55 1111 2222","contactEmail":"recibe@cliente.test","comments":"- Precio sujeto a cambio","subtotal":1000,"iva":160,"total":1160,"listaId":"9","branchId":"412","shipVia":"3","vigencia":"2026-08-28"}';
+
+test('#556 huellaContenidoQuote: con telefono y correo del Contacto de entrega sale byte-identica a la de antes de #556', () => {
+  const c = cotizacion();
+  c.cliente = { ...c.cliente, telefono: '5512345678', celEntrega: '+52 55 1111 2222', emailEntrega: 'recibe@cliente.test' };
+  assert.equal(huellaContenidoQuote(c, { listaId: 9, shipVia: 3 }), HUELLA_CON_CONTACTO_ENTREGA);
+  assert.equal(contenidoQuoteCambio(c, HUELLA_CON_CONTACTO_ENTREGA, { listaId: 9, shipVia: 3 }), false);
+});

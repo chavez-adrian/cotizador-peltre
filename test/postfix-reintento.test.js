@@ -236,3 +236,73 @@ test('#528 motivoDescarteReintento: la fila de una cotizacion con marca pendient
   const registro = cot(1, { data: { items: [{ codigo: 'X' }], quoteDesactualizado: MARCA_PENDIENTE_528 } });
   assert.match(motivoDescarteReintento({ folio: '1301' }, registro), /desactualizado/);
 });
+
+// --- #556: el telefono y el correo del Contacto de entrega en el reintento ---
+
+const TEL_NO_CONFIRMADO = { aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null };
+
+test('#556 clasificarPostFix: el telefono escrito que la relectura no confirma es transitorio', () => {
+  const r = { ok: true, verificado: true, esperado: '2026-10-22', encontrado: '2026-10-22', lista: ESCRITA_OK, transportista: NO_APLICA, telefonoEntrega: TEL_NO_CONFIRMADO };
+  const c = clasificarPostFix(r);
+  assert.equal(c.estado, 'transitorio');
+  assert.equal(c.motivo, 'telefonoEntrega: se esperaba (vacio) y se leyo +52 55 3466 7682');
+});
+
+test('#556 clasificarPostFix: un formulario sin el campo phone (abstencion) NO es transitorio', () => {
+  const sinCampo = { aplica: true, esperado: '', escrita: false, yaCorrecto: false, ok: false, verificado: false, encontrado: null, motivo: 'el formulario de Operam no trae phone' };
+  const r = { ok: true, verificado: true, esperado: '2026-10-22', encontrado: '2026-10-22', lista: ESCRITA_OK, transportista: NO_APLICA, telefonoEntrega: sinCampo };
+  assert.equal(clasificarPostFix(r).estado, 'definitivo');
+});
+
+test('#556 desfaseQuote: el barrido diario NO compara telefono ni correo (sin backfill de historicos)', () => {
+  const quote = { ...QUOTE_1263, delivery_date: '2026-10-04', contact_phone: '+52 55 3466 7682', contact_email: 'general@peltre.test' };
+  assert.deepEqual(desfaseQuote(quote, { vigencia: '2026-10-04', lista: '9', transportista: null, telefonoEntrega: '', correoEntrega: '' }), []);
+});
+
+test('#556 desfaseQuote: el reintento SI compara telefono y correo, con el vacio como valor', () => {
+  const quote = { ...QUOTE_1263, delivery_date: '2026-10-04', contact_phone: '+52 55 3466 7682', contact_email: '' };
+  const esperado = { vigencia: '2026-10-04', lista: '9', transportista: null, telefonoEntrega: '', correoEntrega: '' };
+  assert.deepEqual(desfaseQuote(quote, esperado, { momento: 'reintentar' }), [
+    { campo: 'telefonoEntrega', esperado: '', encontrado: '+52 55 3466 7682' },
+  ]);
+  assert.deepEqual(desfaseQuote({ ...quote, contact_phone: '' }, esperado, { momento: 'reintentar' }), []);
+});
+
+test('#556 desfaseQuote: una fila encolada antes de #556 (sin telefono) no compara telefono ni correo', () => {
+  const quote = { ...QUOTE_1263, delivery_date: '2026-10-04', contact_phone: '+52 55 3466 7682' };
+  assert.deepEqual(desfaseQuote(quote, { vigencia: '2026-10-04', lista: '9', transportista: null, telefonoEntrega: null, correoEntrega: null }, { momento: 'reintentar' }), []);
+});
+
+// Lo que el worker escribe al repostear una fila del BARRIDO: el telefono y el correo
+// que la subida escribio (contactPhone/contactEmail del objeto base de la huella, desde
+// #329), el vacio como valor. Sin ellos el ProcessOrder dejaria a FA prellenar el
+// General del cliente: la 1330 por otra puerta.
+test('#556 esperadoDeHuella: telefono y correo salen del contactPhone/contactEmail de la huella, el vacio como valor', () => {
+  const h = esperadoDeHuella(JSON.stringify({ items: [], contactPhone: '+52 55 1111 2222', contactEmail: '', listaId: '9', branchId: null, shipVia: null, vigencia: '2026-10-04' }));
+  assert.equal(h.telefonoEntrega, '+52 55 1111 2222');
+  assert.equal(h.trae.telefonoEntrega, true);
+  assert.equal(h.correoEntrega, '');
+  assert.equal(h.trae.correoEntrega, true);
+  assert.equal(h.lista, '9');
+  const sinContacto = esperadoDeHuella(JSON.stringify({ items: [], listaId: '9' }));
+  assert.equal(sinContacto.telefonoEntrega, null);
+  assert.equal(sinContacto.trae.telefonoEntrega, false);
+});
+
+test('#556 motivoDescarteReintento: el telefono que cambio despues de encolar descarta la fila; la anterior a #556 no', () => {
+  const registro = cot(1, { folioOperam: '1330', data: { items: [{ codigo: 'X' }], huellaQuote: JSON.stringify({ items: [], contactPhone: '+52 55 9999 0000', contactEmail: '' }) } });
+  assert.match(motivoDescarteReintento({ folio: '1330', telefonoEntrega: '', correoEntrega: '' }, registro), /telefono del Contacto de entrega cambio/);
+  assert.equal(motivoDescarteReintento({ folio: '1330', telefonoEntrega: null, correoEntrega: null }, registro), null);
+  assert.equal(motivoDescarteReintento({ folio: '1330', telefonoEntrega: '+52 55 9999 0000', correoEntrega: '' }, registro), null);
+});
+
+test('#556 mensajeAvisoPostFix: nombra el telefono y el correo que debian quedar, el vacio incluido', () => {
+  const pendiente = {
+    folio: '1330', vendedor: 'Alejandro Chavez', intentos: 4, vigencia: '2026-10-22', lista: '15', transportista: null,
+    telefonoEntrega: '', correoEntrega: 'recibe@cliente.test',
+    motivo: 'telefonoEntrega: se esperaba (vacio) y se leyo +52 55 3466 7682',
+  };
+  const m = mensajeAvisoPostFix(pendiente, { causa: 'agotado' }, ['adrian@ejemplo.mx']);
+  assert.match(m.text, /Telefono del Contacto de entrega: \(vacio\)/);
+  assert.match(m.text, /Correo del Contacto de entrega: recibe@cliente\.test/);
+});

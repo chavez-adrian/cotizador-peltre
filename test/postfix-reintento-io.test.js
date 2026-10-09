@@ -604,3 +604,86 @@ test('procesarColaPostFix: sin poder leer el registro no se escribe (transitorio
   assert.equal(fila.intentos, 1);
   assert.match(fila.motivo, /Neon caido/);
 });
+
+// --- #556: el telefono y el correo del Contacto de entrega ---
+
+const TEL_AJENO = { aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null };
+const CORREO_OK = { aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: '', motivo: null };
+
+test('#556 encolarPostFix: un telefono que no quedo entra a la cola con el telefono y el correo intentados', async () => {
+  const { deps } = depsBase();
+  await encolarPostFix({
+    ...FALLO_1263, telefonoEntrega: '', correoEntrega: '',
+    resultado: { ...R_VERIFICADO, telefonoEntrega: TEL_AJENO, correoEntrega: CORREO_OK },
+  }, deps);
+  const [fila] = await deps.store.listar();
+  assert.equal(fila.estado, 'pendiente');
+  assert.equal(fila.telefonoEntrega, '');
+  assert.equal(fila.correoEntrega, '');
+  assert.match(fila.motivo, /telefonoEntrega: se esperaba \(vacio\) y se leyo \+52 55 3466 7682/);
+});
+
+test('#556 procesarColaPostFix: una fila pendiente SOLO por el telefono se repostea con los dos valores', async () => {
+  const corregir = corregirFalso({ ...R_VERIFICADO, telefonoEntrega: { ...TEL_AJENO, ok: true, encontrado: '' }, correoEntrega: CORREO_OK });
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ telefonoEntrega: '', correoEntrega: '' })]), corregirVigenciaQuote: corregir,
+    // Vigencia, lista y transportista ya estan; el telefono es el del General.
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-10-04', order_type: '9', ship_via: '1', contact_phone: '+52 55 3466 7682', contact_email: '' }),
+  });
+  const r = await procesarColaPostFix(deps);
+  assert.deepEqual(corregir.llamadas, [{
+    folio: '1263', vigencia: '2026-10-04',
+    opciones: { lista: '9', transportista: null, telefonoEntrega: '', correoEntrega: '' },
+  }]);
+  assert.deepEqual(await deps.store.listar(), []);
+  assert.equal(r.verificados, 1);
+});
+
+test('#556 procesarColaPostFix: con telefono y correo ya como se encolaron no se repostea', async () => {
+  const corregir = corregirFalso(R_VERIFICADO);
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ telefonoEntrega: '', correoEntrega: '' })]), corregirVigenciaQuote: corregir,
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-10-04', order_type: '9', ship_via: '1', contact_phone: '', contact_email: '' }),
+  });
+  await procesarColaPostFix(deps);
+  assert.equal(corregir.llamadas.length, 0);
+  assert.deepEqual(await deps.store.listar(), []);
+});
+
+test('#556 barrerQuotesPostFix: el quote encolado por la lista lleva el telefono y el correo de la huella, y el worker los escribe', async () => {
+  const { deps } = depsBarrido({
+    listarCotizaciones: async () => [cotizacion(42, '1264', { data: { fecha: '2026-09-03', huellaQuote: huella({ contactPhone: '', contactEmail: 'recibe@cliente.test', listaId: '12', vigencia: '2026-10-03' }) } })],
+  });
+  await barrerQuotesPostFix(deps);
+  const [p] = await deps.store.listar();
+  assert.equal(p.lista, '12');
+  assert.equal(p.telefonoEntrega, '');
+  assert.equal(p.correoEntrega, 'recibe@cliente.test');
+
+  const corregir = corregirFalso(R_VERIFICADO);
+  const registro = cotizacion(42, '1264', { data: { fecha: '2026-09-03', vigencia: '2026-10-03', huellaQuote: huella({ contactPhone: '', contactEmail: 'recibe@cliente.test', listaId: '12', vigencia: '2026-10-03' }) } });
+  const worker = depsBase({
+    store: storeEnMemoria([{ ...p, proximoIntento: '2026-09-25T17:59:00.000Z' }]), corregirVigenciaQuote: corregir,
+    obtenerQuote: async () => QUOTES[1264],
+    obtenerCotizacion: async () => registro,
+  });
+  await procesarColaPostFix(worker.deps);
+  assert.deepEqual(corregir.llamadas[0].opciones, { lista: '12', transportista: null, telefonoEntrega: '', correoEntrega: 'recibe@cliente.test' });
+});
+
+test('#556 barrerQuotesPostFix: el telefono heredado de un quote historico no lo encola el barrido', async () => {
+  const store = storeEnMemoria();
+  const { deps } = depsBase({
+    store,
+    listarCotizaciones: async () => [{
+      id: 41, folioOperam: '1263', vendedor: 'Alejandro Chavez', fecha: '2026-09-20T00:00:00.000Z',
+      data: { huellaQuote: JSON.stringify({ items: [], contactPhone: '', contactEmail: '', listaId: '9', branchId: null, shipVia: null, vigencia: '2026-10-04' }) },
+    }],
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-10-04', order_type: '9', ship_via: '1', contact_phone: '+52 55 3466 7682', contact_email: 'general@peltre.test' }),
+    listarPedidos: async () => [],
+    quoteCancelado: async () => false,
+  });
+  const r = await barrerQuotesPostFix(deps);
+  assert.equal(r.desfasados, 0);
+  assert.deepEqual(await store.listar(), []);
+});

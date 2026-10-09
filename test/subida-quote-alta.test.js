@@ -284,6 +284,7 @@ test('lograda: los pasos del alta preceden a los del quote, y el valor trae el c
   assert.equal(r.clienteId, 900);
   assert.deepEqual(r.pasos.map((p) => p.name), [
     'crear cliente', 'persistir customer_id', 'POST quote', 'post-fix vigencia', 'lista del quote', 'transportista del quote',
+    'telefono del Contacto de entrega', 'correo del Contacto de entrega',
   ]);
   assert.deepEqual(r.pasos[2], {
     name: 'POST quote', status: 'ok', mensaje: 'La cotizacion quedo registrada en Operam', detalle: 'POST quote -> folio 1331',
