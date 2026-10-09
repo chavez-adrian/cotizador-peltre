@@ -62,12 +62,13 @@ import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
-import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
+import { refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
+import { leerContactos } from './lib/contactos-operam.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
-import { CODIGO_ENTREGA_INCOMPLETA, MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA } from './public/js/contacto-entrega-logica.js';
+import { CODIGO_ENTREGA_INCOMPLETA, MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA, telefonoDePersona } from './public/js/contacto-entrega-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado } from './public/js/decorados-logica.js';
@@ -3247,18 +3248,39 @@ app.get('/api/operam/clientes/:id/comercial', authMiddleware, async (req, res) =
   }
 });
 
+// Las personas del modulo Contactos en Operam (#559) traducidas a las opciones del
+// selector "Contacto de entrega" y a los correos para factura (#105): una entrada por
+// rol (`tag`), con su person_id y sus casillas. El navegador decide el telefono con
+// `telefonoDePersona(casillas)`; `telefono` viaja ya resuelto con la MISMA regla para
+// las pestanas abiertas con el app.js anterior. Sin nombre, numero ni correo no hay
+// nada que ofrecer.
+function entradasDeContactos(personas) {
+  const entradas = [];
+  for (const p of personas) {
+    const telefono = telefonoDePersona(p.casillas);
+    if (!p.nombre && !telefono && !p.casillas.correo) continue;
+    for (const tag of p.roles.length ? p.roles : ['']) {
+      entradas.push({ personId: p.personId, tag, nombre: p.nombre, telefono, email: p.casillas.correo, casillas: { ...p.casillas } });
+    }
+  }
+  return entradas;
+}
+
 // Cada domicilio lleva sus Contactos en Operam (#105) del padron cacheado de
 // contact_list: nunca espera a Operam, y sin padron todavia salen en null (no se sabe).
+// Las personas las lee el modulo Contactos en Operam (#559) sobre el Cliente Operam
+// que obtenerDomicilios ya trajo: un solo GET /customers/:id por peticion.
 // `sinEntrega` (#459): el branch que Operam auto-crea en el alta generica no es un
 // domicilio de entrega; el navegador no prellena Envio desde el ni lo propone.
 app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
   try {
-    const r = await obtenerDomicilios(req.params.id);
-    for (const d of r.domicilios) {
-      d.contactos = contactosDelDomicilio(d.branch_code);
+    const { domicilios, cliente } = await obtenerDomicilios(req.params.id);
+    const contactos = await leerContactos(req.params.id, { obtenerCliente: async () => cliente });
+    for (const d of domicilios) {
+      d.contactos = contactos?.domicilios ? entradasDeContactos(contactos.domicilios[d.branch_code] || []) : null;
       d.sinEntrega = domicilioSinEntregaRegistrada(req.params.id, d);
     }
-    res.json(r);
+    res.json({ domicilios, contacts: entradasDeContactos(contactos?.cliente || []) });
   } catch {
     res.status(503).json({ error: 'Operam no disponible' });
   }

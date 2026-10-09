@@ -64,3 +64,19 @@ export function bloqueoContactoEntrega(cliente) {
     detalle: faltantes.flatMap((f) => f.vacios.map(([, llave]) => `data.cliente.${llave} vacio`)).join('; '),
   };
 }
+
+// El telefono que se le propone al Contacto de entrega cuando el vendedor elige a una
+// persona de Operam (#559, ADR-0024 regla 2, orden de ADR-0016): SU Cel (el numero
+// mas probable de WhatsApp), si no su Telefono principal, si no su Telefono
+// Secundario; sin ninguno, vacio, y nunca el de otra persona. Lo comparten el
+// selector del paso Envio (contactosEntregaDisponibles, alta-logica.js) y la ruta que
+// le manda las personas (server.js), para que los dos digan el mismo numero.
+const ORDEN_TELEFONO_PERSONA = ['cel', 'telefono', 'secundario'];
+
+export function telefonoDePersona(casillas) {
+  for (const llave of ORDEN_TELEFONO_PERSONA) {
+    const numero = String(casillas?.[llave] ?? '').trim();
+    if (numero) return numero;
+  }
+  return '';
+}

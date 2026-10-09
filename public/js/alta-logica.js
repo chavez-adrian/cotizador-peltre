@@ -7,6 +7,7 @@
 import { cpValido } from './cotizar-logica.js';
 import { esRegimenValido, tipoPersonaRfc } from './regimen-fiscal-logica.js';
 import { llaveCelularOrigen } from './origen-logica.js';
+import { telefonoDePersona } from './contacto-entrega-logica.js';
 
 // Case-insensitive y sin acentos (NFD): pliega mayusculas y diacriticos para
 // que dos grafias del mismo nombre (con o sin acento) comparen igual.
@@ -1678,17 +1679,28 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 // como la lista de domicilios. La opcion que queda esta en el lugar de la primera y
 // lleva en `tags` todos sus papeles en el orden en que aparecieron (decision de
 // Adrian, 2026-09-22); `tag` sigue siendo el primero para quien ya lo lee.
+//
+// El telefono de cada persona de Operam sale de SUS casillas (#559, ADR-0024 regla 2):
+// las que traen `casillas` (del modulo Contactos en Operam) y el General aplanado
+// del domicilio (`cel`/`telefono`) pasan por telefonoDePersona; nunca se completa
+// con el numero de otra persona.
 export function contactosEntregaDisponibles(domicilio, contactosCliente, contacto) {
   const candidatos = [];
   const d = domicilio || {};
-  if (d.contacto || d.telefono || d.email) {
-    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '', delDomicilio: true });
+  const telefonoDomicilio = telefonoDePersona({ cel: d.cel, telefono: d.telefono });
+  if (d.contacto || telefonoDomicilio || d.email) {
+    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: telefonoDomicilio, email: d.email || '', delDomicilio: true });
   }
+  const conSuTelefono = c => (c.casillas ? { ...c, telefono: telefonoDePersona(c.casillas) } : c);
   for (const c of Array.isArray(d.contactos) ? d.contactos : []) {
-    if (c && (c.nombre || c.telefono || c.email)) candidatos.push({ ...c, delDomicilio: true });
+    if (!c) continue;
+    const e = conSuTelefono(c);
+    if (e.nombre || e.telefono || e.email) candidatos.push({ ...e, delDomicilio: true });
   }
   for (const c of contactosCliente || []) {
-    if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
+    if (!c) continue;
+    const e = conSuTelefono(c);
+    if (e.nombre || e.telefono || e.email) candidatos.push(e);
   }
   if (contacto && (contacto.nombre || contacto.telefono || contacto.email)) candidatos.push(contacto);
   const lista = [];

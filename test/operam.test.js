@@ -59,7 +59,7 @@ const CLIENTES_RESPONSE = {
       email: 'a.urena@museofridakahlo.org.mx',
     }],
     contacts: [
-      { action: 'invoice', name: 'Facturacion Banco', phone: '', email: 'facturas@banco.mx' },
+      { id: '73', action: 'invoice', name: 'Facturacion Banco', phone: '', email: 'facturas@banco.mx' },
     ],
   }]
 };

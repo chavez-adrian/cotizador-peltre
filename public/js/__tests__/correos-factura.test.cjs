@@ -15,7 +15,7 @@ before(async () => {
   ({ correosFactura, textoCorreosFactura, avisoCorreosFactura } = await import('../alta-logica.js'));
 });
 
-// Forma de contacts[] de GET /api/operam/clientes/:id/domicilios (mapearContactosCliente).
+// Forma de contacts[] de GET /api/operam/clientes/:id/domicilios (una entrada por rol, #559).
 const CONTACTOS_CLIENTE = [
   { tag: 'general', nombre: 'Gustavo Barcia', telefono: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
   { tag: 'invoice', nombre: 'Elisa Betancourt', telefono: '', email: 'elisa.betancourt@cliente.mx' },

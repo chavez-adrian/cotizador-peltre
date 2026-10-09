@@ -41,17 +41,17 @@ const CLIENTE = {
   customer_id: '15',
   branches: [{ branch_code: '15', br_name: 'Pestalozzi' }, { branch_code: '564', br_name: 'Bosques de Europa' }],
   contacts: [
-    { action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
-    { action: 'invoice', name: 'Elisa Betancourt', phone: '', email: 'elisa.betancourt@cliente.mx' },
-    { action: 'invoice', name: 'Flor Sosa', phone: '', email: 'flor.sosa@cliente.mx' },
+    { id: '201', action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
+    { id: '202', action: 'invoice', name: 'Elisa Betancourt', phone: '', email: 'elisa.betancourt@cliente.mx' },
+    { id: '203', action: 'invoice', name: 'Flor Sosa', phone: '', email: 'flor.sosa@cliente.mx' },
   ],
 };
 const CONTACT_LIST = [
-  { id: '3460', type: 'cust_branch', action: 'delivery', entity_id: '15', name: 'Adrian Pestalozzi Nombre', ref: 'Adrian Pestalozzi Referencia', phone: '', email: '' },
-  { id: '3462', type: 'cust_branch', action: 'delivery', entity_id: '564', name: 'Adrian Bosques Nombre', ref: 'Adrian Bosques Referencia', phone: '', email: '' },
-  { id: '3463', type: 'cust_branch', action: 'invoice', entity_id: '564', name: 'Cuentas Bosques', ref: 'Facturacion', phone: '', email: 'cxp.bosques@cliente.mx' },
-  { id: '3425', type: 'cust_branch', action: 'delivery', entity_id: '15', name: '', ref: '', phone: '', email: '' },
-  { id: '100', type: 'customer', action: 'invoice', entity_id: '15', name: 'Elisa Betancourt', phone: '', email: 'elisa.betancourt@cliente.mx' },
+  { id: '3460', person_id: '1248', type: 'cust_branch', action: 'delivery', entity_id: '15', name: 'Adrian Pestalozzi Nombre', ref: 'Adrian Pestalozzi Referencia', phone: '', email: '' },
+  { id: '3462', person_id: '1249', type: 'cust_branch', action: 'delivery', entity_id: '564', name: 'Adrian Bosques Nombre', ref: 'Adrian Bosques Referencia', phone: '', email: '' },
+  { id: '3463', person_id: '1250', type: 'cust_branch', action: 'invoice', entity_id: '564', name: 'Cuentas Bosques', ref: 'Facturacion', phone: '', email: 'cxp.bosques@cliente.mx' },
+  { id: '3425', person_id: '0', type: 'cust_branch', action: 'delivery', entity_id: '15', name: '', ref: '', phone: '', email: '' },
+  { id: '100', person_id: '202', type: 'customer', action: 'invoice', entity_id: '15', name: 'Elisa Betancourt', phone: '', email: 'elisa.betancourt@cliente.mx' },
 ];
 
 function mockOperam({ contactListFalla = false } = {}) {
@@ -112,11 +112,14 @@ test('con la cache caliente cada domicilio trae sus contactos (el de Facturacion
   assert.equal(res.status, 200);
   const [pestalozzi, bosques] = res.body.domicilios;
   assert.equal(pestalozzi.branch_code, '15');
-  assert.deepEqual(pestalozzi.contactos, [{ tag: 'delivery', nombre: 'Adrian Pestalozzi Nombre', telefono: '', email: '' }]);
+  const sinNumeros = correo => ({ cel: '', telefono: '', secundario: '', correo });
+  assert.deepEqual(pestalozzi.contactos, [
+    { personId: '1248', tag: 'delivery', nombre: 'Adrian Pestalozzi Nombre', telefono: '', email: '', casillas: sinNumeros('') },
+  ]);
   assert.equal(bosques.branch_code, '564');
   assert.deepEqual(bosques.contactos, [
-    { tag: 'delivery', nombre: 'Adrian Bosques Nombre', telefono: '', email: '' },
-    { tag: 'invoice', nombre: 'Cuentas Bosques', telefono: '', email: 'cxp.bosques@cliente.mx' },
+    { personId: '1249', tag: 'delivery', nombre: 'Adrian Bosques Nombre', telefono: '', email: '', casillas: sinNumeros('') },
+    { personId: '1250', tag: 'invoice', nombre: 'Cuentas Bosques', telefono: '', email: 'cxp.bosques@cliente.mx', casillas: sinNumeros('cxp.bosques@cliente.mx') },
   ]);
   assert.deepEqual(res.body.contacts.map(c => [c.tag, c.email]), [
     ['general', 'gustavo_barcia@yahoo.com'],

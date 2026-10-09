@@ -375,73 +375,34 @@ test('obtenerClientePorId: tolera respuesta sin envelope (objeto plano)', async 
   }
 });
 
-// === obtenerDomicilios: prefactor issue #99 -- expone contacts[] del cliente ===
-// con sus tags (base compartida con el slice de correos "invoices"), ademas de los
-// domicilios (branches) que ya devolvia.
+// === obtenerDomicilios: los domicilios y el Cliente Operam tal cual (#559) ===
+// Las personas del Cliente Operam las traduce lib/contactos-operam.js (por person_id,
+// con el Cel) sobre el mismo objeto que leyo esta funcion: un solo GET por peticion.
 
-test('obtenerDomicilios: devuelve { domicilios, contacts } -- contacts trae tag/nombre/telefono/email del cliente', async () => {
+test('obtenerDomicilios: devuelve { domicilios, cliente } con contacts[] crudo y el Cel del General aplanado de cada domicilio', async () => {
   resetSession();
+  const contacts = [
+    { id: '61', action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', fax: '55 1234 5678', email: 'gustavo_barcia@yahoo.com' },
+    { id: '62', action: 'invoice', name: 'Facturacion GUM', phone: '', email: 'factura@gum.com' },
+  ];
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers/900': () => jsonResponse({
       data: [{
         customer_id: 900,
-        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }],
-        contacts: [
-          { action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
-          { action: 'invoice', name: 'Facturacion GUM', phone: '', email: 'factura@gum.com' },
-        ],
+        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: 'Rosa Almacen', phone: '', fax: '5500000031', email: '' }],
+        contacts,
       }],
     }),
-    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }] }),
+    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: 'Rosa Almacen' }] }),
   });
   try {
     const r = await obtenerDomicilios(900);
-    assert.ok(Array.isArray(r.domicilios), 'domicilios debe ser array');
     assert.equal(r.domicilios[0].descripcion, 'Bodega Norte');
-    assert.ok(Array.isArray(r.contacts), 'contacts debe ser array');
-    assert.equal(r.contacts.length, 2);
-    assert.equal(r.contacts[0].tag, 'general');
-    assert.equal(r.contacts[0].nombre, 'Gustavo Barcia');
-    assert.equal(r.contacts[0].telefono, '55 4860 9144');
-    assert.equal(r.contacts[0].email, 'gustavo_barcia@yahoo.com');
-    assert.equal(r.contacts[1].tag, 'invoice');
-    assert.equal(r.contacts[1].nombre, 'Facturacion GUM');
-  } finally {
-    restore();
-  }
-});
-
-test('obtenerDomicilios: contacts vacios/sin nombre-ni-telefono-ni-email se descartan', async () => {
-  resetSession();
-  const restore = mockFetchByUrl({
-    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers/901': () => jsonResponse({
-      data: [{
-        customer_id: 901,
-        branches: [],
-        contacts: [{ action: 'general', name: '', phone: '', email: '' }],
-      }],
-    }),
-  });
-  try {
-    const r = await obtenerDomicilios(901);
-    assert.deepEqual(r.contacts, []);
-  } finally {
-    restore();
-  }
-});
-
-test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
-  resetSession();
-  const restore = mockFetchByUrl({
-    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers/902': () => jsonResponse({ data: [{ customer_id: 902, sales_type: '12', branches: [] }] }),
-  });
-  try {
-    const r = await obtenerDomicilios(902);
-    assert.deepEqual(r.contacts, []);
-    assert.deepEqual(r.domicilios, []);
+    assert.equal(r.domicilios[0].contacto, 'Rosa Almacen');
+    assert.equal(r.domicilios[0].cel, '5500000031');
+    assert.deepEqual(r.cliente.contacts, contacts);
+    assert.equal(r.contacts, undefined, 'las personas ya no salen de aqui: las traduce el modulo');
   } finally {
     restore();
   }
