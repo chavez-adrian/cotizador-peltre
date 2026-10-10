@@ -8,6 +8,8 @@
 // contacto-entrega-logica.js): el servidor arma la pregunta y el paso del reporte, y el
 // navegador los botones. Puro, sin IO.
 
+import { llaveCelularOrigen } from './origen-logica.js';
+
 // El nombre del paso del reporte. Lo escriben la Fusion de Contactos y la Subida del quote.
 export const PASO_CAMBIO_DE_NUMERO = 'Contacto movido al n\u00famero nuevo';
 
@@ -70,4 +72,14 @@ export function botonesCambioDeNumero(numero) {
     { salida: 'confirmar', texto: 'Era solo suyo: pasar todo al n\u00famero nuevo' },
     { salida: 'soloOperam', texto: 'Es compartido: dejarlo como est\u00e1' },
   ];
+}
+
+// La pestana que confirmo el cambio (#565): la respuesta trae `numeroCambiado` cuando
+// el Contacto paso al numero nuevo, y el telefono del paso Cliente que era el viejo (en
+// cualquier formato) pasa al nuevo, como lo dejo la Fusion de Contactos en el registro.
+// Otro numero, o sin cambio, se queda: un guardado desde esa pestana no lo regresa.
+export function telefonoTrasCambioDeNumero(telefono, numeroCambiado) {
+  if (!numeroCambiado || !telefono) return telefono;
+  const viejo = llaveCelularOrigen(numeroCambiado.viejo);
+  return viejo && llaveCelularOrigen(telefono) === viejo ? numeroCambiado.nuevo : telefono;
 }

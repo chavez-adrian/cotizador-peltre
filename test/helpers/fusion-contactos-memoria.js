@@ -105,6 +105,13 @@ export function fusionContactosEnMemoria({ contactos = [], oportunidades = [], c
       c.contactoCelular = celular;
       return true;
     },
+    async setTelefonoCliente(id, telefono) {
+      paso('cotizaciones.setTelefonoCliente', [id, telefono]);
+      const c = estado.cotizaciones.find((x) => x.id === id);
+      if (!c || !c.data?.cliente) return false;
+      c.data.cliente.telefono = telefono;
+      return true;
+    },
   };
 
   return {

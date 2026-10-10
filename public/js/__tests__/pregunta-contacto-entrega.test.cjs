@@ -164,3 +164,27 @@ test('PCE10: la respuesta a la confirmacion muestra el paso del numero, en ok y 
     assert.equal(vista.pasos[1].estado, paso.status);
   }
 });
+
+// Prueba en produccion 2026-10-10: con el Contacto movido al numero nuevo, la pestana que
+// confirmo conservaba el numero viejo en el telefono del paso Cliente, y un nuevo
+// guardado lo habria regresado al registro. La respuesta trae `numeroCambiado` y el
+// telefono pasa al nuevo solo si era el viejo (en cualquier formato); otro numero, o
+// sin cambio, se queda.
+// La confirmacion tambien puede llegar con la forma de la actualizacion (la cotizacion
+// tenia el quote desactualizado): el paso del numero se lee igual.
+test('PCE12: la actualizacion lograda muestra el paso del numero', async () => {
+  const { interpretarActualizacionOperam } = await import('../pipeline-logica.js');
+  const movido = { name: 'Contacto movido al número nuevo', status: 'ok', mensaje: 'Lucia cambio de numero.', detalle: 'contacto 276' };
+  const vista = interpretarActualizacionOperam({ ok: true, folio: '1330', steps: [{ name: 'actualizar quote', status: 'ok' }, movido] });
+  assert.deepEqual(vista.pasos.map((p) => p.mensaje), [movido.mensaje]);
+});
+
+test('PCE11: el telefono del paso Cliente pasa al numero nuevo solo si era el viejo', async () => {
+  const { telefonoTrasCambioDeNumero } = await import('../cambio-numero-logica.js');
+  const cambio = { viejo: '+525515570005', nuevo: '+525515570006' };
+  assert.equal(telefonoTrasCambioDeNumero('+52 55 1557 0005', cambio), '+525515570006');
+  assert.equal(telefonoTrasCambioDeNumero('5515570005', cambio), '+525515570006');
+  assert.equal(telefonoTrasCambioDeNumero('+52 55 7777 0000', cambio), '+52 55 7777 0000');
+  assert.equal(telefonoTrasCambioDeNumero('', cambio), '');
+  assert.equal(telefonoTrasCambioDeNumero('+52 55 1557 0005', null), '+52 55 1557 0005');
+});

@@ -1253,6 +1253,9 @@ test('#565 el cambio confirmado del numero de un person_id funde los Contactos: 
     cotizacion: { id: 21, folio: '1330' }, vendedor: 'Tester',
   }]]);
   assert.deepEqual(r.pasos, [...EDITADO_CEL.pasos, ...FUNDIDO.pasos]);
+  // La pestana que confirmo tiene el telefono del paso Cliente con el numero viejo: la
+  // respuesta le dice el cambio para que un nuevo guardado no lo regrese.
+  assert.deepEqual(r.numeroCambiado, { viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
@@ -1279,6 +1282,7 @@ test('#565 si la fusion falla, el contacto queda escrito y el paso avisa en dos 
   assert.doesNotMatch(paso.mensaje, /fund|fusi/i);
   assert.match(paso.detalle, /Neon caido/);
   assert.match(paso.detalle, /1249/);
+  assert.equal(r.numeroCambiado, undefined);
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
@@ -1299,6 +1303,7 @@ test('#565 al actualizar con el cambio de numero confirmado (quote desactualizad
   assert.equal(r.tipo, 'actualizada');
   assert.deepEqual(m.llamadas.fundirContactos.map(([s]) => [s.celularViejo, s.celularNuevo, s.personId, s.cotizacion]), [['55 8888 0000', '+52 55 1234 5678', '1249', { id: 7, folio: cotizacion().folioOperam }]]);
   assert.deepEqual(r.pasos.at(-1), FUNDIDO.pasos[0]);
+  assert.deepEqual(r.numeroCambiado, { viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
 });
 
 // --- D4: la pregunta del cambio de numero (decisiones de Adrian 2026-10-09) ---------
@@ -1382,6 +1387,7 @@ test('#557 D4 "es un telefono compartido": se escribe en Operam con la decision 
   const paso = r.pasos.at(-1);
   assert.deepEqual([paso.name, paso.status], ['Contacto movido al n\u00famero nuevo', 'omitido']);
   assert.match(paso.mensaje, /^Solo se actualiz\u00f3 el celular de Adrian Bosques Nombre en Operam: el 55 8888 0000 se queda como est\u00e1 en el cotizador/);
+  assert.equal(r.numeroCambiado, undefined);
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 

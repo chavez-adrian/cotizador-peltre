@@ -3488,7 +3488,7 @@ function respuestaActualizacion(r) {
   if (r.tipo === 'bloqueo') return { status: 409, cuerpo: { error: r.mensaje } };
   // #563: reescrito el quote, el Contacto de entrega puede quedar pendiente de la
   // pregunta al vendedor, que viaja junto al folio como al crear.
-  if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) } };
+  if (r.tipo === 'actualizada') return { status: 200, cuerpo: { ok: true, folio: r.folio, actualizada: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto), ...conNumeroCambiado(r) } };
   return {
     status: 200,
     cuerpo: {
@@ -3556,6 +3556,10 @@ function conPreguntaContacto(p) {
   };
 }
 
+// #565: con el Contacto movido al numero nuevo, la respuesta a la confirmacion le dice
+// a la pestana el cambio (viejo y nuevo) para que corrija su telefono del paso Cliente.
+const conNumeroCambiado = (r) => (r.numeroCambiado ? { numeroCambiado: r.numeroCambiado } : {});
+
 // Subir la cotizacion a Operam (#83): la secuencia vive en lib/subida-quote.js
 // (subirQuote, #525/#526, ADR-0022) y aqui solo se traduce su valor a la respuesta
 // de siempre. El modulo toma el candado, lee el registro, corta "ya subida" y
@@ -3598,7 +3602,7 @@ app.post('/api/cotizacion/operam/:id', authMiddleware, async (req, res) => {
   // misma respuesta para refrescar el chip Fiscal (ver app.js #93).
   if (r.tipo === 'ya-subida') return res.json({ ok: true, folio: r.folio, yaSubida: true, customer_id: r.clienteId, ...conPreguntaContacto(r.preguntaContacto) });
   // #562: la respuesta a la pregunta del General, sobre una cotizacion ya subida.
-  if (r.tipo === 'contacto-entrega') return res.json({ ok: true, folio: r.folio, contactoEntrega: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto) });
+  if (r.tipo === 'contacto-entrega') return res.json({ ok: true, folio: r.folio, contactoEntrega: true, steps: r.pasos, ...conPreguntaContacto(r.preguntaContacto), ...conNumeroCambiado(r) });
   if (r.tipo === 'pregunta' && r.motivo === 'otra-razon-social') {
     // El cuerpo del reintento lo dicta el SERVIDOR (#345): en el camino del alta la
     // pregunta puede nacer de un candidato elegido, de "es otro domicilio de este

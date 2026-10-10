@@ -150,6 +150,7 @@ import { sugerirDominioCorreo } from './mayoreo-logica.js';
 // subir el quote. Aqui se usa para avisar al seleccionar y no dejar cotizar.
 import { bloqueoMonedaCliente } from './moneda-cliente-logica.js';
 import { bloqueoContactoEntrega, personaContactoEntrega, personIdDeOpcion } from './contacto-entrega-logica.js';
+import { telefonoTrasCambioDeNumero } from './cambio-numero-logica.js';
 // Perdida con pedido (#482): la MISMA regla con la que el servidor responde 409.
 // Motivo de Perdida (#483): el MISMO catalogo y la MISMA validacion del servidor.
 import { MOTIVOS_PERDIDA, errorMotivoPerdida, notaLimpia } from './perdida-logica.js';
@@ -4976,6 +4977,10 @@ async function operarEnOperam(id, slot, { conFolio = false, extraBody } = {}) {
   } finally {
     subidasOperamEnVuelo.delete(key);
   }
+  // #565: el Contacto paso al numero nuevo y el registro ya tiene ese telefono en el
+  // paso Cliente; la cotizacion en pantalla lo toma tambien (campo, cliente elegido y
+  // cuerpo guardado) para que un nuevo guardado no regrese el numero viejo.
+  if (data?.numeroCambiado && key === String(state.lastCotizacionId)) aplicarNumeroCambiado(data.numeroCambiado);
   if (interpreteOperam(data, conFolio) === 'actualizacion') {
     return terminarActualizacion(id, key, pintar, errorRed != null ? { ok: false, status: 0, error: errorRed } : {
       ok: data.ok === true, status, folio: data.folio,
@@ -5007,6 +5012,16 @@ async function operarEnOperam(id, slot, { conFolio = false, extraBody } = {}) {
     // reintento que dicta el servidor) y la respuesta a esa decision.
     preguntaContacto: data.preguntaContacto, contactoEntrega: data.contactoEntrega,
   });
+}
+
+function aplicarNumeroCambiado(cambio) {
+  const actual = telefonoDeCampo('cl-telefono');
+  const nuevo = telefonoTrasCambioDeNumero(actual, cambio);
+  if (nuevo !== actual) fijarTelefono('cl-telefono', nuevo);
+  if (pcState.cliente) pcState.cliente.telefono = telefonoTrasCambioDeNumero(pcState.cliente.telefono, cambio);
+  // #504: el cuerpo guardado lleva lo que el campo mandaria, con el formato del widget.
+  const guardado = state.cuerpoGuardado?.cliente;
+  if (guardado && telefonoTrasCambioDeNumero(guardado.telefono, cambio) !== guardado.telefono) guardado.telefono = telefonoDeCampo('cl-telefono');
 }
 
 // Lo que sigue a una respuesta con la forma de la subida (#83, ADR-0006): la vista

@@ -540,8 +540,9 @@ export function interpretarActualizacionOperam(resultado) {
   const pasos = pasosParaMostrar(r.steps);
   // #563: reescrito el quote, el Contacto de entrega puede quedar pendiente de la
   // pregunta al vendedor; viaja junto al folio y el aviso pendiente no se repite.
+  // El paso del cambio de numero (D4) solo sale tras confirmarlo, y se lee siempre.
   if (r.ok) {
-    if (!r.preguntaContacto) return { estado: 'actualizada', folio: r.folio ?? null, pasos };
+    if (!r.preguntaContacto) return { estado: 'actualizada', folio: r.folio ?? null, pasos: pasosParaMostrar(r.steps, [PASO_CAMBIO_DE_NUMERO]) };
     return {
       estado: 'actualizada', folio: r.folio ?? null, preguntaContacto: r.preguntaContacto,
       pasos: pasosParaMostrar((r.steps || []).filter(st => st?.name !== PASO_CONTACTO_ENTREGA)),

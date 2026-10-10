@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 // Sin DATABASE_URL el store usa el fallback JSON (data/cotizaciones.json),
 // el mismo modo en que corren dev local y esta suite.
-import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam, borrar, moverContactoCelular } from '../lib/cotizaciones-store.js';
+import { listar, obtener, crear, registrarSeguimiento, setEstado, setFolioOperam, actualizarDatos, cambiarEtapa, setEspejoOperam, borrar, moverContactoCelular, setTelefonoCliente } from '../lib/cotizaciones-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -218,4 +218,19 @@ test('moverContactoCelular pasa las cotizaciones de un Contacto a su numero nuev
   ]);
   assert.deepEqual(await moverContactoCelular('5588880000', '5512345678'), [1, 3]);
   assert.deepEqual(readCots().map(c => [c.id, c.contactoCelular]), [[1, '5512345678'], [2, '5599990000'], [3, '5512345678']]);
+});
+
+// Fusion de Contactos (prueba en produccion 2026-10-10): la cotizacion movida corrige el
+// telefono del paso Cliente sin tocar el resto de `data.cliente`; sin cliente no escribe.
+test('setTelefonoCliente cambia solo data.cliente.telefono (#565)', async () => {
+  writeCots([
+    { id: 1, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', cliente: 'A', data: { total: 10, cliente: { telefono: '+52 55 8888 0000', celEntrega: '+52 55 8888 0000', nombre: 'Lucia' } } },
+    { id: 2, fecha: '2026-06-01T00:00:00Z', vendedor: 'Ana', cliente: 'B', data: {} },
+  ]);
+  assert.equal(await setTelefonoCliente(1, '+525512345678'), true);
+  assert.equal(await setTelefonoCliente(2, '+525512345678'), false);
+  assert.equal(await setTelefonoCliente(9, '+525512345678'), false);
+  const [uno, dos] = readCots();
+  assert.deepEqual(uno.data, { total: 10, cliente: { telefono: '+525512345678', celEntrega: '+52 55 8888 0000', nombre: 'Lucia' } });
+  assert.deepEqual(dos.data, {});
 });

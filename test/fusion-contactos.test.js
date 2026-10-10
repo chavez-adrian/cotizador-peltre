@@ -193,6 +193,32 @@ test('F9: los pasos del cambio de numero no dicen fundir ni fusion, en ninguno d
   }
 });
 
+// Prueba en produccion 2026-10-10: tras el cambio, al abrir la cotizacion el selector
+// del Contacto de entrega ofrecia al Contacto con el numero viejo, porque el telefono
+// del paso Cliente (`data.cliente.telefono`, lo que se tecleo) seguia en el viejo -- y
+// Copiar habria nacido con ese numero --. Las cotizaciones que pasan al numero nuevo
+// lo corrigen, con codigo de pais, solo si era el numero viejo: el que ya se habia
+// corregido a mano no se toca, la que no se movio tampoco, y el telefono del Contacto
+// de entrega (`celEntrega`, que viaja en el quote) se queda como esta.
+test('F14: las cotizaciones movidas pasan al numero nuevo tambien su telefono del paso Cliente, si era el viejo', async () => {
+  const otroTelefono = '+52 55 7777 0000';
+  const cotizaciones = [
+    COTIZACION_100,
+    { ...COTIZACION_100, id: 101, data: { cliente: { telefono: otroTelefono, celEntrega: VIEJO } } },
+    { ...COTIZACION_100, id: 102, contactoCelular: '5599990000', data: { cliente: { telefono: VIEJO } } },
+    { ...COTIZACION_100, id: 103, contactoCelular: null, data: { cliente: { telefono: VIEJO } } },
+  ];
+  for (const contactos of [[LUCIA_VIEJO], [LUCIA_VIEJO, LUCIA_NUEVO]]) {
+    const mem = fusionContactosEnMemoria({ contactos, cotizaciones });
+    const r = await fundirContactos(SOLICITUD, mem.deps);
+    assert.equal(r.tipo, 'lograda', r.pasos?.[0]?.detalle);
+    const cliente = id => mem.estado.cotizaciones.find(c => c.id === id).data.cliente;
+    assert.deepEqual([100, 101, 102, 103].map(id => cliente(id).telefono), [NUEVO, otroTelefono, VIEJO, NUEVO], r.forma);
+    assert.deepEqual([cliente(100).celEntrega, cliente(101).celEntrega], [VIEJO, VIEJO]);
+    assert.match(r.pasos[0].detalle, /telefono del paso Cliente \[100, 103\]/);
+  }
+});
+
 // D4: lo que la pregunta le dice al vendedor ANTES de mover nada -- cuantas
 // oportunidades y cotizaciones pasan al numero nuevo y si el numero viejo tiene
 // oportunidades o cotizaciones de OTRAS personas --, sin escribir nada.
