@@ -15,7 +15,8 @@ before(async () => {
   ({ correosFactura, textoCorreosFactura, avisoCorreosFactura } = await import('../alta-logica.js'));
 });
 
-// Forma de contacts[] de GET /api/operam/clientes/:id/domicilios (mapearContactosCliente).
+// Contactos con un solo papel en `tag` (la forma de antes de #559); la de hoy, por
+// persona con `roles`, la cubre C7.
 const CONTACTOS_CLIENTE = [
   { tag: 'general', nombre: 'Gustavo Barcia', telefono: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
   { tag: 'invoice', nombre: 'Elisa Betancourt', telefono: '', email: 'elisa.betancourt@cliente.mx' },
@@ -112,4 +113,14 @@ test('A2: sin ninguno Invoices y con el domicilio leido, dice que no hay y manda
 test('A3: sin ninguno Invoices y con el domicilio SIN leer, no afirma nada (null)', () => {
   assert.equal(avisoCorreosFactura({ branch_code: '564', contactos: null }, [CONTACTOS_CLIENTE[0]]), null);
   assert.equal(avisoCorreosFactura({ branch_code: '564' }, []), null);
+});
+
+// #559: los Contactos en Operam llegan POR PERSONA (lib/contactos-operam.js), con
+// todos sus roles en `roles`. La persona que es General Y Facturacion recibe facturas.
+test('C7: una persona con varios roles cuenta como Facturacion si uno de ellos es invoice', () => {
+  const persona = { personId: '61', nombre: 'Gustavo Barcia', roles: ['general', 'invoice'], telefono: '', secundario: '', cel: '', email: 'gustavo_barcia@yahoo.com' };
+  const general = { personId: '62', nombre: 'Luis Compras', roles: ['general'], telefono: '', secundario: '', cel: '', email: 'luis@cliente.mx' };
+  assert.deepEqual(correosFactura({ contactos: [persona] }, [general]), [
+    { nombre: 'Gustavo Barcia', email: 'gustavo_barcia@yahoo.com' },
+  ]);
 });

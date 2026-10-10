@@ -16,20 +16,22 @@ const FILAS = [
   { id: '200', person_id: '60', type: 'supplier', action: 'general', entity_id: '15', name: 'Proveedor', phone: '', email: 'prov@proveedor.mx' },
 ];
 
-test('indexa los contactos de domicilio por branch_code con su marca y datos', () => {
+// Desde #559 el indice guarda los renglones CRUDOS de Operam: traducirlos a personas
+// (roles, casillas, Cel) es de lib/contactos-operam.js.
+test('indexa los renglones de domicilio por branch_code, tal como los da Operam', () => {
   const indice = indiceContactosDomicilio(FILAS);
-  assert.deepEqual(indice.get('564'), [
-    { tag: 'delivery', nombre: 'Adrian Bosques Nombre', telefono: '', email: '' },
-    { tag: 'invoice', nombre: 'Cuentas Bosques', telefono: '55 3333 4444', email: 'cxp.bosques@cliente.mx' },
-  ]);
-  assert.deepEqual(indice.get('15'), [
-    { tag: 'delivery', nombre: 'Adrian Pestalozzi Nombre', telefono: '', email: '' },
-  ]);
+  assert.deepEqual(indice.get('564'), [FILAS[1], FILAS[2]]);
+  assert.deepEqual(indice.get('15'), [FILAS[0]]);
+});
+
+test('el renglon que solo trae el Cel (fax) no es un renglon vacio (#559)', () => {
+  const soloCel = { id: '3600', person_id: '1400', type: 'cust_branch', action: 'delivery', entity_id: '15', name: '', phone: '', phone2: '', fax: '5534667682', email: '' };
+  assert.deepEqual(indiceContactosDomicilio([soloCel]).get('15'), [soloCel]);
 });
 
 test('los contactos del Cliente Operam y de proveedores no entran: tienen su propia fuente (o no son de venta)', () => {
   const indice = indiceContactosDomicilio(FILAS);
-  const todos = [...indice.values()].flat().map(c => c.nombre);
+  const todos = [...indice.values()].flat().map(c => c.name);
   assert.ok(!todos.includes('Facturacion Cliente'));
   assert.ok(!todos.includes('Proveedor'));
 });
@@ -43,7 +45,7 @@ test('la marca sale de action y nunca de ref (en contact_list ref es texto libre
   const indice = indiceContactosDomicilio([
     { type: 'cust_branch', action: '', entity_id: '9', name: 'Sin marca', ref: 'invoice', phone: '', email: 'x@y.mx' },
   ]);
-  assert.equal(indice.get('9')[0].tag, '');
+  assert.equal(indice.get('9')[0].action, '');
 });
 
 test('sin filas, o filas sin entity_id, deja un indice vacio', () => {
