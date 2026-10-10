@@ -592,7 +592,7 @@ test('#563 con casillas que se pisarian, yaSubida trae cada una con su valor vie
 // mover nada en el cotizador (`mover: false`).
 const NUMERO_565 = {
   viejo: '55 8888 0000', nuevo: '5512345678', contactoViejo: true, oportunidades: 3, cotizaciones: 2,
-  otrasPersonas: ['Pedro Lopez'], compartido: true, mover: true,
+  otrasPersonas: ['Pedro Lopez'], cotizacionesDeOtras: 1, compartido: true, mover: true,
 };
 const MARCA_NUMERO = {
   ...MARCA_563, desplazados: [], numero: NUMERO_565,

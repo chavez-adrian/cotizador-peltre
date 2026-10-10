@@ -1336,14 +1336,26 @@ test('#557 D4 caso simple: la pregunta dice el cambio de celular y cuantas oport
   assert.equal(m.llamadas.fundirContactos.length, 0);
 });
 
-test('#557 D4 telefono compartido: la pregunta nombra a las otras personas del numero viejo y avisa que puede ser una oficina', async () => {
+// Adrian 2026-10-10: los conteos cuadran. Las otras personas salen de las cotizaciones
+// del numero viejo (las Oportunidades no guardan nombre propio), asi que el texto dice
+// cuantas de ESAS cotizaciones son de otras personas.
+test('#557 D4 telefono compartido: la pregunta nombra a las otras personas del numero viejo, cuenta sus cotizaciones y avisa que puede ser una oficina', async () => {
   const m = subidaQuoteEnMemoria({
     cotizaciones: [nueva(CON_PERSONA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_NUMERO,
-    resumenNumero: { contactoViejo: true, oportunidades: 3, cotizaciones: 2, otrasPersonas: ['Pedro Lopez', 'Maria Ruiz'] },
+    resumenNumero: { contactoViejo: true, oportunidades: 3, cotizaciones: 4, otrasPersonas: ['Pedro Lopez', 'Maria Ruiz'], cotizacionesDeOtras: 2 },
   });
   const r = await subirQuote(21, {}, m.deps);
-  assert.match(r.preguntaContacto.mensaje, /cambia de 55 8888 0000 a \+52 55 1234 5678\. En el cotizador, el 55 8888 0000 tiene 3 oportunidades y 2 cotizaciones, y tambi\u00e9n hay oportunidades de Pedro Lopez y Maria Ruiz: puede ser el tel\u00e9fono de una oficina que comparten varias personas\. Si era solo de Adrian Bosques Nombre, todo pasa al n\u00famero nuevo y el 55 8888 0000 deja de aparecer como Contacto\. Si es compartido, en el cotizador se queda como est\u00e1\. En los dos casos se actualiza Operam\.$/);
+  assert.match(r.preguntaContacto.mensaje, /cambia de 55 8888 0000 a \+52 55 1234 5678\. En el cotizador, el 55 8888 0000 tiene 3 oportunidades y 4 cotizaciones, y 2 de esas cotizaciones est\u00e1n a nombre de otras personas \(Pedro Lopez y Maria Ruiz\): puede ser el tel\u00e9fono de una oficina que comparten varias personas\. Si era solo de Adrian Bosques Nombre, todo pasa al n\u00famero nuevo y el 55 8888 0000 deja de aparecer como Contacto\. Si es compartido, en el cotizador se queda como est\u00e1\. En los dos casos se actualiza Operam\.$/);
   assert.equal(r.preguntaContacto.numero.compartido, true);
+});
+
+test('#557 D4 telefono compartido con una sola cotizacion, de otra persona: el texto no la cuenta como "1 de esas"', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(CON_PERSONA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_NUMERO,
+    resumenNumero: { contactoViejo: true, oportunidades: 1, cotizaciones: 1, otrasPersonas: ['Pedro Lopez'], cotizacionesDeOtras: 1 },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.match(r.preguntaContacto.mensaje, /En el cotizador, el 55 8888 0000 tiene 1 oportunidad y 1 cotizaci\u00f3n, y esa cotizaci\u00f3n est\u00e1 a nombre de otra persona \(Pedro Lopez\): puede ser/);
 });
 
 test('#557 D4 si no se puede leer que tiene el numero viejo en el cotizador, confirmar solo actualiza Operam y lo dice', async () => {

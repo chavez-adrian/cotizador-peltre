@@ -148,3 +148,19 @@ test('PCE9: cambio de celular sin telefono compartido: un solo boton, Confirmar'
   assert.deepEqual(cuerposDeLosBotones(html), [simple.reintentar.confirmar]);
   assert.deepEqual(textosDeLosBotones(html), ['Confirmar']);
 });
+
+// D4 (Adrian 2026-10-10, prueba en produccion): la respuesta a la confirmacion del
+// cambio de numero dice que paso en el cotizador, salga bien (`ok`) o se haya quedado
+// como estaba porque el vendedor lo decidio (`omitido`). Antes solo se veia el paso del
+// contacto y el del numero viajaba en `steps` sin pintarse.
+test('PCE10: la respuesta a la confirmacion muestra el paso del numero, en ok y en omitido', () => {
+  const contacto = { name: 'contacto de entrega', status: 'ok', mensaje: 'El celular de Adrian Bosques Nombre quedo en 5512345678 en Operam.', detalle: 'persona 1249' };
+  const movido = { name: 'Contacto movido al número nuevo', status: 'ok', mensaje: 'Lo del 55 8888 0000 paso al 5512345678: 3 oportunidades y 1 cotizacion.', detalle: 'contacto 276' };
+  const soloOperam = { name: 'Contacto movido al número nuevo', status: 'omitido', mensaje: 'Solo se actualizó el celular de Adrian Bosques Nombre en Operam: el 55 8888 0000 se queda como está en el cotizador, como lo decidiste.', detalle: 'persona 1249' };
+  const otroOmitido = { name: 'segmento', status: 'omitido', mensaje: 'No aplica.', detalle: '' };
+  for (const paso of [movido, soloOperam]) {
+    const vista = interpretarSubidaOperam({ ok: true, folio: '1330', contactoEntrega: true, steps: [contacto, paso, otroOmitido] });
+    assert.deepEqual(vista.pasos.map((p) => p.mensaje), [contacto.mensaje, paso.mensaje]);
+    assert.equal(vista.pasos[1].estado, paso.status);
+  }
+});

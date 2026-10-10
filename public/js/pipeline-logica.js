@@ -21,7 +21,7 @@ import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-l
 import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION, ICONO_TRES_PUNTOS } from './iconos.js';
 import { entregaPedido } from './entrega-pedido-logica.js';
 import { PASO_CONTACTO_ENTREGA } from './contacto-entrega-logica.js';
-import { botonesCambioDeNumero } from './cambio-numero-logica.js';
+import { botonesCambioDeNumero, PASO_CAMBIO_DE_NUMERO } from './cambio-numero-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -147,16 +147,20 @@ function estadoVigencia(steps) {
 // salida valida.
 const PASO_CON_AVISO_PROPIO = new Set(['post-fix vigencia']);
 
-// `okQueSeLeen` agrega, para UNA respuesta, pasos en ok que se tienen que leer (#562: la
-// respuesta a la pregunta del General dice que paso con el contacto).
+// `seLeenSiempre` agrega, para UNA respuesta, pasos que se tienen que leer en ok y en
+// omitido (#562: la respuesta a la pregunta del General dice que paso con el contacto;
+// D4: la del cambio de numero dice que paso en el cotizador, tambien cuando el vendedor
+// decidio dejarlo como estaba).
 
-function pasosVisibles(steps, okQueSeLeen = []) {
+function pasosVisibles(steps, seLeenSiempre = []) {
   return (Array.isArray(steps) ? steps : [])
-    .filter(s => s && (s.status === 'warn' || s.status === 'error' || (s.status === 'ok' && (PASOS_OK_QUE_SE_LEEN.has(s.name) || okQueSeLeen.includes(s.name)))) && !PASO_CON_AVISO_PROPIO.has(s.name));
+    .filter(s => s && (s.status === 'warn' || s.status === 'error'
+      || (s.status === 'ok' && PASOS_OK_QUE_SE_LEEN.has(s.name))
+      || ((s.status === 'ok' || s.status === 'omitido') && seLeenSiempre.includes(s.name))) && !PASO_CON_AVISO_PROPIO.has(s.name));
 }
 
-export function pasosParaMostrar(steps, okQueSeLeen = []) {
-  return pasosVisibles(steps, okQueSeLeen)
+export function pasosParaMostrar(steps, seLeenSiempre = []) {
+  return pasosVisibles(steps, seLeenSiempre)
     .map(s => ({
       estado: s.status,
       mensaje: s.mensaje || 'Un paso del alta del Cliente Operam no se completo.',
@@ -187,11 +191,12 @@ export function interpretarSubidaOperam(resultado) {
   // pregunta viaja junto al folio; el aviso de "contacto pendiente" ya lo dice la
   // pregunta, asi que no se repite como paso. La respuesta a la decision
   // (contactoEntrega) muestra el paso del contacto aunque haya salido bien: es lo que el
-  // vendedor acaba de pedir.
+  // vendedor acaba de pedir. Y el del cambio de numero (D4), que dice que paso en el
+  // cotizador.
   if (r.ok) {
     const conPregunta = r.preguntaContacto ? { preguntaContacto: r.preguntaContacto } : {};
     const pasosFolio = r.preguntaContacto ? pasosParaMostrar((r.steps || []).filter(st => st?.name !== PASO_CONTACTO_ENTREGA))
-      : r.contactoEntrega ? pasosParaMostrar(r.steps, [PASO_CONTACTO_ENTREGA]) : pasos;
+      : r.contactoEntrega ? pasosParaMostrar(r.steps, [PASO_CONTACTO_ENTREGA, PASO_CAMBIO_DE_NUMERO]) : pasos;
     return { estado: 'folio', folio: r.folio ?? null, yaSubida: !!r.yaSubida, customerId: r.customerId ?? null, clienteGenerico: !!r.clienteGenerico, vigencia: estadoVigencia(r.steps), pasos: pasosFolio, ...conPregunta };
   }
   const candidatos = Array.isArray(r.candidatos) ? r.candidatos : [];

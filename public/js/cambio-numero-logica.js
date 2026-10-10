@@ -29,9 +29,19 @@ export function textoCambioDeNumero(nombre, viejo, nuevo) {
 
 // Lo que pasa en el cotizador, con el resumen que lee la Fusion de Contactos
 // (`resumenDelCambioDeNumero`): `{ viejo, contactoViejo, oportunidades, cotizaciones,
-// otrasPersonas }`. Sin Contacto del numero viejo no hay nada que mover y no se dice
-// nada. Con otras personas en el numero viejo (telefono compartido) se avisa y se
-// explica lo que hace cada uno de los dos botones, que son cortos.
+// otrasPersonas, cotizacionesDeOtras }`. Sin Contacto del numero viejo no hay nada que
+// mover y no se dice nada. Con otras personas en el numero viejo (telefono compartido)
+// se avisa y se explica lo que hace cada uno de los dos botones, que son cortos. Las
+// otras personas salen de las cotizaciones del numero viejo (las Oportunidades no
+// guardan nombre propio), asi que el texto dice cuantas de esas cotizaciones son suyas.
+function deOtrasPersonas(numero) {
+  const otras = numero.otrasPersonas;
+  const quienes = `${otras.length === 1 ? 'otra persona' : 'otras personas'} (${unir(otras)})`;
+  const k = numero.cotizacionesDeOtras;
+  if (k === 1 && numero.cotizaciones === 1) return `esa cotizaci\u00f3n est\u00e1 a nombre de ${quienes}`;
+  return `${k} de esas cotizaciones ${k === 1 ? 'est\u00e1' : 'est\u00e1n'} a nombre de ${quienes}`;
+}
+
 export function textoEnElCotizador(numero, nombre) {
   if (!numero || !numero.contactoViejo) return '';
   const { viejo } = numero;
@@ -39,12 +49,12 @@ export function textoEnElCotizador(numero, nombre) {
   if (!esTelefonoCompartido(numero)) {
     return `En el cotizador, todo lo del ${viejo} pasa al n\u00famero nuevo: ${cuanto}. El ${viejo} deja de aparecer como Contacto.`;
   }
-  return `En el cotizador, el ${viejo} tiene ${cuanto}, y tambi\u00e9n hay oportunidades de ${unir(numero.otrasPersonas)}: puede ser el tel\u00e9fono de una oficina que comparten varias personas. ` +
+  return `En el cotizador, el ${viejo} tiene ${cuanto}, y ${deOtrasPersonas(numero)}: puede ser el tel\u00e9fono de una oficina que comparten varias personas. ` +
     `Si era solo de ${nombre}, todo pasa al n\u00famero nuevo y el ${viejo} deja de aparecer como Contacto. ` +
     `Si es compartido, en el cotizador se queda como est\u00e1. En los dos casos se actualiza Operam.`;
 }
 
-// Telefono compartido: el numero viejo tiene oportunidades o cotizaciones de otras
+// Telefono compartido: el numero viejo tiene cotizaciones de otras
 // personas. Solo entonces hay dos salidas.
 export function esTelefonoCompartido(numero) {
   return !!(numero && numero.contactoViejo && (numero.otrasPersonas || []).length);

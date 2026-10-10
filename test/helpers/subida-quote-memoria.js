@@ -100,7 +100,7 @@ export function subidaQuoteEnMemoria({
   listasPrecios = [{ id: 12, nombre: 'Precio de lista' }, { id: 15, nombre: 'M100' }],
   contactoEntrega = { tipo: 'lograda', escrito: false, pasos: [] },
   fusion = { tipo: 'lograda', fundido: false, motivo: 'sin-contacto-viejo', pasos: [] },
-  resumenNumero = { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [] },
+  resumenNumero = { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [], cotizacionesDeOtras: 0 },
   escrituraContactos = () => true,
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));

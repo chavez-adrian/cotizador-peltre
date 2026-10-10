@@ -201,7 +201,7 @@ test('F10: el resumen del cambio cuenta las oportunidades y cotizaciones del num
   const ajena = { ...COTIZACION_100, id: 102, contactoCelular: '5599990000', data: { cliente: { telefono: VIEJO, nombreEntrega: 'Otra Persona' } } };
   const mem = fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO, LUCIA_NUEVO], oportunidades: [OPORTUNIDAD_30], cotizaciones: [COTIZACION_100, historica, ajena] });
   const r = await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, mem.deps);
-  assert.deepEqual(r, { contactoViejo: true, oportunidades: 1, cotizaciones: 2, otrasPersonas: [] });
+  assert.deepEqual(r, { contactoViejo: true, oportunidades: 1, cotizaciones: 2, otrasPersonas: [], cotizacionesDeOtras: 0 });
   assert.deepEqual(mem.llamadas.map(([n]) => n).filter(n => !/buscarPorCelular|listar/.test(n)), []);
 });
 
@@ -209,24 +209,44 @@ test('F10: el resumen del cambio cuenta las oportunidades y cotizaciones del num
 test('F11: sin Oportunidades propias, la que la ficha sintetiza cuenta como una; sin Contacto viejo no hay nada que mover', async () => {
   const sintetiza = fusionContactosEnMemoria({ contactos: [{ ...LUCIA_VIEJO, etapa: 'por_cotizar', data: {} }] });
   assert.deepEqual(await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, sintetiza.deps),
-    { contactoViejo: true, oportunidades: 1, cotizaciones: 0, otrasPersonas: [] });
+    { contactoViejo: true, oportunidades: 1, cotizaciones: 0, otrasPersonas: [], cotizacionesDeOtras: 0 });
   const nadie = fusionContactosEnMemoria({ contactos: [LUCIA_NUEVO], cotizaciones: [COTIZACION_100] });
   assert.deepEqual(await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, nadie.deps),
-    { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [] });
+    { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [], cotizacionesDeOtras: 0 });
 });
 
-// Telefono compartido (D4): "otras personas" son los nombres, normalizados (sin acentos
-// ni mayusculas ni espacios de mas), de la ficha del Contacto viejo y del Contacto de
-// entrega de sus cotizaciones que no son el de la persona: ni iguales, ni el mismo nombre
-// sin apellido (uno es el comienzo, palabra por palabra, del otro). Las Oportunidades
-// no guardan nombre propio: su persona es la ficha.
-test('F12: el numero viejo con oportunidades de otras personas las nombra una vez cada una; las de la misma persona, con o sin apellido, no cuentan', async () => {
+// Telefono compartido (D4; Adrian 2026-10-10): "otra persona" es un Contacto de entrega
+// de las cotizaciones del numero viejo cuyo nombre, normalizado (sin acentos ni
+// mayusculas ni espacios de mas), no es el del Contacto del cotizador de ese numero
+// (su ficha) ni el de la persona que se edita (en Operam y como Contacto de entrega):
+// ni igual, ni el mismo nombre sin apellido (uno es el comienzo, palabra por palabra,
+// del otro). La ficha nunca es "otra persona": es el Contacto. Las Oportunidades no
+// guardan nombre propio, asi que las otras personas solo salen de las cotizaciones, y
+// `cotizacionesDeOtras` cuenta cuantas de ellas son suyas.
+test('F12: el numero viejo con cotizaciones de otras personas las nombra una vez cada una y las cuenta; las del Contacto y de la persona, con o sin apellido, no', async () => {
   const pedro = { ...LUCIA_VIEJO, nombre: 'Pedro Lopez' };
   const deMaria = { ...COTIZACION_100, id: 103, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Mar\u00eda  Ruiz' } } };
   const deMaria2 = { ...COTIZACION_100, id: 104, data: { cliente: { telefono: VIEJO, nombreEntrega: 'maria ruiz' } } };
   const deLucia = { ...COTIZACION_100, id: 105, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Lucia' } } };
-  const mem = fusionContactosEnMemoria({ contactos: [pedro], cotizaciones: [deMaria, deMaria2, deLucia] });
+  const dePedro = { ...COTIZACION_100, id: 106, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Pedro' } } };
+  const mem = fusionContactosEnMemoria({ contactos: [pedro], cotizaciones: [deMaria, deMaria2, deLucia, dePedro] });
   const r = await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe Almacen', 'Lucia Recibe'] }, mem.deps);
-  assert.deepEqual(r.otrasPersonas, ['Pedro Lopez', 'Mar\u00eda  Ruiz']);
-  assert.equal(r.cotizaciones, 3);
+  assert.deepEqual(r.otrasPersonas, ['Mar\u00eda  Ruiz']);
+  assert.equal(r.cotizaciones, 4);
+  assert.equal(r.cotizacionesDeOtras, 2);
+});
+
+// El caso de la prueba en produccion (2026-10-10): el Contacto del 5515570004 se llama
+// "Prueba QA557 Alta" y la persona de Operam a la que se le cambia el numero, "Prueba
+// QA557 Recibe Alta"; su unica cotizacion es la que se confirma. Antes la ficha del
+// Contacto salia como otra persona y la pregunta ofrecia "Es compartido".
+test('F13: el nombre del Contacto distinto al de la persona en Operam no hace compartido el telefono', async () => {
+  const contacto = { ...LUCIA_VIEJO, nombre: 'Prueba QA557 Alta' };
+  const laQueSeConfirma = { ...COTIZACION_100, id: 159, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Prueba QA557 Recibe Alta' } } };
+  const aNombreDelContacto = { ...COTIZACION_100, id: 160, data: { cliente: { telefono: VIEJO, nombreEntrega: 'prueba qa557 alta' } } };
+  const mem = fusionContactosEnMemoria({ contactos: [contacto], cotizaciones: [laQueSeConfirma, aNombreDelContacto] });
+  const r = await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Prueba QA557 Recibe Alta', 'Prueba QA557 Recibe Alta'] }, mem.deps);
+  assert.deepEqual(r.otrasPersonas, []);
+  assert.equal(r.cotizacionesDeOtras, 0);
+  assert.equal(r.cotizaciones, 2);
 });
