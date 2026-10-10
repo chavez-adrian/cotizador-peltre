@@ -29,10 +29,10 @@ El link que hoy recibe el cliente por WhatsApp es `https://cotizador-peltre.onre
 
 ## Links ya enviados
 
-Los links con la forma anterior (`/api/cotizacion/html|pdf/<id>`, en cualquier dominio) siguen abriendo sin sesión **60 días** después de que salga el link nuevo, y a partir de ahí piden sesión de vendedor: dejan de abrir para el cliente. Para entonces casi todas esas cotizaciones ya vencieron, y el vendedor que lo necesite comparte el link nuevo. Se descartaron dejarlos abiertos para siempre (el hueco seguiría) y cerrarlos de golpe (los clientes con una cotización vigente se quedarían sin documento).
+Los links con la forma anterior (`/api/cotizacion/html|pdf/<id>`, en cualquier dominio) siguen abriendo sin sesión **hasta el 31 de enero de 2027** (hora de México), unos 60 días después de que salga el link nuevo, y a partir del 1 de febrero piden sesión de vendedor: dejan de abrir para el cliente. La fecha es fija en el código y no depende del día del deploy (decisión de Adrián, 2026-10-10). Para entonces casi todas esas cotizaciones ya vencieron, y el vendedor que lo necesite comparte el link nuevo. Se descartaron dejarlos abiertos para siempre (el hueco seguiría) y cerrarlos de golpe (los clientes con una cotización vigente se quedarían sin documento).
 
 ## Consequences
 
 - Los dos dominios son registros del DNS de `pppeltre.mx` (Cloudflare) que apuntan al mismo servicio de Render.
-- `cotizacion.pppeltre.mx` no se puede retirar nunca. `cotizador-peltre.onrender.com` sigue vivo al menos los 60 días de los links ya enviados y mientras algo externo (los avisos de Operam, la página de mayoreo de la tienda) apunte a él.
+- `cotizacion.pppeltre.mx` no se puede retirar nunca. `cotizador-peltre.onrender.com` sigue vivo al menos hasta el corte de los links ya enviados (2027-01-31) y mientras algo externo (los avisos de Operam, la página de mayoreo de la tienda) apunte a él.
 - Las cotizaciones existentes necesitan su terminación (carga única).
