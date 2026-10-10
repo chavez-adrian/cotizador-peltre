@@ -47,6 +47,7 @@ import {
   seleccionContactoEntrega,
   contactoAlCambiarDomicilio,
   etiquetaPapelesContacto,
+  propuestaContactoOperam,
   avisoCorreosFactura,
   usoCfdiPorDefecto,
   usoCfdiCuentaComoElegido,
@@ -4388,13 +4389,31 @@ function pcRenderContactoSelect({ contactosAntes } = {}) {
     const etiqueta = (c.nombre || 'Sin nombre') + (tag ? ` (${tag})` : '') + (datos ? ' — ' + datos : '');
     return `<option value="${i}"${sel.indice === i ? ' selected' : ''}>${escapeHtml(etiqueta)}</option>`;
   }).join('');
+  // La persona quedo elegida sin tocar los campos (#559): lo que Operam tiene hoy de
+  // ella se propone aqui y el vendedor lo toma con el boton.
+  const propuesta = sel.indice !== null && !sel.aplicar
+    ? propuestaContactoOperam(contactos[sel.indice], pcCamposContactoEntrega())
+    : null;
   slot.innerHTML = '<div class="form-group pc-dom"><label>Contacto de entrega</label>' +
     '<select id="pc-contacto-select" onchange="pcCambiarContacto()">' +
     opciones +
     `<option value="nuevo"${sel.indice === null ? ' selected' : ''}>+ Nuevo contacto</option>` +
-    '</select></div>';
+    '</select>' +
+    (propuesta
+      ? `<div class="pc-nota" style="margin:6px 0 0;align-items:center"><span>${escapeHtml(propuesta)}</span><button type="button" class="btn btn-secondary btn-sm" onclick="pcTomarPropuestaContacto(${sel.indice})">Tomar</button></div>`
+      : '') +
+    '</div>';
   if (sel.aplicar) pcAplicarContacto(contactos[sel.indice]);
 }
+
+// Tomar la propuesta de Operam (#559): los datos de hoy de la persona elegida pasan a
+// los campos, como si se hubiera elegido en el selector.
+function pcTomarPropuestaContacto(indice) {
+  pcState.contactoManual = false;
+  pcAplicarContacto(pcContactosDisponibles()[indice]);
+  pcRenderContactoSelect();
+}
+window.pcTomarPropuestaContacto = pcTomarPropuestaContacto;
 
 // A donde llega la factura (#105, solo lectura): los Contactos en Operam con la marca
 // Invoices del domicilio elegido y del Cliente Operam (avisoCorreosFactura). Solo INFORMA:

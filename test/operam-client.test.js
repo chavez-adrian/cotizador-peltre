@@ -375,64 +375,41 @@ test('obtenerClientePorId: tolera respuesta sin envelope (objeto plano)', async 
   }
 });
 
-// === obtenerDomicilios: prefactor issue #99 -- expone contacts[] del cliente ===
-// con sus tags (base compartida con el slice de correos "invoices"), ademas de los
-// domicilios (branches) que ya devolvia.
+// === obtenerDomicilios: los domicilios (branches) del cliente ===
+// Los Contactos en Operam del cliente ya no salen de aqui: desde #559 los lee
+// lib/contactos-operam.js (sus pruebas, en test/contactos-operam.test.js). El
+// contacto propio del domicilio (el General aplanado en el branch) si: viaja con su
+// Cel (`fax`), que solo expone `branches[]` de GET /customers/:id.
 
-test('obtenerDomicilios: devuelve { domicilios, contacts } -- contacts trae tag/nombre/telefono/email del cliente', async () => {
+test('obtenerDomicilios: devuelve los domicilios con el contacto propio del branch y su Cel', async () => {
   resetSession();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
     '/api/v3/sales/customers/900': () => jsonResponse({
       data: [{
         customer_id: 900,
-        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }],
+        branches: [{ branch_code: '1', br_name: 'Bodega Norte', contact_name: 'Rosa Bodega', phone: '55 2222 3333', fax: '55 9999 8888', email: '' }],
         contacts: [
           { action: 'general', name: 'Gustavo Barcia', phone: '55 4860 9144', email: 'gustavo_barcia@yahoo.com' },
-          { action: 'invoice', name: 'Facturacion GUM', phone: '', email: 'factura@gum.com' },
         ],
       }],
     }),
-    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: '', phone: '', email: '' }] }),
+    '/api/v3/sales/branches/1': () => jsonResponse({ data: [{ br_name: 'Bodega Norte', contact_name: 'Rosa Bodega' }] }),
   });
   try {
     const r = await obtenerDomicilios(900);
     assert.ok(Array.isArray(r.domicilios), 'domicilios debe ser array');
     assert.equal(r.domicilios[0].descripcion, 'Bodega Norte');
-    assert.ok(Array.isArray(r.contacts), 'contacts debe ser array');
-    assert.equal(r.contacts.length, 2);
-    assert.equal(r.contacts[0].tag, 'general');
-    assert.equal(r.contacts[0].nombre, 'Gustavo Barcia');
-    assert.equal(r.contacts[0].telefono, '55 4860 9144');
-    assert.equal(r.contacts[0].email, 'gustavo_barcia@yahoo.com');
-    assert.equal(r.contacts[1].tag, 'invoice');
-    assert.equal(r.contacts[1].nombre, 'Facturacion GUM');
+    assert.equal(r.domicilios[0].contacto, 'Rosa Bodega');
+    assert.equal(r.domicilios[0].telefono, '55 2222 3333');
+    assert.equal(r.domicilios[0].cel, '55 9999 8888');
+    assert.equal('contacts' in r, false, 'los Contactos en Operam los lee lib/contactos-operam.js');
   } finally {
     restore();
   }
 });
 
-test('obtenerDomicilios: contacts vacios/sin nombre-ni-telefono-ni-email se descartan', async () => {
-  resetSession();
-  const restore = mockFetchByUrl({
-    '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
-    '/api/v3/sales/customers/901': () => jsonResponse({
-      data: [{
-        customer_id: 901,
-        branches: [],
-        contacts: [{ action: 'general', name: '', phone: '', email: '' }],
-      }],
-    }),
-  });
-  try {
-    const r = await obtenerDomicilios(901);
-    assert.deepEqual(r.contacts, []);
-  } finally {
-    restore();
-  }
-});
-
-test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
+test('obtenerDomicilios: cliente sin branches -> domicilios es []', async () => {
   resetSession();
   const restore = mockFetchByUrl({
     '/api/v3/login': () => jsonResponse(LOGIN_RESPONSE),
@@ -440,7 +417,6 @@ test('obtenerDomicilios: cliente sin contacts -> contacts es []', async () => {
   });
   try {
     const r = await obtenerDomicilios(902);
-    assert.deepEqual(r.contacts, []);
     assert.deepEqual(r.domicilios, []);
   } finally {
     restore();

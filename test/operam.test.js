@@ -189,7 +189,7 @@ test('B3: domicilios retorna { domicilios, contacts } con branches y contactos d
     assert.ok('cp' in d);
     assert.ok('email' in d);
     assert.ok(Array.isArray(res.body.contacts));
-    assert.equal(res.body.contacts[0].tag, 'invoice');
+    assert.deepEqual(res.body.contacts[0].roles, ['invoice']);
     assert.equal(res.body.contacts[0].nombre, 'Facturacion Banco');
     assert.equal(res.body.contacts[0].email, 'facturas@banco.mx');
   } finally { restore(); }

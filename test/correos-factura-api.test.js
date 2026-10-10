@@ -103,7 +103,10 @@ test('con la cache fria los domicilios salen igual (contactos null: no se sabe) 
   assert.deepEqual(escrituras, [], 'solo lectura (el login es la unica peticion que no es GET)');
 });
 
-test('con la cache caliente cada domicilio trae sus contactos (el de Facturacion de Bosques incluido) y contacts[] del cliente no cambia', async () => {
+// Desde #559 los dos lados salen del modulo Contactos en Operam; la forma de cada
+// persona (roles, casillas, Cel) la prueban test/contactos-operam.test.js. Aqui solo el
+// cableado: cada domicilio recibe los SUYOS y `contacts` trae los del Cliente Operam.
+test('con la cache caliente cada domicilio trae sus contactos (el de Facturacion de Bosques incluido) y contacts trae los del cliente', async () => {
   mockOperam();
   await domicilios();
   await contactosIo._esperarRefresco();
@@ -112,17 +115,26 @@ test('con la cache caliente cada domicilio trae sus contactos (el de Facturacion
   assert.equal(res.status, 200);
   const [pestalozzi, bosques] = res.body.domicilios;
   assert.equal(pestalozzi.branch_code, '15');
-  assert.deepEqual(pestalozzi.contactos, [{ tag: 'delivery', nombre: 'Adrian Pestalozzi Nombre', telefono: '', email: '' }]);
+  assert.deepEqual(pestalozzi.contactos.map(c => c.nombre), ['Adrian Pestalozzi Nombre']);
   assert.equal(bosques.branch_code, '564');
-  assert.deepEqual(bosques.contactos, [
-    { tag: 'delivery', nombre: 'Adrian Bosques Nombre', telefono: '', email: '' },
-    { tag: 'invoice', nombre: 'Cuentas Bosques', telefono: '', email: 'cxp.bosques@cliente.mx' },
+  assert.deepEqual(bosques.contactos.map(c => c.nombre), ['Adrian Bosques Nombre', 'Cuentas Bosques']);
+  assert.deepEqual(res.body.contacts.map(c => c.email), [
+    'gustavo_barcia@yahoo.com', 'elisa.betancourt@cliente.mx', 'flor.sosa@cliente.mx',
   ]);
-  assert.deepEqual(res.body.contacts.map(c => [c.tag, c.email]), [
-    ['general', 'gustavo_barcia@yahoo.com'],
-    ['invoice', 'elisa.betancourt@cliente.mx'],
-    ['invoice', 'flor.sosa@cliente.mx'],
-  ]);
+});
+
+// El Cliente Operam se lee UNA vez por peticion (#559): los domicilios y los Contactos
+// en Operam salen del mismo GET /customers/:id. Una segunda lectura era otra peticion
+// en serie al ritmo de Operam y, si fallaba, tumbaba la ruta con 503.
+test('la ruta lee el Cliente Operam una sola vez por peticion', async () => {
+  const peticiones = mockOperam();
+  await domicilios();
+  await contactosIo._esperarRefresco();
+  peticiones.length = 0;
+
+  const res = await domicilios();
+  assert.equal(res.status, 200);
+  assert.equal(peticiones.filter(p => p.url.includes('/api/v3/sales/customers/15')).length, 1);
 });
 
 test('si contact_list falla, los domicilios salen igual y con contactos null: degrada en silencio', async () => {

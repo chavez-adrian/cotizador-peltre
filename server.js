@@ -62,7 +62,8 @@ import * as modelosStore from './lib/modelos-store.js';
 import { clasificarCelular } from './lib/clasificar-celular.js';
 import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
-import { contactosDelDomicilio, refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
+import { refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
+import { leerContactos } from './lib/contactos-operam.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
@@ -3248,16 +3249,19 @@ app.get('/api/operam/clientes/:id/comercial', authMiddleware, async (req, res) =
 
 // Cada domicilio lleva sus Contactos en Operam (#105) del padron cacheado de
 // contact_list: nunca espera a Operam, y sin padron todavia salen en null (no se sabe).
+// Los dos lados -- del domicilio y del Cliente Operam (`contacts`) -- los lee el modulo
+// Contactos en Operam (#559): por persona, con roles y casillas (Cel incluido).
 // `sinEntrega` (#459): el branch que Operam auto-crea en el alta generica no es un
 // domicilio de entrega; el navegador no prellena Envio desde el ni lo propone.
 app.get('/api/operam/clientes/:id/domicilios', authMiddleware, async (req, res) => {
   try {
     const r = await obtenerDomicilios(req.params.id);
+    const contactos = await leerContactos(req.params.id, { leerCliente: async () => r.cliente });
     for (const d of r.domicilios) {
-      d.contactos = contactosDelDomicilio(d.branch_code);
+      d.contactos = contactos.porDomicilio[String(d.branch_code)] ?? null;
       d.sinEntrega = domicilioSinEntregaRegistrada(req.params.id, d);
     }
-    res.json(r);
+    res.json({ domicilios: r.domicilios, contacts: contactos.delCliente });
   } catch {
     res.status(503).json({ error: 'Operam no disponible' });
   }

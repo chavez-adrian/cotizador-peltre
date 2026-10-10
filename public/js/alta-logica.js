@@ -1678,26 +1678,60 @@ export const CEL_CODE_POR_ISO2 = { mx: '+52', us: '+1', ca: '+1-CA' };
 // como la lista de domicilios. La opcion que queda esta en el lugar de la primera y
 // lleva en `tags` todos sus papeles en el orden en que aparecieron (decision de
 // Adrian, 2026-09-22); `tag` sigue siendo el primero para quien ya lo lee.
+//
+// El telefono de cada opcion es el que se PROPONE para esa persona (#559, ADR-0024
+// regla 2): el suyo, de sus propias casillas, en el orden de ADR-0016 -- Cel, luego
+// Telefono, luego Secundario (`telefonoPropuesto`) --, nunca el de otra persona. Los
+// Contactos en Operam llegan POR PERSONA (lib/contactos-operam.js) con todos sus
+// roles en `roles`, que son sus papeles; el contacto propio del branch trae su Cel
+// en `cel`.
 export function contactosEntregaDisponibles(domicilio, contactosCliente, contacto) {
   const candidatos = [];
   const d = domicilio || {};
-  if (d.contacto || d.telefono || d.email) {
-    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: d.telefono || '', email: d.email || '', delDomicilio: true });
+  if (d.contacto || d.telefono || d.cel || d.email) {
+    candidatos.push({ tag: 'domicilio', nombre: d.contacto || '', telefono: telefonoPropuesto(d), telefonos: numerosDe(d), email: d.email || '', delDomicilio: true });
   }
   for (const c of Array.isArray(d.contactos) ? d.contactos : []) {
-    if (c && (c.nombre || c.telefono || c.email)) candidatos.push({ ...c, delDomicilio: true });
+    const cand = candidatoDeEntrega(c);
+    if (cand) candidatos.push({ ...cand, delDomicilio: true });
   }
   for (const c of contactosCliente || []) {
-    if (c && (c.nombre || c.telefono || c.email)) candidatos.push(c);
+    const cand = candidatoDeEntrega(c);
+    if (cand) candidatos.push(cand);
   }
-  if (contacto && (contacto.nombre || contacto.telefono || contacto.email)) candidatos.push(contacto);
+  const delContacto = candidatoDeEntrega(contacto);
+  if (delContacto) candidatos.push(delContacto);
   const lista = [];
   for (const c of candidatos) {
+    const papeles = papelesDe(c);
     const igual = lista.find(o => mismaPersonaDeEntrega(o, c));
-    if (!igual) lista.push({ ...c, tags: c.tag ? [c.tag] : [] });
-    else if (c.tag && !igual.tags.includes(c.tag)) igual.tags.push(c.tag);
+    if (!igual) lista.push({ ...c, tag: papeles[0] || '', tags: [...papeles] });
+    else for (const p of papeles) if (!igual.tags.includes(p)) igual.tags.push(p);
   }
   return lista;
+}
+
+// Los numeros de UNA persona en el orden de ADR-0016 -- Cel, Telefono, Secundario --
+// y el que se le propone: el primero no vacio. Solo miran las casillas de esa persona.
+// La opcion guarda todos en `telefonos`: una cotizacion guardada antes de #559 trae el
+// Telefono, no el Cel, y la persona se tiene que seguir reconociendo por el.
+function numerosDe(c) {
+  return [c?.cel, c?.telefono, c?.secundario].map(v => String(v ?? '').trim()).filter(Boolean);
+}
+
+function telefonoPropuesto(c) {
+  return numerosDe(c)[0] || '';
+}
+
+function papelesDe(c) {
+  if (Array.isArray(c?.roles)) return c.roles.filter(Boolean);
+  return c?.tag ? [c.tag] : [];
+}
+
+function candidatoDeEntrega(c) {
+  if (!c) return null;
+  const cand = { ...c, telefono: telefonoPropuesto(c), telefonos: numerosDe(c), email: c.email || '' };
+  return (cand.nombre || cand.telefono || cand.email) ? cand : null;
 }
 
 // Misma persona = mismo nombre, mismo telefono y mismo correo. Un campo vacio en
@@ -1781,7 +1815,7 @@ export function correosFactura(domicilio, contactosCliente) {
   const vistos = new Set();
   const salida = [];
   for (const c of candidatos) {
-    if (c?.tag !== 'invoice') continue;
+    if (!papelesDe(c).includes('invoice')) continue;
     const email = String(c.email || '').trim();
     const llave = normalizarBusqueda(email);
     if (!llave || vistos.has(llave)) continue;
@@ -1829,6 +1863,13 @@ export function avisoCorreosFactura(domicilio, contactosCliente) {
 // tampoco cuando lo capturado coincide con una opcion: la marca solo la quita el
 // vendedor (otra opcion del selector u otro cliente; otro domicilio ya no, #422), y hasta
 // entonces quien captura es el.
+//
+// Al Editar (#559, story 37 de #557) lo guardado puede no ser lo que Operam tiene HOY
+// de esa persona: la cotizacion guardo su Telefono y hoy se propone su Cel, o cambio
+// de numero. La persona se reconoce -- por cualquiera de sus numeros o, si ninguno
+// explica lo capturado, por su nombre entre los Contactos en Operam -- y queda elegida
+// con `aplicar: false`: el documento ya enviado no cambia solo (story 36). Lo que
+// Operam tiene hoy se le PROPONE al vendedor (propuestaContactoOperam) y el lo toma.
 export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   const lista = contactos || [];
   if (lista.length === 0) return { indice: null, aplicar: false };
@@ -1836,7 +1877,28 @@ export function seleccionContactoEntrega(contactos, capturado, capturaManual) {
   const cap = capturado || {};
   if (!cap.nombre && !cap.telefono && !cap.email) return { indice: indiceContactoPropuesto(lista), aplicar: true };
   const i = lista.findIndex(c => contactoExplicaLoCapturado(c, cap));
-  return i === -1 ? { indice: null, aplicar: false } : { indice: i, aplicar: true };
+  if (i !== -1) return { indice: i, aplicar: !cap.telefono || llaveCelularOrigen(lista[i].telefono) === llaveCelularOrigen(cap.telefono) };
+  const porNombre = cap.nombre
+    ? lista.findIndex(c => esContactoEnOperam(c) && normalizarBusqueda(c.nombre) === normalizarBusqueda(cap.nombre))
+    : -1;
+  return { indice: porNombre === -1 ? null : porNombre, aplicar: false };
+}
+
+// La opcion viene de Operam si alguno de sus papeles no es el del Contacto de la
+// cotizacion (#353), que es la unica fuente que no sale del ERP.
+function esContactoEnOperam(c) {
+  return (c?.tags?.length ? c.tags : [c?.tag]).some(t => t && t !== 'contacto');
+}
+
+// Lo que Operam tiene HOY de la persona elegida, cuando no es lo que esta en los
+// campos (#559): el texto que el paso Envio pone junto al selector con el boton para
+// tomarlo. null = no hay nada que proponer (coincide, o la opcion no es de Operam).
+export function propuestaContactoOperam(opcion, capturado) {
+  const o = opcion || {};
+  const cap = capturado || {};
+  if (!esContactoEnOperam(o) || mismaPersonaDeEntrega(o, cap)) return null;
+  const datos = [o.nombre, o.telefono, o.email].map(v => String(v ?? '').trim()).filter(Boolean);
+  return datos.length ? 'Datos actuales en Operam: ' + datos.join(', ') : null;
 }
 
 // El contacto de entrega cuando el vendedor cambia de domicilio (#422, decision de
@@ -1873,7 +1935,11 @@ function contactoExplicaLoCapturado(contacto, capturado) {
   const igualTexto = (a, b) => normalizarBusqueda(a) === normalizarBusqueda(b);
   if (capturado.nombre && !igualTexto(c.nombre, capturado.nombre)) return false;
   if (capturado.email && !igualTexto(c.email, capturado.email)) return false;
-  if (capturado.telefono && llaveCelularOrigen(c.telefono) !== llaveCelularOrigen(capturado.telefono)) return false;
+  if (capturado.telefono) {
+    const llave = llaveCelularOrigen(capturado.telefono);
+    const numeros = Array.isArray(c.telefonos) && c.telefonos.length ? c.telefonos : [c.telefono];
+    if (!numeros.some(t => llaveCelularOrigen(t) === llave)) return false;
+  }
   return true;
 }
 

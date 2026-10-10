@@ -60,9 +60,7 @@ test('lee TODAS las paginas de contact_list una tras otra, a su ritmo, y deja lo
   assert.equal(op.maxEnVuelo(), 1, 'secuencial: nunca dos paginas a la vez');
   assert.ok(op.lecturas[1].t - op.lecturas[0].t >= 1100, 'una pagina cada 1100 ms como minimo');
   assert.ok(op.lecturas[2].t - op.lecturas[1].t >= 1100);
-  assert.deepEqual(contactosDelDomicilio('564'), [
-    { tag: 'invoice', nombre: 'Cuentas Bosques', telefono: '', email: 'cxp.bosques@cliente.mx' },
-  ]);
+  assert.deepEqual(contactosDelDomicilio('564'), [FACTURA_564]);
 });
 
 test('con la cache fria la consulta no espera a Operam: responde null (no se sabe) y lanza UN solo refresco', async () => {
@@ -204,9 +202,7 @@ test('pedir releer tras escribir mientras corre un barrido agenda UNA relectura 
   assert.deepEqual(op.lecturas.map(l => l.skip), [0, 100, 200, 0, 100, 200], 'tres peticiones, una sola relectura');
   assert.equal(op.maxEnVuelo(), 1, 'nunca dos lecturas a la vez');
   assert.ok(op.lecturas[3].t - op.lecturas[2].t >= 1100, 'la relectura guarda el ritmo desde la ultima pagina del barrido anterior');
-  assert.deepEqual(contactosDelDomicilio('777'), [
-    { tag: 'invoice', nombre: 'Cuentas Nuevo', telefono: '', email: 'cxp.nuevo@cliente.mx' },
-  ]);
+  assert.deepEqual(contactosDelDomicilio('777'), [FACTURA_777]);
 });
 
 test('sin barrido en vuelo, releer tras escribir barre una vez', async () => {
