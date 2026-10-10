@@ -162,7 +162,8 @@ app.use(express.static(PUBLIC_DIR));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Render pone RENDER_GIT_COMMIT en cada deploy: asi se sabe que commit sirve produccion.
+app.get('/health', (_req, res) => res.json({ status: 'ok', commit: process.env.RENDER_GIT_COMMIT || null }));
 
 function readJSON(filename) {
   const path = join(DATA_DIR, filename);

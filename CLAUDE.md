@@ -186,6 +186,6 @@ Patron de la casa: **nucleos PUROS sin IO** compartidos por cross-import entre `
 
 ## Deploy
 
-Render.com (plan Starter: no duerme, UNA instancia). Auto-deploy desde `main`. Config en `render.yaml`; las env vars viven en el dashboard de Render, no en el yaml.
+Render.com (plan Starter: no duerme, UNA instancia). Auto-deploy desde `main`. Config en `render.yaml`; las env vars viven en el dashboard de Render, no en el yaml. `GET /health` responde el commit que sirve produccion (`commit`, de `RENDER_GIT_COMMIT`): un deploy se espera comparando contra el hash del push.
 
 > Varias piezas asumen **un solo proceso Node**: el lock `subidasOperamEnCurso`, la cola de post-fixes de vigencia (la serializacion de la sesion web) el lock del reintento de #380, el de los comprobantes de pago por cotizacion (`conLockComprobantes`) el turno de los barridos con la ultima corrida del barrido del sync (#509) y la fila de los avisos de Operam (#510; un deploy a media fila pierde lo pendiente) viven en memoria (la cola de REINTENTOS si esta en Neon). Con varias instancias habria que moverlas a Neon o a un lock distribuido.
