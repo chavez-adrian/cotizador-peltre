@@ -27,6 +27,20 @@ function texto(v) {
   return String(v == null ? '' : v).trim();
 }
 
+// D3b (decisiones de Adrian 2026-10-09): la calle del domicilio de entrega ya no es
+// obligatoria y, vacia, el cotizador escribe en su lugar este texto en los tres lugares
+// que comparten el armador del domicilio (#332, lib/domicilio-entrega.js: el documento,
+// el `delivery_address` del quote) y en la calle del domicilio que escribe el alta
+// (buildBranchGenerico, lib/alta-generica.js). UNA constante para todos: lib/ la
+// cross-importa de aqui. Al LEER de regreso cuenta como calle VACIA (`esCalleVacia`):
+// nunca llena el campo Calle ni cuenta como capturada.
+export const CALLE_POR_DEFINIR = 'Por definir';
+
+export function esCalleVacia(calle) {
+  const t = texto(calle);
+  return t === '' || t.toLowerCase() === CALLE_POR_DEFINIR.toLowerCase();
+}
+
 export function camposDomicilioVacios() {
   const out = {};
   for (const campo of CAMPOS_DOMICILIO) out[campo] = '';
@@ -47,7 +61,8 @@ export function valoresDeDomicilio(domicilio, respaldo) {
   if (d.sinEntrega) return valoresSinDomicilio(respaldo);
   const r = respaldo || {};
   const out = {};
-  for (const campo of CAMPOS_DOMICILIO) out[campo] = texto(d[campo]) || texto(r[campo]);
+  const valor = (o, campo) => (campo === 'calle' && esCalleVacia(o[campo]) ? '' : texto(o[campo]));
+  for (const campo of CAMPOS_DOMICILIO) out[campo] = valor(d, campo) || valor(r, campo);
   return out;
 }
 
@@ -63,7 +78,7 @@ export const CP_FISCAL_GENERICO = '56577';
 // branch que Operam auto-crea que en el registro del cliente.
 export function sinCalleConCpGenerico(direccion) {
   const d = direccion || {};
-  return texto(d.calle) === '' && texto(d.cp) === CP_FISCAL_GENERICO;
+  return esCalleVacia(d.calle) && texto(d.cp) === CP_FISCAL_GENERICO;
 }
 
 // Lo que queda en Envio cuando NINGUN domicilio es de entrega (#459, decision

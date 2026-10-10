@@ -33,7 +33,11 @@
 // agrega pasos, para que las pruebas de otras reglas no cambien.
 //
 // La Fusion de Contactos (#565) entra como `fusion`, lo que contesta fundirContactos
-// (un objeto, o una funcion `(solicitud) => resultado` que puede lanzar).
+// (un objeto, o una funcion `(solicitud) => resultado` que puede lanzar), y
+// `resumenNumero`, lo que contesta resumenDelCambioDeNumero (D4; igual, objeto o funcion).
+//
+// El interruptor de la escritura de Contactos en Operam (D6) entra como
+// `escrituraContactos`, la funcion `(clienteId) => boolean`; por defecto encendido.
 
 const clonar = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
@@ -96,6 +100,8 @@ export function subidaQuoteEnMemoria({
   listasPrecios = [{ id: 12, nombre: 'Precio de lista' }, { id: 15, nombre: 'M100' }],
   contactoEntrega = { tipo: 'lograda', escrito: false, pasos: [] },
   fusion = { tipo: 'lograda', fundido: false, motivo: 'sin-contacto-viejo', pasos: [] },
+  resumenNumero = { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [] },
+  escrituraContactos = () => true,
 } = {}) {
   const registros = new Map(cotizaciones.map((c) => [c.id, clonar(c)]));
   const enCola = new Set(cola.map(String));
@@ -103,7 +109,7 @@ export function subidaQuoteEnMemoria({
     obtener: [], actualizarDatos: [], actualizarQuoteOperam: [], sacarDeLaColaPostFix: [],
     setFolioOperam: [], resolverClienteDeCotizacion: [], subirCotizacionOperam: [],
     corregirVigenciaQuote: [], encolarPostFix: [], buscarPorCelular: [], ligarCliente: [], darDeAlta: [], obtenerListasPrecios: [],
-    escribirContactoEntrega: [], fundirContactos: [],
+    escribirContactoEntrega: [], fundirContactos: [], resumenDelCambioDeNumero: [],
   };
   const secuencia = [];
   const anotar = (nombre, args) => {
@@ -183,10 +189,15 @@ export function subidaQuoteEnMemoria({
       anotar('fundirContactos', [solicitud]);
       return resolverValor(fusion, [solicitud]);
     },
+    async resumenDelCambioDeNumero(solicitud) {
+      anotar('resumenDelCambioDeNumero', [solicitud]);
+      return resolverValor(resumenNumero, [solicitud]);
+    },
     async obtenerListasPrecios() {
       anotar('obtenerListasPrecios', []);
       return clonar(listasPrecios);
     },
+    escrituraContactosActiva: (clienteId) => escrituraContactos(clienteId),
     listaDelQuote: () => lista,
     transportistaDelQuote: () => ({ ...transportista }),
     ahora: () => new Date(ahora),

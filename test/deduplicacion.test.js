@@ -494,6 +494,13 @@ test('#459: un cliente no generico sin calle y con CP 56577 es domicilio sin ent
   assert.strictEqual(domicilioSinEntregaRegistrada('517', { branch_code: 563, calle: '  ', cp: ' 56577 ' }), true);
 });
 
+// D3b: "Por definir" es lo que el cotizador escribe cuando no hay calle; al leer de
+// regreso cuenta como calle VACIA.
+test('#557 D3b: la calle "Por definir" cuenta como vacia para el domicilio sin entrega', () => {
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { branch_code: 563, calle: 'Por definir', cp: '56577' }), true);
+  assert.strictEqual(domicilioSinEntregaRegistrada(517, { branch_code: 563, calle: ' por definir ', cp: '56577' }), true);
+});
+
 test('#459: con calle y CP 56577 es un domicilio real de la zona, no sin entrega', () => {
   assert.strictEqual(domicilioSinEntregaRegistrada(517, { calle: 'Av. Cuauhtemoc 12', cp: '56577' }), false);
 });

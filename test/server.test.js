@@ -12,6 +12,7 @@ import { Readable } from 'node:stream';
 import supertest from 'supertest';
 import { handlersWebFichaCliente } from './helpers/ficha-cliente-web.js';
 import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
+import { fijarInterruptorContactos } from './helpers/interruptor-contactos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
@@ -2484,7 +2485,7 @@ function cotizacionActualizable(extra = {}, { tier = 'Mayoreo' } = {}) {
     totalPiezas: 3, total: 300, tier, folioOperam: '1200',
     data: {
       fecha: '2026-07-28', vigencia: '2026-08-27',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Juarez 45', nombreEntrega: 'El Pendulo', celEntrega: '+52 5551234567' },
       notas: ['Nota nueva.'],
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
       ...extra,
@@ -2586,7 +2587,7 @@ test('A104: si la cotizacion apunta a OTRO cliente se aborta sin escribir (no se
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
   _resetSesionWeb();
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'Otro SA', nombreCorto: 'Otro', customerId: 999, cpEntrega: '56530', calle: 'Av. Juarez 45', nombreEntrega: 'Otro SA', celEntrega: '+52 5551234567' },
   });
   const { restore, doc, bitacora } = mockOperamWebLegacy();
   try {
@@ -2605,7 +2606,7 @@ test('A104: con el MISMO cliente que el quote la actualizacion procede', async (
   const { _resetSesionWeb } = await import('../lib/operam-web.js');
   _resetSesionWeb();
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', calle: 'Av. Juarez 45', nombreEntrega: 'El Pendulo', celEntrega: '+52 5551234567' },
   });
   const { restore, doc } = mockOperamWebLegacy();
   try {
@@ -2652,7 +2653,7 @@ test('O68: subir a Operam sin match de cliente responde 422 y NO sube ni persist
     totalPiezas: 1, total: 100, tier: 'Mayoreo',
     data: {
       fecha: '2026-06-17',
-      cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA', calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5551234567' },
+      cliente: { rfc: 'NOEXISTE010101AAA', razonSocial: 'Fantasma SA', calle: 'Av. Juarez 45', cpEntrega: '56530', nombreEntrega: 'Fantasma SA', celEntrega: '+52 5551234567' },
       items: [{ codigo: 'X', descripcion: 'X', cantidad: 1, precio: 100, descuento: 0 }],
     },
   }]);
@@ -2793,7 +2794,7 @@ test('#114-7: actualizar el quote con exito reescribe la huella con lo que quedo
   _resetSesionWeb();
   // #505: vigencia futura, para que regenerar no la recalcule como vencida.
   const id = cotizacionActualizable({
-    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567', calle: 'Av. Juarez 45', celEntrega: '+52 5551234567' },
+    cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376, cpEntrega: '56530', telefono: '+52 5551234567', calle: 'Av. Juarez 45', nombreEntrega: 'El Pendulo', celEntrega: '+52 5551234567' },
     huellaQuote: 'huella-vieja', vigencia: '2099-08-27',
   });
   const { restore } = mockOperamWebLegacy();
@@ -2821,7 +2822,7 @@ test('#328: corregir el domicilio de entrega llega al quote de Operam', async ()
   _resetSesionWeb();
   const clienteViejo = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567', celEntrega: '+52 5551234567',
+    telefono: '+52 5551234567', nombreEntrega: 'El Pendulo', celEntrega: '+52 5551234567',
     cpEntrega: '56530', calle: 'Calle Vieja 1', colonia: 'Centro', municipio: 'Chalco', estado: 'Mexico',
   };
   const id = cotizacionActualizable({ cliente: clienteViejo });
@@ -2862,7 +2863,7 @@ test('#332: corregir SOLO el numero interior llega al quote de Operam', async ()
   _resetSesionWeb();
   const sinInterior = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567', celEntrega: '+52 5551234567',
+    telefono: '+52 5551234567', nombreEntrega: 'El Pendulo', celEntrega: '+52 5551234567',
     cpEntrega: '11700', calle: 'Bosques de Duraznos 187', numInt: '',
     colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
   };
@@ -2901,7 +2902,7 @@ test('#329: corregir el contacto de entrega llega al quote de Operam', async () 
   _resetSesionWeb();
   const sinContacto = {
     rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', customerId: 376,
-    telefono: '+52 5551234567', celEntrega: '+52 55 1234 0000',
+    telefono: '+52 5551234567', nombreEntrega: 'El Pendulo', celEntrega: '+52 55 1234 0000',
     cpEntrega: '11700', calle: 'Bosques de Duraznos 187',
     colonia: 'Bosque de las Lomas', municipio: 'Miguel Hidalgo', estado: 'Ciudad de Mexico',
   };
@@ -3128,6 +3129,8 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
   }]);
   fijarDatos(OPORTUNIDADES_PATH, []);
   const quote = mockOperamWebLegacy({ cliente: '15', domicilio: '564' });
+  // D6: la escritura de Contactos en Operam encendida para el 15 (ausente = apagado).
+  const restaurarInterruptor = fijarInterruptorContactos('15');
   let fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
   const delQuote = globalThis.fetch;
   globalThis.fetch = (u, opts) => (/customer_branches\.php|logout\.php/.test(String(u)) ? fa.fetch(u, opts) : delQuote(u, opts));
@@ -3139,7 +3142,9 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
     assert.strictEqual(p.codigo, 'CONFIRMAR_PISAR_CONTACTO');
     assert.strictEqual(p.nuevo, 'MEDICION556b General Prueba');
     assert.deepStrictEqual(p.pisa, [{ campo: 'cel', viejo: '5500000022', nuevo: '5512345678' }]);
-    assert.deepStrictEqual(p.reintentar.confirmar, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1289', campo: 'cel', viejo: '5500000022' }] } });
+    // D4 (decisiones de Adrian 2026-10-09): el Cel es el numero de identidad, asi que la
+    // confirmacion lleva tambien el numero viejo y lo que hace el cotizador (mover).
+    assert.deepStrictEqual(p.reintentar.confirmar, { contactoEntrega: { desplazar: [], pisar: [{ personId: '1289', campo: 'cel', viejo: '5500000022' }], numero: { viejo: '5500000022', mover: true } } });
     assert.match(p.mensaje, /5500000022/);
     assert.strictEqual(fa.pedidos.filter(x => x.params.has('contactsUPDATE[1289]')).length, 0);
     assert.strictEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente.motivo, 'pisa-datos');
@@ -3148,7 +3153,7 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
     const confirmar = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', `Bearer ${TEST_TOKEN}`).send(p.reintentar.confirmar);
     assert.strictEqual(confirmar.status, 200);
     assert.strictEqual(confirmar.body.contactoEntrega, true, JSON.stringify(confirmar.body));
-    assert.deepStrictEqual(confirmar.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok'], ['fusion de Contactos', 'ok']]);
+    assert.deepStrictEqual(confirmar.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'ok'], ['Contacto movido al n\u00famero nuevo', 'ok']]);
     const [contacto] = JSON.parse(leerArchivoSync(PROSPECTOS_PATH));
     assert.deepStrictEqual([contacto.id, contacto.celular10], [9001, '5512345678']);
     assert.deepStrictEqual(contacto.eventos.map(e => [e.tipo, e.celularDe, e.celularA, e.personId]), [['fusion', '5500000022', '5512345678', '1289']]);
@@ -3157,5 +3162,6 @@ test('#563 Editar: la actualizacion pregunta por el Cel que se pisaria y la conf
     assert.strictEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
   } finally {
     quote.restore();
+    restaurarInterruptor();
   }
 });

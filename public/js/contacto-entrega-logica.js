@@ -2,7 +2,11 @@
 // actualizar una cotizacion (#558, ADR-0024 regla 1; GLOSSARY.md "Contacto de
 // entrega"): sin el telefono de quien recibe, la paqueteria no tiene a quien llamar,
 // y sin domicilio de entrega el Contacto de entrega no tiene donde vivir en Operam.
-// El correo es opcional.
+// El correo es opcional. D3 (decisiones de Adrian 2026-10-09): de quien recibe se exige
+// lo mismo que el Registro minimo de un prospecto -- celular, nombre (sin apellido vale)
+// y CP (hace las veces de ciudad) --; la calle deja de ser obligatoria y, vacia, el
+// documento, el quote y el alta escriben "Por definir" (CALLE_POR_DEFINIR,
+// domicilio-entrega-logica.js).
 //
 // EL juicio, uno solo para las dos superficies (patron de moneda-cliente-logica.js):
 // el navegador no manda la cotizacion y lleva al vendedor al campo que falta, y la
@@ -11,6 +15,7 @@
 
 export const MOTIVO_SIN_DOMICILIO_ENTREGA = 'sin-domicilio-entrega';
 export const MOTIVO_SIN_TELEFONO_ENTREGA = 'sin-telefono-entrega';
+export const MOTIVO_SIN_NOMBRE_ENTREGA = 'sin-nombre-entrega';
 
 // Codigo estructurado de la respuesta HTTP del bloqueo: quien lo recibe clasifica por
 // codigo, nunca parseando el texto (misma disciplina que CLIENTE_MONEDA_EXTRANJERA).
@@ -30,16 +35,21 @@ function tieneTelefono(valor) {
   return /\d/.test(sinCodigoSuelto);
 }
 
-// Lo que falta, en el orden del formulario del paso Envio (CP, calle, celular). El
-// domicilio de entrega es calle Y CP: el mismo criterio con el que el alta escribe el
-// domicilio en el Cliente Operam (buildBranchGenerico, lib/alta-generica.js). Ni el
-// envio ni el Cliente Operam entran: el cliente que recoge en planta tambien los
+// Lo que falta, en el orden del formulario del paso Envio (CP, nombre, celular). El
+// domicilio de entrega es el CP (D3): con el el alta escribe el domicilio en el Cliente
+// Operam (buildBranchGenerico, lib/alta-generica.js), con la calle o "Por definir". Ni
+// el envio ni el Cliente Operam entran: el cliente que recoge en planta tambien los
 // necesita. Cada `revisar` devuelve los campos vacios como [id del campo, llave].
 const FALTANTES = [
   {
     motivo: MOTIVO_SIN_DOMICILIO_ENTREGA,
     texto: 'el domicilio de entrega',
-    revisar: (c) => [['cl-cp-entrega', 'cpEntrega'], ['cl-calle', 'calle']].filter(([, llave]) => vacio(c[llave])),
+    revisar: (c) => [['cl-cp-entrega', 'cpEntrega']].filter(([, llave]) => vacio(c[llave])),
+  },
+  {
+    motivo: MOTIVO_SIN_NOMBRE_ENTREGA,
+    texto: 'el nombre del Contacto de entrega',
+    revisar: (c) => [['cl-nombre-entrega', 'nombreEntrega']].filter(([, llave]) => vacio(c[llave])),
   },
   {
     motivo: MOTIVO_SIN_TELEFONO_ENTREGA,

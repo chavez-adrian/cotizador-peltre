@@ -83,6 +83,8 @@
   </header>
 
   <div class="admin-container">
+    <!-- D6: aviso del interruptor de la escritura de Contactos en Operam (mientras no este en todos) -->
+    <div id="aviso-contactos-operam" class="alert alert-warning" style="display:none;margin-bottom:16px"></div>
     <!-- Precios -->
     <div class="admin-section">
       <h2>Actualizar precios</h2>
@@ -509,6 +511,7 @@ function alEntrarAdmin(token) {
   loadAlmacenDomicilios();
   loadSyncContactos();
   loadDropboxSubidas();
+  loadAvisoContactosOperam();
   cargarVendedoresExpo();
 }
 
@@ -1447,6 +1450,22 @@ function dropboxFlujosHtml(flujos) {
         : `<span style="color:var(--text-light)">sin configurar -- escribe en el sandbox de la app, bajo <code>${paridadEsc(f.base)}</code></span>`}
     </div>
   `).join('');
+}
+
+// D6 (decisiones de Adrian 2026-10-09): mientras CONTACTOS_OPERAM_ESCRITURA no este en
+// `todos`, el panel dice arriba, en palabras simples, que hace hoy el cotizador con los
+// Contactos de entrega en Operam. El texto lo arma el servidor.
+async function loadAvisoContactosOperam() {
+  const caja = document.getElementById('aviso-contactos-operam');
+  try {
+    const res = await adminApi('/api/admin/contactos-operam-escritura');
+    if (!res.ok) return;
+    const data = await res.json();
+    caja.textContent = data.aviso || '';
+    caja.style.display = data.aviso ? '' : 'none';
+  } catch (err) {
+    console.error('[admin] no se pudo leer el interruptor de Contactos en Operam:', err.message);
+  }
 }
 
 async function loadDropboxSubidas() {

@@ -638,3 +638,29 @@ test('#332: el domicilio de entrega del documento coincide con el del quote', as
   assert.ok(texto.includes(hex('Bosques de Europa 163 Int.')), 'PDF');
   assert.ok(!texto.includes(hex('Bosques de Europa 163,')), 'el PDF no deja el interior suelto entre comas');
 });
+
+// D3b (decisiones de Adrian 2026-10-09): la calle deja de ser obligatoria y, vacia, los
+// tres que comparten el armador (#332) -- quote, HTML y PDF -- escriben "Por definir" en
+// su lugar. La leyenda "Favor de confirmar el domicilio de entrega" (#84) se queda.
+test('#557 D3b sin calle, el documento y el quote dicen "Por definir" en su lugar, con la leyenda de confirmar', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  const cliente = {
+    nombreEntrega: 'Adrian Cliente Nombre', calle: '', numInt: '', colonia: 'Bosques de Aragon', cpEntrega: '57170',
+    municipio: 'Nezahualcoyotl', estado: 'Mexico', leyendaDomicilio: 'Favor de confirmar el domicilio de entrega',
+  };
+  const esperado = 'Por definir, Bosques de Aragon, 57170, Nezahualcoyotl, Mexico';
+  assert.equal(armarContenidoQuote({ cliente }).deliveryAddress, esperado, 'quote');
+  const html = generateQuoteHTML({ cliente });
+  assert.ok(html.includes(esperado), 'HTML');
+  assert.ok(html.includes('Favor de confirmar el domicilio de entrega'), 'la leyenda se queda');
+  const pdf = await generateQuotePDF({ cliente, _compress: false });
+  const hex = (s) => Buffer.from(s, 'latin1').toString('hex');
+  assert.ok(pdf.toString('latin1').includes(hex('definir')), 'PDF');
+});
+
+test('#557 D3b con calle nada cambia, y sin ningun dato del domicilio no se inventa "Por definir"', async () => {
+  const { armarContenidoQuote } = await import('../lib/operam-client.js');
+  assert.equal(armarContenidoQuote({ cliente: { calle: 'Av. Juarez 45', cpEntrega: '56530' } }).deliveryAddress, 'Av. Juarez 45, 56530');
+  assert.equal(armarContenidoQuote({ cliente: { calle: '', numInt: '4', cpEntrega: '56530' } }).deliveryAddress, 'Por definir Int. 4, 56530');
+  assert.equal(armarContenidoQuote({ cliente: {} }).deliveryAddress, '');
+});

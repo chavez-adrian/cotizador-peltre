@@ -14,8 +14,12 @@ import { abrirDomicilioWeb, serializarBodyDomicilios, personasDeContactos } from
 import { webDeMentiras, GENERAL_564, ROLES_564, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
 
 // Las credenciales de la web de mentiras solo mientras corre este archivo: al terminar,
-// process.env queda como estaba (lo que no existia se borra).
-const CREDENCIALES = { OPERAM_URL: 'https://fa.mentira.test', OPERAM_USER: 'usuario_de_prueba', OPERAM_PASSWORD: 'clave_de_prueba' };
+// process.env queda como estaba (lo que no existia se borra). Con ellas, el interruptor
+// de la escritura de Contactos en Operam (D6) encendido: ausente seria apagado.
+const CREDENCIALES = {
+  OPERAM_URL: 'https://fa.mentira.test', OPERAM_USER: 'usuario_de_prueba', OPERAM_PASSWORD: 'clave_de_prueba',
+  CONTACTOS_OPERAM_ESCRITURA: 'todos',
+};
 let envOriginal;
 
 before(() => {
@@ -226,7 +230,12 @@ test('W13: editar a la persona elegida por la web legacy: la pregunta son 6 peti
   assert.equal(fa.pedidos.length, 6);
 
   fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
-  const decision = { desplazar: [], pisar: pregunta.pisa.map((p) => ({ personId: p.personId, campo: p.campo, viejo: p.viejo })) };
+  // D4: cambiar el Cel cambia su numero de identidad, y la confirmacion lo lleva.
+  assert.deepEqual(pregunta.cambioDeNumero, { personId: '1289', viejo: '5500000022', nuevo: '5512345678' });
+  const decision = {
+    desplazar: [], pisar: pregunta.pisa.map((p) => ({ personId: p.personId, campo: p.campo, viejo: p.viejo })),
+    numero: { viejo: pregunta.cambioDeNumero.viejo, mover: true },
+  };
   const r = await escribirContactoEntrega({ ...solicitud, decision });
   assert.equal(r.tipo, 'lograda');
   assert.deepEqual(r.noAplicados, []);

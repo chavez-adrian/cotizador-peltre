@@ -64,12 +64,14 @@ import { importarProspectosExpo } from './lib/importar-prospectos.js';
 import { refrescarIndice, matchCliente, clientesCacheados, telefonosDeClienteOperam } from './lib/indice-telefonos.js';
 import { refrescarContactosDomicilio } from './lib/contactos-domicilio-io.js';
 import { leerContactos } from './lib/contactos-operam.js';
-import { contactosDeClienteOperam } from './lib/contactos-operam-logica.js';
+import {
+  contactosDeClienteOperam, interpretarInterruptorEscritura, avisoInterruptorEscritura, VARIABLE_INTERRUPTOR_ESCRITURA,
+} from './lib/contactos-operam-logica.js';
 import { primerDiaHabilDespues } from './lib/horas-habiles.js';
 import { transicionPorCotizacion, transicionPorAsignacion, etapaAlReabrirCotizacion, esSalida, documentoBloqueado, cotizacionesDedupVencidas, LEYENDA_DEDUP_PENDIENTE } from './lib/pipeline.js';
 import { CODIGO_CLIENTE_SIN_LISTA } from './lib/lista-precios-cliente.js';
 import { monedaDelCliente, CODIGO_MONEDA_EXTRANJERA } from './public/js/moneda-cliente-logica.js';
-import { CODIGO_ENTREGA_INCOMPLETA, MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA, telefonoDePersona } from './public/js/contacto-entrega-logica.js';
+import { CODIGO_ENTREGA_INCOMPLETA, MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA, MOTIVO_SIN_NOMBRE_ENTREGA, telefonoDePersona } from './public/js/contacto-entrega-logica.js';
 import { puedeAsignar, normalizarPuedeAsignar } from './public/js/pipeline-logica.js';
 import { validarProspectoBody, validarTransicion, contarMotivosNoUtil, reunionPendienteResultado, reunionPendienteResultadoDe, validarEdicionProspecto, buildEdicionProspectoDatos, CANALES, MOTIVOS_NO_UTIL, OPCIONALES as PROSPECTO_OPCIONALES, normalizarTextosProspecto, validarProspectoExpoBody, buildDatosExpo, validarCalificacion, buildCalificacion, validarSiguienteContacto, buildEventoSiguienteContacto } from './public/js/prospectos-logica.js';
 import { PASOS_DECORADO, checklistInicial, marcarPaso, revertirPaso, progresoDecorado } from './public/js/decorados-logica.js';
@@ -2666,6 +2668,16 @@ app.get('/api/admin/dropbox-subidas', authMiddleware, adminMiddleware, async (_r
   });
 });
 
+// D6 (decisiones de Adrian 2026-10-09): el interruptor de la escritura de Contactos en
+// Operam (CONTACTOS_OPERAM_ESCRITURA) tal como esta HOY, para el aviso del panel mientras
+// no este en `todos`. Estado calculado al leer (como los flujos de Dropbox, #399): la
+// variable vive en Render y no se cambia desde aqui.
+app.get('/api/admin/contactos-operam-escritura', authMiddleware, adminMiddleware, (_req, res) => {
+  const valor = process.env[VARIABLE_INTERRUPTOR_ESCRITURA];
+  const { modo, clientes, ignorados, valor: limpio } = interpretarInterruptorEscritura(valor);
+  res.json({ variable: VARIABLE_INTERRUPTOR_ESCRITURA, valor: limpio, modo, clientes, ignorados, aviso: avisoInterruptorEscritura(valor) });
+});
+
 // Reporte de paridad del catalogo Excel vs Operam (issue #130, padre #120, bloqueado
 // por #128/#129). Lee Operam completo con los lectores de #128 (~10 llamadas: sales
 // types, precios e items paginados), corre el nucleo puro construirCatalogo contra
@@ -3493,7 +3505,7 @@ function respuestaActualizacion(r) {
 // cotizacion con pedido (que ofrece Copiar) ni el 503 de Operam caido: lo que falta
 // es un dato de la cotizacion, y reintentar sin capturarlo da lo mismo.
 function esBloqueoContactoEntrega(r) {
-  return r.motivo === MOTIVO_SIN_DOMICILIO_ENTREGA || r.motivo === MOTIVO_SIN_TELEFONO_ENTREGA;
+  return [MOTIVO_SIN_DOMICILIO_ENTREGA, MOTIVO_SIN_NOMBRE_ENTREGA, MOTIVO_SIN_TELEFONO_ENTREGA].includes(r.motivo);
 }
 
 function cuerpoContactoEntrega(r) {
@@ -3503,32 +3515,42 @@ function cuerpoContactoEntrega(r) {
 // El domicilio de entrega ya tenia un contacto General (#562): la pregunta viaja en una
 // respuesta 200 junto al folio -- el quote YA esta subido, y un 428 haria que el
 // navegador lo tratara como no subido -- y el cuerpo con el que se reintenta lo dicta el
-// SERVIDOR, como en la otra razon social (#345): `confirmar` (deja de ser General) o
-// `conservar` (se queda). El navegador solo reenvia el que elija el vendedor.
+// SERVIDOR, como en la otra razon social (#345): `confirmar` (deja de ser General). D1
+// (decisiones de Adrian 2026-10-09): no hay "conservar"; mientras el vendedor no
+// confirme, la marca sigue y la pregunta vuelve.
 const CODIGO_DESPLAZAR_GENERAL = 'CONFIRMAR_DESPLAZAR_GENERAL';
 // #563: la persona elegida ya tenia en Operam datos que se pisarian (y quiza tambien
 // hay un General a desplazar): la pregunta lleva cada casilla con su valor viejo y el
 // nuevo, y `confirmar` lleva lo que se pregunto, que el modulo revalida.
 const CODIGO_PISAR_CONTACTO = 'CONFIRMAR_PISAR_CONTACTO';
 
+// D4 (decisiones de Adrian 2026-10-09): con cambio de celular la pregunta lleva `numero`
+// (lo que se moveria en el cotizador, como lo armo la Subida del quote) y la confirmacion
+// lleva el numero viejo, que el modulo revalida, y `mover` (lo que la Subida dijo que
+// hace "Confirmar"). Con telefono compartido hay una segunda salida, `soloOperam`: la
+// misma escritura en Operam sin mover nada en el cotizador.
 function conPreguntaContacto(p) {
   if (!p) return {};
   const desplazados = p.desplazados || [];
   const pisa = p.pisa || [];
+  const numero = p.numero || null;
+  const cuerpo = (mover) => ({
+    contactoEntrega: {
+      desplazar: desplazados.map(d => d.personId),
+      ...(pisa.length ? { pisar: pisa.map(x => ({ personId: x.personId, campo: x.campo, viejo: x.viejo })) } : {}),
+      ...(numero ? { numero: { viejo: numero.viejo, mover } } : {}),
+    },
+  });
   return {
     preguntaContacto: {
-      codigo: pisa.length ? CODIGO_PISAR_CONTACTO : CODIGO_DESPLAZAR_GENERAL, mensaje: p.mensaje, detalle: p.detalle,
+      codigo: pisa.length || numero ? CODIGO_PISAR_CONTACTO : CODIGO_DESPLAZAR_GENERAL, mensaje: p.mensaje, detalle: p.detalle,
       nuevo: p.persona?.nombre || p.contacto?.nombre || '',
       desplazados: desplazados.map(d => ({ nombre: d.nombre, roles: d.roles })),
       ...(pisa.length ? { pisa: pisa.map(x => ({ campo: x.campo, viejo: x.viejo, nuevo: x.nuevo, ...(x.pierde ? { pierde: true } : {}) })) } : {}),
+      ...(numero ? { numero } : {}),
       reintentar: {
-        confirmar: {
-          contactoEntrega: {
-            desplazar: desplazados.map(d => d.personId),
-            ...(pisa.length ? { pisar: pisa.map(x => ({ personId: x.personId, campo: x.campo, viejo: x.viejo })) } : {}),
-          },
-        },
-        conservar: { contactoEntrega: { conservar: true } },
+        confirmar: cuerpo(numero ? numero.mover === true : undefined),
+        ...(numero?.compartido ? { soloOperam: cuerpo(false) } : {}),
       },
     },
   };
@@ -3973,7 +3995,9 @@ function decisionDelFormulario(body) {
 // ADR-0017): TODA la traduccion del body HTTP hacia el modulo. Siempre con datos
 // fiscales (la Seccion 1 es una constancia o la captura minima) y con el segmento
 // en 'esperar': el vendedor esta mirando el reporte de pasos.
-function solicitudDelFormulario(body, vendedor) {
+// `nombreContacto` (D2, decisiones de Adrian 2026-10-09): el nombre del Contacto del
+// cotizador cuyo celular es el `celular_nota` del alta, que el handler resuelve antes.
+function solicitudDelFormulario(body, vendedor, nombreContacto = '') {
   const b = body || {};
   const entrega = b.entrega || {};
   return {
@@ -4024,9 +4048,10 @@ function solicitudDelFormulario(body, vendedor) {
       correo: entrega.email || '',
     },
     // Quien recibe (#566): el formulario no lo captura -- su "Nombre del domicilio" es
-    // un lugar --, asi que la persona que crea Operam conserva su nombre y recibe el
-    // Telefono y el correo del domicilio de entrega.
-    contactoEntrega: { nombre: '', telefono: entrega.phone || '', correo: entrega.email || '' },
+    // un lugar --, asi que la persona que crea Operam recibe el Telefono y el correo del
+    // domicilio de entrega y, D2, el nombre del Contacto del cotizador con el celular
+    // del alta; sin ese Contacto conserva el suyo (el nombre corto).
+    contactoEntrega: { nombre: nombreContacto || '', telefono: entrega.phone || '', correo: entrega.email || '' },
     ligaFija: { clienteId: null, domicilioId: b.branch_id ?? null },
     decision: decisionDelFormulario(b),
     segmento: { preferencia: 'esperar' },
@@ -4091,6 +4116,20 @@ function opcionesDeLaPregunta(body, candidatos, salidas) {
   };
 }
 
+// D2 (decisiones de Adrian 2026-10-09): el nombre de quien recibe en el alta completa
+// sale del Contacto del cotizador (la tabla prospectos = Contactos) cuyo celular
+// (ultimos 10 digitos) es el `celular_nota` capturado. Sin Contacto, o si el registro no
+// se puede leer, '' y la persona conserva el nombre corto: el alta no se detiene por esto.
+async function nombreDelContactoDelAlta(celular) {
+  if (!celular) return '';
+  try {
+    return String((await prospectosStore.buscarPorCelular(celular))?.nombre || '').trim();
+  } catch (err) {
+    console.error('[crear-cliente] no se pudo leer el Contacto del celular del alta:', err.message);
+    return '';
+  }
+}
+
 app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   const cliente = req.body;
   if (!cliente?.tax_id) return res.status(400).json({ error: 'Falta el RFC (tax_id)' });
@@ -4106,7 +4145,7 @@ app.post('/api/crear-cliente', authMiddleware, async (req, res) => {
   if (rechazoLista) return res.status(403).json({ error: rechazoLista });
   marcarTelefonoSospechoso(cliente);
 
-  const alta = await darDeAlta(solicitudDelFormulario(cliente, req.user.name));
+  const alta = await darDeAlta(solicitudDelFormulario(cliente, req.user.name, await nombreDelContactoDelAlta(cliente.celular_nota)));
 
   // Respaldo de la constancia en Dropbox (#24/#350): no es del alta, es del
   // archivo que el vendedor solto. Fire-and-forget, y solo cuando esta alta creo

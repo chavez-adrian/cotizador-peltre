@@ -3157,10 +3157,11 @@ async function crearOActualizarCotizacion() {
   // #558 (ADR-0024): sin domicilio de entrega o sin el telefono del Contacto de
   // entrega no se manda nada -- el MISMO juicio con el que la Subida del quote
   // bloquea -- y el vendedor va al campo que falta en el paso Envio. Tambien al
-  // Editar una cotizacion vieja y cuando el cliente recoge en planta.
+  // Editar una cotizacion vieja y cuando el cliente recoge en planta. D3: CP, nombre
+  // y celular; la calle ya no.
   const faltaEntrega = bloqueoContactoEntrega({
     cpEntrega: document.getElementById('cl-cp-entrega')?.value,
-    calle: document.getElementById('cl-calle')?.value,
+    nombreEntrega: document.getElementById('cl-nombre-entrega')?.value,
     celEntrega: numeroDeCampo('cl-cel-entrega'),
   });
   if (faltaEntrega) {
@@ -5094,9 +5095,10 @@ window.marcarSucursalOperam = (id, customerId, el) => operarEnOperam(id, slotOpe
 // confirmacion el server agrega la liga a las que el Contacto ya tenia (nunca
 // reemplaza). Sin este click no se sube nada ni se crea ningun Cliente Operam.
 window.confirmarOtraRazonSocialOperam = (id, cuerpo, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: cuerpo });
-// #562: "si, que el Contacto de entrega quede como General" o "no, el General actual se
-// queda". El cuerpo lo dicta el SERVIDOR en `preguntaContacto.reintentar`, como el de la
-// otra razon social. Sin `conFolio`: la respuesta trae la forma de la subida.
+// #562: "Confirmar" la pregunta del Contacto de entrega (D1, decisiones de Adrian
+// 2026-10-09: no hay "no"). El cuerpo lo dicta el SERVIDOR en
+// `preguntaContacto.reintentar`, como el de la otra razon social. Sin `conFolio`: la
+// respuesta trae la forma de la subida.
 window.responderContactoEntregaOperam = (id, cuerpo, el) => operarEnOperam(id, slotOperamDesde(el), { extraBody: cuerpo });
 window.dejarPreOperam = (id, el) => {
   const slot = slotOperamDesde(el);

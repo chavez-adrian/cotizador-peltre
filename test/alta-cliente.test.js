@@ -1890,6 +1890,32 @@ test('#566: otro domicilio de un Cliente Operam existente no crea persona: el al
   assert.equal(paso(res, 'contacto de entrega').status, 'omitido');
 });
 
+// D6 (decisiones de Adrian 2026-10-09): con el interruptor de la escritura de Contactos
+// en Operam apagado para el Cliente Operam, el alta se queda como antes de la spec: no
+// relee a la persona, no llama al modulo y su reporte no trae paso de contacto.
+test('#557 D6 interruptor apagado: el alta no escribe contactos ni deja paso de contacto, y es lograda', async () => {
+  const consultados = [];
+  const operam = operamEnMemoria({ escrituraContactos: (id) => { consultados.push(id); return false; } });
+  const res = await darDeAlta(solicitud({ domicilioEntrega: DOMICILIO, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.deepEqual(consultados, [res.clienteId]);
+  assert.equal(operam.pedidos('contactoEntregaDelAlta').length, 0);
+  assert.equal(res.pasos.some(p => p.name === 'contacto de entrega'), false);
+  assert.equal(res.contactoEntrega, undefined);
+});
+
+test('#557 D6 interruptor apagado sobre un Cliente Operam que ya existia: tampoco el omitido de contactos', async () => {
+  const operam = operamEnMemoria({
+    clientes: [{ customer_id: 41, CustName: 'Hotel Azul Centro', cust_ref: 'Hotel Azul', tax_id: 'XAXX010101000', branches: [{ branch_code: 7, br_name: 'HOTEL AZUL' }] }],
+    escrituraContactos: () => false,
+  });
+  const res = await darDeAlta(solicitud({ decision: { tipo: 'usar', clienteId: 41 }, contactoEntrega: LUCIA }), operam.deps);
+
+  assert.equal(res.tipo, 'lograda');
+  assert.equal(res.pasos.some(p => p.name === 'contacto de entrega'), false);
+});
+
 // Escribirle a una persona que no es la que creo el alta seria pisar a alguien que
 // nadie eligio: sin una sola persona General en el Cliente Operam releido no se
 // escribe nada y el paso lo dice.

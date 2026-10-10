@@ -21,6 +21,7 @@ import { buildBotonEditarHtml, tienePedidoAsociado } from './editar-cotizacion-l
 import { ICONO_WHATSAPP, ICONO_CORREO, ICONO_CAMION, ICONO_TRES_PUNTOS } from './iconos.js';
 import { entregaPedido } from './entrega-pedido-logica.js';
 import { PASO_CONTACTO_ENTREGA } from './contacto-entrega-logica.js';
+import { botonesCambioDeNumero } from './cambio-numero-logica.js';
 import { SIN_DATOS_FISCALES, CON_DATOS_FISCALES, CON_PEDIDO, ETIQUETA_FISCAL, ETIQUETA_COMERCIAL, ETIQUETAS_CONTACTO_ORDEN, ETIQUETA_CONTACTO } from './estado-cliente-logica.js';
 
 // Candado del documento por duplicado sin resolver (#204). Reexpresion frontend
@@ -413,33 +414,30 @@ function buildOtraRazonSocialHtml(id, vista) {
   </div>`;
 }
 
-// La pregunta del General del domicilio de entrega (#562, ADR-0024 regla 4): el quote
-// ya esta subido y el Contacto de entrega quedo pendiente. Dos salidas, cada una con el
-// cuerpo que dicto el servidor (`reintentar`), serializado en el onclick como en la
-// otra razon social; el navegador no lo arma. El detalle tecnico va plegado (Mensaje en
-// dos capas). Sin pregunta no pinta nada.
+// La pregunta del Contacto de entrega (#562, #563, ADR-0024 reglas 4 y 5): el quote ya
+// esta subido y el Contacto de entrega quedo pendiente. D1 (decisiones de Adrian
+// 2026-10-09): solo se confirma -- la salida "conservar" se quito y el mensaje dice
+// como no desplazar al General --, con el cuerpo que dicto el servidor
+// (`reintentar.confirmar`), serializado en el onclick como en la otra razon social; el
+// navegador no lo arma. El detalle tecnico va plegado (Mensaje en dos capas). Sin
+// pregunta no pinta nada.
+// D4 (decisiones de Adrian 2026-10-09): con cambio de celular y telefono compartido son
+// dos botones con las palabras de la decision (`botonesCambioDeNumero`), cada uno con
+// SU cuerpo; si no, uno solo, "Confirmar".
 function buildPreguntaContactoEntregaHtml(id, p) {
   if (!p || !p.reintentar) return '';
   const cuerpo = (x) => JSON.stringify(x || {}).replace(/"/g, '&quot;');
-  const desplazados = (p.desplazados || []).map(d => escapeHtml(d.nombre || '')).join(' y ');
-  // #563: con casillas que se pisarian, las salidas son actualizar los datos de la
-  // persona elegida (y, si hay, quitarle el General al que lo era) o dejarlos como estan.
-  const nuevo = escapeHtml(p.nuevo || 'el Contacto de entrega');
-  const pisa = Array.isArray(p.pisa) && p.pisa.length > 0;
-  const si = pisa
-    ? `S&iacute;, actualiza sus datos en Operam${desplazados ? ` y ${nuevo} queda como General` : ''}`
-    : `S&iacute;, ${nuevo} queda como General`;
-  const no = pisa
-    ? `No, deja sus datos en Operam como est&aacute;n${desplazados ? ` y ${desplazados} sigue como General` : ''}`
-    : `No, ${desplazados || 'el General actual'} sigue como General`;
+  const botones = botonesCambioDeNumero(p.nuevo || 'el Contacto de entrega', p.numero)
+    .filter(b => p.reintentar[b.salida])
+    .map((b, i) => `
+    <button class="btn btn-sm ${i === 0 ? 'btn-primary' : 'btn-secondary'}" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar[b.salida])}, this)">${escapeHtml(b.texto)}</button>`)
+    .join('');
   const detalle = p.detalle
     ? `<details class="operam-paso-detalle"><summary>Ver detalle t&eacute;cnico</summary><div>${escapeHtml(p.detalle)}</div></details>`
     : '';
   return `<div class="operam-status operam-status-candidatos">
     <div class="operam-candidatos-msg">${escapeHtml(p.mensaje || '')}</div>
-    <div>El Contacto de entrega queda pendiente en Operam hasta que contestes.</div>${detalle}
-    <button class="btn btn-sm btn-primary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.confirmar)}, this)">${si}</button>
-    <button class="btn btn-sm btn-secondary" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar.conservar)}, this)">${no}</button>
+    <div>El Contacto de entrega queda pendiente en Operam hasta que confirmes.</div>${detalle}${botones}
   </div>`;
 }
 

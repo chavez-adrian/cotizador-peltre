@@ -66,6 +66,8 @@ test('CE2: en un domicilio que ya tiene General devuelve la pregunta al vendedor
   assert.equal(r.motivo, 'general-existente');
   assert.deepEqual(r.desplazados, [{ personId: '1294', nombre: 'Alfa G Prueba', roles: ['general'] }]);
   assert.match(r.mensaje, /Alfa G Prueba deja de ser el contacto General de este domicilio y queda como contacto de Entrega/);
+  // D1: la pregunta solo se confirma; la salida para no desplazarlo es elegirlo a el.
+  assert.match(r.mensaje, /Si no quieres que Alfa G Prueba deje de ser el contacto General, elige a Alfa G Prueba como Contacto de entrega en el paso Env\u00edo\./);
   assert.match(r.detalle, /1294/);
   assert.equal(op.pedidos('crear').length, 0);
   assert.equal(op.pedidos('editar').length, 0);
@@ -409,10 +411,13 @@ test('CE21: la persona elegida sin numeros queda con el numero en Cel y Telefono
 
 // Pisar el Telefono que ya estaba es un dato de Operam: primero la pregunta, con el
 // valor viejo y el nuevo, y nada escrito; la decision lleva lo que se pregunto.
+// D4 (decisiones de Adrian 2026-10-09): si la pregunta trae el cambio del numero de
+// identidad, la confirmacion lleva ese numero viejo y si lo del cotizador se mueve.
 const decisionDe = (pregunta, extra = {}) => ({
   decision: {
     desplazar: pregunta.desplazados.map(d => d.personId),
     pisar: pregunta.pisa.map(p => ({ personId: p.personId, campo: p.campo, viejo: p.viejo })),
+    ...(pregunta.cambioDeNumero ? { numero: { viejo: pregunta.cambioDeNumero.viejo, mover: true } } : {}),
   },
   cotizacion: { id: 21, folio: '1357' },
   ...extra,
@@ -521,6 +526,7 @@ test('CE28: la persona elegida que no es General pregunta una sola vez por sus d
   assert.deepEqual(pregunta.desplazados.map(d => d.personId), ['1294']);
   assert.deepEqual(pregunta.pisa.map(p => p.campo), ['telefono']);
   assert.match(pregunta.mensaje, /Alfa G Prueba deja de ser el contacto General/);
+  assert.match(pregunta.mensaje, /elige a Alfa G Prueba como Contacto de entrega en el paso Env\u00edo/);
 
   const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), { ...op.deps, ahora: AHORA });
   assert.equal(r.tipo, 'lograda');
@@ -561,9 +567,12 @@ test('CE30: la persona elegida que ya esta al dia (numeros, correo, General y En
 
 // Al formulario de editar solo viajan las casillas que cambian; las que ya estaban
 // (aunque Operam las guarde con otro formato) se repostean como las trae la web.
+// D4: quien solo tenia Secundario cambia de numero de identidad, asi que primero se
+// confirma (CE46); lo que viaja a la edicion confirmada no cambia.
 test('CE31: a la edicion solo viajan las casillas que cambian', async () => {
   const op = conPersona({ phone2: '55 7777 0000', email: 'LUCIA@example.com' });
-  await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  const pregunta = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(pregunta) }), op.deps);
   const [{ args: [, , cambios] }] = op.pedidos('editar');
   assert.deepEqual(cambios.casillas, { cel: '+52 55 1234 5678', telefono: '+52 55 1234 5678' });
   assert.deepEqual([enOperam(op, '1249').secundario, enOperam(op, '1249').correo], ['55 7777 0000', 'LUCIA@example.com']);
@@ -749,4 +758,50 @@ test('CE40: si no se puede guardar la liga, la copia queda creada y el paso avis
   assert.equal(r.pasos[0].status, 'warn');
   assert.match(r.pasos[0].mensaje, /no pudo anotar que es la copia/);
   assert.match(r.pasos[0].detalle, /Neon caido/);
+});
+
+// --- D4: el paso del numero (decisiones de Adrian 2026-10-09) ---------------------
+// Cambiar el numero de identidad de una persona (Cel > Telefono > Secundario) mueve en
+// el cotizador todo lo del numero viejo al nuevo, asi que SIEMPRE se pregunta antes,
+// aunque no se pise ninguna casilla (llenar Cel y Telefono vacios de quien solo tenia
+// Secundario tambien cambia su numero). La pregunta lo dice primero, con las palabras
+// de la decision, y la confirmacion revalida el numero viejo (patron de #368).
+test('CE45: cambiar el numero de la persona pregunta primero por el cambio de celular; sin confirmar ese numero no se escribe', async () => {
+  const op = conPersona({ phone: '55 8888 0000', fax: '55 8888 0000' });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.deepEqual(r.cambioDeNumero, { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
+  assert.match(r.mensaje, /^El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a \+52 55 1234 5678\./);
+  assert.equal(r.partes.numero, 'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a +52 55 1234 5678.');
+  assert.match(r.mensaje, /el 55 8888 0000 queda como su Tel\u00e9fono Secundario/);
+  assert.doesNotMatch(r.mensaje, /fund|fusi/i);
+
+  const sinNumero = decisionDe(r);
+  delete sinNumero.decision.numero;
+  const otraVez = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...sinNumero }), op.deps);
+  assert.equal(otraVez.tipo, 'pregunta');
+  assert.equal(op.pedidos('editar').length, 0);
+
+  const viejoDistinto = decisionDe(r);
+  viejoDistinto.decision.numero.viejo = '55 7777 0000';
+  assert.equal((await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...viejoDistinto }), op.deps)).tipo, 'pregunta');
+  assert.equal(op.pedidos('editar').length, 0);
+
+  const confirmada = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(r) }), op.deps);
+  assert.equal(confirmada.tipo, 'lograda');
+  assert.deepEqual(confirmada.cambioDeNumero, { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' });
+});
+
+test('CE46: quien solo tenia Secundario y recibe el numero en Cel y Telefono (casillas vacias) tambien pregunta por el cambio de celular', async () => {
+  const op = conPersona({ phone2: '55 7777 0000' });
+  const r = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249 }), op.deps);
+  assert.equal(r.tipo, 'pregunta');
+  assert.equal(r.motivo, 'pisa-datos');
+  assert.deepEqual(r.pisa, []);
+  assert.deepEqual(r.cambioDeNumero, { personId: '1249', viejo: '55 7777 0000', nuevo: '+52 55 1234 5678' });
+  assert.equal(op.pedidos('editar').length, 0);
+
+  const confirmada = await escribirContactoEntrega(solicitud({ contacto: ELEGIDA_1249, ...decisionDe(r) }), op.deps);
+  assert.equal(confirmada.tipo, 'lograda');
+  assert.deepEqual([enOperam(op, '1249').cel, enOperam(op, '1249').secundario], ['+52 55 1234 5678', '55 7777 0000']);
 });

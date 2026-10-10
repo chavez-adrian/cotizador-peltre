@@ -741,12 +741,14 @@
          aqui, encima de las opciones de envio. Los ids conservan el prefijo cl-
          (nacieron en el paso Cliente); moverlos habria significado tocar cada
          lectura/escritura de estos campos en app.js sin ganancia funcional.
-         Desde #558 (ADR-0024) CP, calle y celular de entrega son requisito para
-         generar y actualizar, tambien si el cliente recoge en planta; CP+pais
-         siguen siendo obligatorios para cotizar paqueteria (cotizarEnvia). -->
+         Desde #558 (ADR-0024) lo de quien recibe es requisito para generar y
+         actualizar, tambien si el cliente recoge en planta; desde D3 (decisiones de
+         Adrian 2026-10-09) es lo del Registro minimo de un prospecto: CP, nombre y
+         celular. La calle no: vacia, el documento y Operam dicen "Por definir".
+         CP+pais siguen siendo obligatorios para cotizar paqueteria (cotizarEnvia). -->
     <div id="pc-entrega-wrap" class="pc-entrega-inline">
       <div class="section-header">Domicilio de entrega</div>
-      <div class="pc-nota" style="margin-bottom:12px">El CP, la calle y el celular de entrega son obligatorios para generar la cotizaci&oacute;n, tambi&eacute;n si el cliente recoge en planta. Para cotizar la paqueter&iacute;a se necesita adem&aacute;s el pa&iacute;s.</div>
+      <div class="pc-nota" style="margin-bottom:12px">El CP, el nombre de quien recibe y su celular son obligatorios para generar la cotizaci&oacute;n, tambi&eacute;n si el cliente recoge en planta. Sin calle, la cotizaci&oacute;n y Operam dicen &ldquo;Por definir&rdquo;. Para cotizar la paqueter&iacute;a se necesita adem&aacute;s el pa&iacute;s.</div>
       <div id="pc-dom-slot"></div>
       <div class="form-row">
         <div class="form-group" style="flex:0 0 120px">

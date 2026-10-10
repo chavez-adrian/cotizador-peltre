@@ -21,7 +21,7 @@ function cotizacion(extra = {}, raiz = {}) {
     totalPiezas: 3, total: 300, tier: 'M100', folioOperam: '1200',
     data: {
       fecha: '2026-07-28', vigencia: '2026-08-27',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Reforma 123', celEntrega: '+52 55 1234 5678' },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', cpEntrega: '56530', calle: 'Av. Reforma 123', nombreEntrega: 'El Pendulo', celEntrega: '+52 55 1234 5678' },
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
       huellaQuote: 'huella-previa',
       ...extra,
@@ -329,7 +329,7 @@ function nueva(cliente = {}, raiz = {}) {
     totalPiezas: 3, total: 300, tier: 'M100', folioOperam: null,
     data: {
       fecha: '2026-10-03', vigencia: '2026-11-14',
-      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '5512345678', cpEntrega: '56530', calle: 'Av. Reforma 123', celEntrega: '5512345678', ...cliente },
+      cliente: { rfc: 'CPE921211N76', razonSocial: 'El Pendulo', nombreCorto: 'Pendulo', telefono: '5512345678', cpEntrega: '56530', calle: 'Av. Reforma 123', nombreEntrega: 'El Pendulo', celEntrega: '5512345678', ...cliente },
       items: [{ codigo: 'SKU-NUEVO', descripcion: 'Plato', cantidad: 3, precio: 99.5, descuento: 0 }],
     },
     ...raiz,
@@ -803,7 +803,7 @@ test('#558 crear sin telefono del Contacto de entrega: bloqueo con motivo sin es
 });
 
 test('#558 actualizar sin telefono del Contacto de entrega: bloqueo con motivo sin reescribir el quote ni tocar la marca', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530', celEntrega: '' } })] });
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530', nombreEntrega: 'El Pendulo', celEntrega: '' } })] });
   const r = await actualizarQuote(7, m.deps);
   assert.equal(r.tipo, 'bloqueo');
   assert.equal(r.motivo, 'sin-telefono-entrega');
@@ -813,8 +813,8 @@ test('#558 actualizar sin telefono del Contacto de entrega: bloqueo con motivo s
   assert.equal(m.llamadas.sacarDeLaColaPostFix.length, 0);
 });
 
-test('#558 crear por el camino del alta sin domicilio de entrega: bloqueo sin dar de alta ningun Cliente Operam', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '', calle: '' })] });
+test('#558 crear por el camino del alta sin domicilio de entrega (sin CP): bloqueo sin dar de alta ningun Cliente Operam', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ rfc: '', cpEntrega: '' })] });
   const r = await subirQuote(21, {}, m.deps);
   assert.equal(r.tipo, 'bloqueo');
   assert.equal(r.motivo, 'sin-domicilio-entrega');
@@ -842,7 +842,7 @@ test('#558 sin correo del Contacto de entrega la subida procede', async () => {
 });
 
 test('#558 Editar una cotizacion vieja sin telefono de entrega: la entrada unica no actualiza y la marca se queda para el siguiente intento', async () => {
-  const vieja = cotizacion({ quoteDesactualizado: MARCA_PENDIENTE, cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530' } });
+  const vieja = cotizacion({ quoteDesactualizado: MARCA_PENDIENTE, cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', cpEntrega: '56530', nombreEntrega: 'El Pendulo' } });
   const m = subidaQuoteEnMemoria({ cotizaciones: [vieja] });
   const r = await subirQuote(7, {}, m.deps);
   assert.equal(r.tipo, 'bloqueo');
@@ -853,12 +853,39 @@ test('#558 Editar una cotizacion vieja sin telefono de entrega: la entrada unica
   assert.deepEqual(m.registro(7).data.quoteDesactualizado, MARCA_PENDIENTE);
 });
 
-test('#558 actualizar sin domicilio de entrega: bloqueo con motivo sin reescribir el quote', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: '', celEntrega: '5512345678' } })] });
+test('#558 actualizar sin domicilio de entrega (sin CP): bloqueo con motivo sin reescribir el quote', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { rfc: 'CPE921211N76', calle: 'Av. Reforma 123', nombreEntrega: 'El Pendulo', celEntrega: '5512345678' } })] });
   const r = await actualizarQuote(7, m.deps);
   assert.equal(r.tipo, 'bloqueo');
   assert.equal(r.motivo, 'sin-domicilio-entrega');
   assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+});
+
+// D3 (decisiones de Adrian 2026-10-09): de quien recibe se exige lo del Registro minimo
+// de un prospecto -- celular, nombre y CP --; la calle ya no.
+test('#557 D3 crear sin el nombre del Contacto de entrega: bloqueo con motivo sin escribir en Operam ni en el registro', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ nombreEntrega: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-nombre-entrega');
+  assert.equal(r.campo, 'cl-nombre-entrega');
+  assert.match(r.mensaje, /nombre del Contacto de entrega/);
+  assert.deepEqual(nombres(m.secuencia), ['obtener']);
+});
+
+test('#557 D3 actualizar sin el nombre del Contacto de entrega: bloqueo sin reescribir el quote', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { ...cotizacion().data.cliente, nombreEntrega: '' } })] });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'bloqueo');
+  assert.equal(r.motivo, 'sin-nombre-entrega');
+  assert.equal(m.llamadas.actualizarQuoteOperam.length, 0);
+});
+
+test('#557 D3 crear sin calle (con CP, nombre y celular) sube el quote', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ calle: '' })] });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.folio, '1330');
 });
 
 // --- #561: el Contacto de entrega queda en el domicilio de entrega en Operam ---
@@ -1002,16 +1029,16 @@ test('#562 con folio, sin cambios y sin decision: ya-subida trae otra vez la pre
   assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
 });
 
-test('#562 el vendedor conserva al General: no toca Operam, quita la marca y el paso lo dice', async () => {
+// D1 (decisiones de Adrian 2026-10-09): la pregunta solo se resuelve confirmando. Un
+// cuerpo con `conservar` (la salida que se quito, de una pestana con el app.js anterior)
+// no es una decision: la marca se queda y la pregunta vuelve, sin tocar Operam.
+test('#557 D1 un cuerpo con "conservar" se ignora: ya-subida con la pregunta, la marca sigue y no toca Operam', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida()] });
   const r = await subirQuote(21, { contactoEntrega: { conservar: true } }, m.deps);
-  assert.equal(r.tipo, 'contacto-entrega');
+  assert.equal(r.tipo, 'ya-subida');
+  assert.deepEqual(r.preguntaContacto, PREGUNTA_DE_LA_MARCA);
   assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
-  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
-  assert.equal(r.pasos.length, 1);
-  assert.equal(r.pasos[0].name, 'contacto de entrega');
-  assert.equal(r.pasos[0].status, 'omitido');
-  assert.match(r.pasos[0].mensaje, /Alfa G Prueba sigue como contacto General/);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_ALFA);
 });
 
 // Revalida (patron de #368): si el General cambio, el modulo vuelve a preguntar y la
@@ -1097,7 +1124,7 @@ test('#563 actualizar con datos que se pisarian: actualizada con la pregunta jun
   const r = await actualizarQuote(7, m.deps);
   assert.equal(r.tipo, 'actualizada');
   assert.deepEqual(r.preguntaContacto, {
-    motivo: 'pisa-datos', contacto: { nombre: '' }, desplazados: [], persona: PREGUNTA_PISA.persona, pisa: PREGUNTA_PISA.pisa,
+    motivo: 'pisa-datos', contacto: { nombre: 'El Pendulo' }, desplazados: [], persona: PREGUNTA_PISA.persona, pisa: PREGUNTA_PISA.pisa,
     mensaje: PREGUNTA_PISA.mensaje, detalle: PREGUNTA_PISA.detalle,
   });
   const marca = m.registro(7).data.contactoEntregaPendiente;
@@ -1137,17 +1164,15 @@ test('#557 con quote desactualizado y contacto pendiente, la decision del vended
   assert.deepEqual(r.pasos.at(-1), DESPLAZADO.pasos[0]);
 });
 
-test('#557 con quote desactualizado, "conservar" actualiza el quote, no escribe el contacto y quita la marca', async () => {
-  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(MARCA_ALFA)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: DESPLAZADO });
+test('#557 D1 con quote desactualizado, "conservar" no es decision: actualiza el quote y el contacto se escribe sin decision', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(MARCA_ALFA)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: PREGUNTA_ALFA });
   const r = await subirQuote(7, { contactoEntrega: { conservar: true } }, m.deps);
   assert.equal(r.tipo, 'actualizada');
   assert.equal(m.llamadas.actualizarQuoteOperam.length, 1);
-  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
-  assert.equal(m.registro(7).data.contactoEntregaPendiente, null);
-  const paso = r.pasos.at(-1);
-  assert.equal(paso.name, 'contacto de entrega');
-  assert.equal(paso.status, 'omitido');
-  assert.match(paso.mensaje, /Alfa G Prueba sigue como contacto General/);
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.equal(solicitud.decision, undefined);
+  assert.equal(r.preguntaContacto.motivo, 'general-existente');
+  assert.equal(m.registro(7).data.contactoEntregaPendiente.motivo, 'general-existente');
 });
 
 test('#557 con quote desactualizado y una decision sin contacto pendiente, el contacto se escribe sin decision', async () => {
@@ -1188,14 +1213,13 @@ test('#563 reintento confirmado con casillas a pisar: la decision llega al modul
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
-test('#563 conservar con casillas a pisar: no toca Operam y el paso dice que sus datos se quedan como estaban', async () => {
+test('#557 D1 con casillas a pisar, "conservar" tampoco es decision: la pregunta de los datos vuelve y la marca sigue', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)] });
   const r = await subirQuote(21, { contactoEntrega: { conservar: true } }, m.deps);
-  assert.equal(r.tipo, 'contacto-entrega');
+  assert.equal(r.tipo, 'ya-subida');
+  assert.deepEqual(r.preguntaContacto.pisa, MARCA_PISA.pisa);
   assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
-  assert.equal(r.pasos[0].status, 'omitido');
-  assert.match(r.pasos[0].mensaje, /Adrian Bosques Nombre conserva sus datos en Operam/);
-  assert.doesNotMatch(r.pasos[0].mensaje, /sigue como contacto General/);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_PISA);
 });
 
 // --- #565: cambiar el numero de un Contacto en Operam funde los Contactos ------
@@ -1209,7 +1233,7 @@ const MARCA_PISA_CEL = {
   ...MARCA_PISA,
   pisa: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' }],
 };
-const DECISION_CEL = { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }] } };
+const DECISION_CEL = { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }], numero: { viejo: '55 8888 0000', mover: true } } };
 const EDITADO_CEL = {
   tipo: 'lograda', escrito: true, personId: '1249', noAplicados: [],
   cambioDeNumero: { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
@@ -1217,7 +1241,7 @@ const EDITADO_CEL = {
 };
 const FUNDIDO = {
   tipo: 'lograda', fundido: true, forma: 'fundido', contactoId: 20, contactoFundido: 10, oportunidades: [30], cotizaciones: [21],
-  pasos: [{ name: 'fusion de Contactos', status: 'ok', mensaje: 'Lucia Recibe cambio de numero', detalle: 'persona 1249: Contacto 10 fundido en 20' }],
+  pasos: [{ name: 'Contacto movido al n\u00famero nuevo', status: 'ok', mensaje: 'Lucia Recibe cambio de numero', detalle: 'persona 1249: Contacto 10 fundido en 20' }],
 };
 
 test('#565 el cambio confirmado del numero de un person_id funde los Contactos: viejo, nuevo, person_id y cotizacion, con su paso tras el del contacto', async () => {
@@ -1237,7 +1261,7 @@ test('#565 una persona nueva o una edicion que no cambia el numero de identidad 
   const r = await subirQuote(21, {}, nuevo.deps);
   assert.equal(r.tipo, 'lograda');
   assert.equal(nuevo.llamadas.fundirContactos.length, 0);
-  assert.equal(r.pasos.some(p => p.name === 'fusion de Contactos'), false);
+  assert.equal(r.pasos.some(p => p.name === 'Contacto movido al n\u00famero nuevo'), false);
 
   const { cambioDeNumero: _sinCambio, ...soloTelefono } = EDITADO_CEL;
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA)], contactoEntrega: soloTelefono, fusion: FUNDIDO });
@@ -1249,18 +1273,158 @@ test('#565 si la fusion falla, el contacto queda escrito y el paso avisa en dos 
   const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA_CEL)], contactoEntrega: EDITADO_CEL, fusion: () => { throw new Error('Neon caido'); } });
   const r = await subirQuote(21, DECISION_CEL, m.deps);
   assert.equal(r.tipo, 'contacto-entrega');
-  const paso = r.pasos.find(p => p.name === 'fusion de Contactos');
+  const paso = r.pasos.find(p => p.name === 'Contacto movido al n\u00famero nuevo');
   assert.equal(paso.status, 'warn');
   assert.doesNotMatch(paso.mensaje, /Neon/);
+  assert.doesNotMatch(paso.mensaje, /fund|fusi/i);
   assert.match(paso.detalle, /Neon caido/);
   assert.match(paso.detalle, /1249/);
   assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
 });
 
-test('#565 al actualizar, una edicion que cambia el numero tambien funde los Contactos', async () => {
+// D4 (decisiones de Adrian 2026-10-09): nada se mueve en el cotizador sin que el
+// vendedor confirme el cambio de numero. Una edicion que llega con el numero cambiado
+// pero sin esa confirmacion no funde.
+test('#557 D4 al actualizar, un cambio de numero sin la confirmacion del vendedor no mueve nada en el cotizador', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [cotizacion({ cliente: { ...cotizacion().data.cliente, ...LUCIA, contactoEntregaPersonId: '1249' } })], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
   const r = await actualizarQuote(7, m.deps);
   assert.equal(r.tipo, 'actualizada');
+  assert.equal(m.llamadas.fundirContactos.length, 0);
+  assert.deepEqual(r.pasos.at(-1), EDITADO_CEL.pasos[0]);
+});
+
+test('#565 al actualizar con el cambio de numero confirmado (quote desactualizado), lo del numero viejo pasa al nuevo', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [pendienteYDesactualizada(MARCA_PISA_CEL)], actualizar: ACTUALIZADO_EN_564(), contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
+  const r = await subirQuote(7, DECISION_CEL, m.deps);
+  assert.equal(r.tipo, 'actualizada');
   assert.deepEqual(m.llamadas.fundirContactos.map(([s]) => [s.celularViejo, s.celularNuevo, s.personId, s.cotizacion]), [['55 8888 0000', '+52 55 1234 5678', '1249', { id: 7, folio: cotizacion().folioOperam }]]);
   assert.deepEqual(r.pasos.at(-1), FUNDIDO.pasos[0]);
+});
+
+// --- D4: la pregunta del cambio de numero (decisiones de Adrian 2026-10-09) ---------
+// El modulo Contactos en Operam pregunta por el cambio de celular sin saber que hay en el
+// cotizador; la Subida del quote le pide a la Fusion de Contactos el resumen (cuantas
+// oportunidades y cotizaciones se mueven y si el numero viejo tiene las de OTRAS
+// personas) y arma la pregunta con las palabras de la decision. La marca guarda lo mismo.
+const PREGUNTA_NUMERO = {
+  tipo: 'pregunta', motivo: 'pisa-datos',
+  persona: { personId: '1249', nombre: 'Adrian Bosques Nombre' }, desplazados: [],
+  pisa: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' }],
+  cambioDeNumero: { personId: '1249', viejo: '55 8888 0000', nuevo: '+52 55 1234 5678' },
+  partes: { numero: 'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a +52 55 1234 5678.', resto: '' },
+  mensaje: 'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a +52 55 1234 5678.',
+  detalle: 'domicilio 564 del cliente 15: numero de identidad de la persona 1249 "55 8888 0000" -> "+52 55 1234 5678"',
+  pasos: [{ name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes el cambio de celular de Adrian Bosques Nombre.', detalle: 'pendiente' }],
+};
+const CON_PERSONA = { ...LUCIA, contactoEntregaPersonId: '1249' };
+
+test('#557 D4 caso simple: la pregunta dice el cambio de celular y cuantas oportunidades y cotizaciones pasan al numero nuevo', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(CON_PERSONA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_NUMERO,
+    resumenNumero: { contactoViejo: true, oportunidades: 2, cotizaciones: 1, otrasPersonas: [] },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.deepEqual(m.llamadas.resumenDelCambioDeNumero, [[{ celularViejo: '55 8888 0000', nombres: ['Adrian Bosques Nombre', 'Lucia Recibe'] }]]);
+  assert.equal(r.preguntaContacto.mensaje,
+    'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a +52 55 1234 5678. En el cotizador, todo lo del 55 8888 0000 pasa al n\u00famero nuevo: 2 oportunidades y 1 cotizaci\u00f3n. El 55 8888 0000 deja de aparecer como Contacto.');
+  assert.deepEqual(r.preguntaContacto.numero, {
+    viejo: '55 8888 0000', nuevo: '+52 55 1234 5678', contactoViejo: true, oportunidades: 2, cotizaciones: 1, otrasPersonas: [], compartido: false, mover: true,
+  });
+  const marca = m.registro(21).data.contactoEntregaPendiente;
+  assert.deepEqual([marca.mensaje, marca.numero], [r.preguntaContacto.mensaje, r.preguntaContacto.numero]);
+  assert.equal(m.llamadas.fundirContactos.length, 0);
+});
+
+test('#557 D4 telefono compartido: la pregunta nombra a las otras personas del numero viejo y avisa que puede ser una oficina', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(CON_PERSONA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_NUMERO,
+    resumenNumero: { contactoViejo: true, oportunidades: 3, cotizaciones: 2, otrasPersonas: ['Pedro Lopez', 'Maria Ruiz'] },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.match(r.preguntaContacto.mensaje, /2 cotizaciones\. El 55 8888 0000 deja de aparecer como Contacto\. Ojo: el 55 8888 0000 tambi\u00e9n tiene oportunidades de Pedro Lopez y Maria Ruiz\. Puede ser el tel\u00e9fono de una oficina que comparten varias personas\.$/);
+  assert.equal(r.preguntaContacto.numero.compartido, true);
+});
+
+test('#557 D4 si no se puede leer que tiene el numero viejo en el cotizador, confirmar solo actualiza Operam y lo dice', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [nueva(CON_PERSONA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: PREGUNTA_NUMERO,
+    resumenNumero: () => { throw new Error('Neon caido'); },
+  });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.preguntaContacto.numero.mover, false);
+  assert.equal(r.preguntaContacto.numero.compartido, false);
+  assert.match(r.preguntaContacto.mensaje, /^El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a \+52 55 1234 5678\. No se pudo revisar/);
+  assert.doesNotMatch(r.preguntaContacto.mensaje, /Neon/);
+});
+
+test('#557 D4 "es un telefono compartido": se escribe en Operam con la decision y no se mueve nada en el cotizador', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida(MARCA_PISA_CEL)], contactoEntrega: EDITADO_CEL, fusion: FUNDIDO });
+  const decision = { contactoEntrega: { ...DECISION_CEL.contactoEntrega, numero: { viejo: '55 8888 0000', mover: false } } };
+  const r = await subirQuote(21, decision, m.deps);
+  assert.equal(r.tipo, 'contacto-entrega');
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.deepEqual(solicitud.decision.numero, { viejo: '55 8888 0000', mover: false });
+  assert.equal(m.llamadas.fundirContactos.length, 0);
+  const paso = r.pasos.at(-1);
+  assert.deepEqual([paso.name, paso.status], ['Contacto movido al n\u00famero nuevo', 'omitido']);
+  assert.match(paso.mensaje, /^Solo se actualiz\u00f3 el celular de Adrian Bosques Nombre en Operam: el 55 8888 0000 se queda como est\u00e1 en el cotizador/);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, null);
+});
+
+// D6 (decisiones de Adrian 2026-10-09): con el interruptor de la escritura de Contactos
+// en Operam apagado para el Cliente Operam de la marca, la Subida no sirve la pregunta
+// pendiente ni la atiende (la decision del vendedor se ignora) y la marca se queda tal
+// cual: al encender el interruptor la pregunta vuelve. El modulo Contactos en Operam
+// tampoco escribe (test/contactos-operam-interruptor.test.js).
+const ESCRITURA_APAGADA = { tipo: 'lograda', escrito: false, motivo: 'escritura-apagada', pasos: [] };
+
+test('#557 D6 interruptor apagado: ya-subida sin la pregunta pendiente y sin tocar Operam; la marca se queda', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], escrituraContactos: () => false });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'ya-subida');
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_ALFA);
+});
+
+test('#557 D6 interruptor apagado: la decision del vendedor se ignora (ya-subida, sin escribir) y la marca se queda', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], contactoEntrega: DESPLAZADO, escrituraContactos: () => false });
+  const r = await subirQuote(21, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.tipo, 'ya-subida');
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(m.llamadas.escribirContactoEntrega.length, 0);
+  assert.deepEqual(m.registro(21).data.contactoEntregaPendiente, MARCA_ALFA);
+});
+
+test('#557 D6 el interruptor se consulta con el Cliente Operam de la marca', async () => {
+  const consultados = [];
+  const m = subidaQuoteEnMemoria({ cotizaciones: [subida()], escrituraContactos: (id) => { consultados.push(id); return String(id) === '15'; } });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.deepEqual(consultados, [15]);
+  assert.deepEqual(r.preguntaContacto, PREGUNTA_DE_LA_MARCA);
+});
+
+test('#557 D6 interruptor apagado con quote desactualizado: actualiza el quote, el contacto va sin decision y la marca no se borra', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [pendienteYDesactualizada(MARCA_ALFA)], actualizar: ACTUALIZADO_EN_564(),
+    contactoEntrega: ESCRITURA_APAGADA, escrituraContactos: () => false,
+  });
+  const r = await subirQuote(7, DESPLAZAR_ALFA, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  const [[solicitud]] = m.llamadas.escribirContactoEntrega;
+  assert.equal(solicitud.decision, undefined);
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(r.pasos.some((p) => p.name === 'contacto de entrega'), false);
+  assert.deepEqual(m.registro(7).data.contactoEntregaPendiente, MARCA_ALFA);
+});
+
+test('#557 D6 al crear con el interruptor apagado: lograda sin paso de contacto, sin pregunta y sin marca', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva(LUCIA)], subir: { folio: '1330', customerId: 15, branchId: 564 }, contactoEntrega: ESCRITURA_APAGADA });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  assert.equal(r.preguntaContacto, undefined);
+  assert.equal(r.pasos.some((p) => p.name === 'contacto de entrega'), false);
+  assert.equal(m.registro(21).data.contactoEntregaPendiente, undefined);
 });

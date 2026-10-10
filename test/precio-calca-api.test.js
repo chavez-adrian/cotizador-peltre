@@ -71,7 +71,7 @@ const PRECIO_PROVEEDOR = 137.5;
 function cotizacionCon(items, extra = {}) {
   return {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Menudeo', _compress: false,
-    cliente: { razonSocial: 'Calca SA de CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530' },
+    cliente: { razonSocial: 'Calca SA de CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', nombreEntrega: 'Calca SA de CV', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530' },
     items,
     subtotal: 1000, iva: 160, total: 1160, notas: [],
     ...extra,
@@ -289,7 +289,7 @@ test('#283 Editar con permiso: el admin cambia el precio manual y el quote queda
     .set('Authorization', `Bearer ${tokenAdmin}`)
     .send(cotizacionCon(
       [PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })],
-      { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
+      { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', nombreEntrega: 'CALCA SA DE CV', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
     ));
   assert.strictEqual(creada.status, 200);
   const id = creada.body.id;
@@ -312,7 +312,7 @@ test('#283 Editar con permiso: el admin cambia el precio manual y el quote queda
     .send({
       ...cotizacionCon(
         [PARTIDA_PRODUCTO, partidaCalca({ precio: 200, precioManual: 200 })],
-        { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
+        { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', nombreEntrega: 'CALCA SA DE CV', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
       ),
       cotizacionId: id,
     });
@@ -368,7 +368,7 @@ test('#279: el quote de Operam se sube con el precio del proveedor', async () =>
     .set('Authorization', `Bearer ${tokenAdmin}`)
     .send(cotizacionCon(
       [PARTIDA_PRODUCTO, partidaCalca({ precio: PRECIO_PROVEEDOR, precioManual: PRECIO_PROVEEDOR })],
-      { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
+      { cliente: { razonSocial: 'CALCA SA DE CV', nombreCorto: 'Calca', telefono: '+52 55 1234 5678', nombreEntrega: 'CALCA SA DE CV', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: 'CAL010101AAA' } },
     ));
   assert.strictEqual(creada.status, 200);
 

@@ -138,7 +138,7 @@ function nuevaCotizacion(cliente = {}, tier = 'M100') {
     totalPiezas: 100, total: 11600, tier,
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
-      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: CELULAR, celEntrega: CELULAR, calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX', ...cliente },
+      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: CELULAR, celEntrega: CELULAR, nombreEntrega: 'Hotel Azul', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX', ...cliente },
       items: [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });
@@ -765,9 +765,9 @@ test('F1: cotizacion legacy sin datos del contacto -> 422 del camino viejo, cero
   const id = cots.reduce((m, c) => Math.max(m, c.id), 0) + 1;
   cots.push({
     id, fecha: '2026-01-01T00:00:00Z', vendedor: 'Tester', cliente: '',
-    // Con el domicilio y el telefono del Contacto de entrega (#558): sin ellos la
-    // subida se bloquea antes, por ese motivo, y nunca llega al camino viejo.
-    totalPiezas: 0, total: 0, tier: '', data: { cliente: { calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5512340000' }, items: [] },
+    // Con el domicilio, el telefono y (D3) el nombre del Contacto de entrega (#558): sin
+    // ellos la subida se bloquea antes, por ese motivo, y nunca llega al camino viejo.
+    totalPiezas: 0, total: 0, tier: '', data: { cliente: { calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5512340000', nombreEntrega: 'Recepcion' }, items: [] },
   });
   writeJson(COTS_PATH, cots);
   // fetch queda bloqueado (beforeEach): si el flujo tocara Operam, la respuesta

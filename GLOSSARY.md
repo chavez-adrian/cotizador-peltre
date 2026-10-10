@@ -376,7 +376,7 @@ Cuando se crea un cliente via API (`POST /api/v3/sales/customers`), Operam auto-
 
 ## Contacto de entrega
 
-La persona que recibe la mercancía, elegida o capturada en el paso Envío. Su nombre, su teléfono y su correo son los que imprime el documento de la cotización y los que lleva el encabezado del quote, que el pedido hereda al convertirse: de ahí toma el teléfono quien genera la guía de la paquetería. Su teléfono es obligatorio para generar; su correo no. En Operam es el Contacto en Operam General y de Entrega del domicilio de entrega de la cotización. No confundir con el **Contacto** (la identidad por celular) ni con cualquier **Contacto en Operam** del Cliente Operam. Decisión 2026-10-09, ADR-0024.
+La persona que recibe la mercancía, elegida o capturada en el paso Envío. Su nombre, su teléfono y su correo son los que imprime el documento de la cotización y los que lleva el encabezado del quote, que el pedido hereda al convertirse: de ahí toma el teléfono quien genera la guía de la paquetería. Para generar o actualizar son obligatorios su celular, su nombre (sin apellido vale) y el CP del domicilio de entrega; su correo y la calle no: sin calle, el documento y Operam dicen "Por definir" (enmienda del 2026-10-09). En Operam es el Contacto en Operam General y de Entrega del domicilio de entrega de la cotización. No confundir con el **Contacto** (la identidad por celular) ni con cualquier **Contacto en Operam** del Cliente Operam. Decisión 2026-10-09, ADR-0024.
 _Evitar_: contacto del quote, teléfono de contacto (a secas), persona que recibe.
 
 ## Contacto de Google

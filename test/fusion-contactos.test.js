@@ -7,7 +7,7 @@
 // nucleos puros con los que el tablero arma tarjetas y etiquetas.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fundirContactos } from '../lib/fusion-contactos.js';
+import { fundirContactos, resumenDelCambioDeNumero } from '../lib/fusion-contactos.js';
 import { fusionContactosEnMemoria } from './helpers/fusion-contactos-memoria.js';
 import { oportunidadesDeContactos } from '../lib/oportunidad-pre.js';
 import { tarjetasOportunidades } from '../lib/oportunidades.js';
@@ -100,6 +100,9 @@ test('F3: la fusion queda registrada como evento del Contacto que queda (de, a, 
   );
   assert.deepEqual(evento.eventosFundidos, LUCIA_VIEJO.eventos);
   assert.deepEqual([evento.oportunidades, evento.cotizaciones], [[30], [100]]);
+  // D4 (decisiones de Adrian 2026-10-09): el evento guarda la ficha vieja COMPLETA, para
+  // poder deshacer a mano lo que se borro.
+  assert.deepEqual(evento.fichaAnterior, { ...LUCIA_VIEJO, celular10: '5588880000' });
 });
 
 // Sin un Contacto con el numero nuevo no se crea otro para fundir: el viejo se muda al
@@ -116,6 +119,8 @@ test('F4: si el numero nuevo no era un Contacto, el viejo se muda a el con su fi
   const eventos = mem.estado.contactos[0].eventos;
   assert.equal(eventos.length, 2);
   assert.deepEqual([eventos[1].tipo, eventos[1].celularDe, eventos[1].celularA, eventos[1].personId], ['fusion', '5588880000', '5512345678', '1249']);
+  // D4: tambien al mudar, la ficha como estaba antes (con el numero viejo).
+  assert.deepEqual(eventos[1].fichaAnterior, { ...LUCIA_VIEJO, celular10: '5588880000' });
 });
 
 test('F5: si el numero anterior no era un Contacto del cotizador no se funde nada y no se escribe', async () => {
@@ -158,10 +163,70 @@ test('F8: si un store falla a medias, devuelve el aviso en dos capas con lo que 
     falla: { 'contactos.borrar': true },
   });
   const r = await fundirContactos(SOLICITUD, mem.deps);
-  assert.deepEqual([r.tipo, r.motivo, r.pasos[0].name, r.pasos[0].status], ['bloqueo', 'registro', 'fusion de Contactos', 'warn']);
-  assert.match(r.mensaje, /no se pudo terminar de fundir/);
+  assert.deepEqual([r.tipo, r.motivo, r.pasos[0].name, r.pasos[0].status], ['bloqueo', 'registro', 'Contacto movido al n\u00famero nuevo', 'warn']);
+  assert.match(r.mensaje, /no se pudo terminar de pasar lo del \+52 55 8888 0000 al \+52 55 1234 5678/);
   assert.doesNotMatch(r.mensaje, /borrar|store|memoria/);
   assert.match(r.detalle, /fallo al borrar el Contacto viejo/);
   assert.match(r.detalle, /oportunidades \[30\] a 20/);
   assert.match(r.detalle, /evento fusion en 20/);
+});
+
+// D4 (decisiones de Adrian 2026-10-09): ningun texto que vea el vendedor dice "fundir"
+// ni "fusion"; el paso se llama "Contacto movido al numero nuevo". La palabra se queda en
+// el codigo y en el registro (el evento sigue siendo `fusion`).
+test('F9: los pasos del cambio de numero no dicen fundir ni fusion, en ninguno de sus desenlaces', async () => {
+  const casos = [
+    [fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO, LUCIA_NUEVO], oportunidades: [OPORTUNIDAD_30], cotizaciones: [COTIZACION_100] }), SOLICITUD],
+    [fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO] }), SOLICITUD],
+    [fusionContactosEnMemoria({ contactos: [LUCIA_NUEVO] }), SOLICITUD],
+    [fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO] }), { ...SOLICITUD, celularNuevo: '55 8888 0000' }],
+    [fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO] }), { ...SOLICITUD, celularNuevo: '1234' }],
+    [fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO, LUCIA_NUEVO], falla: { 'contactos.borrar': true } }), SOLICITUD],
+  ];
+  for (const [mem, solicitud] of casos) {
+    const r = await fundirContactos(solicitud, mem.deps);
+    for (const p of r.pasos) {
+      assert.equal(p.name, 'Contacto movido al n\u00famero nuevo');
+      assert.doesNotMatch(p.mensaje, /fund|fusi/i, p.mensaje);
+    }
+    if (r.mensaje) assert.doesNotMatch(r.mensaje, /fund|fusi/i);
+  }
+});
+
+// D4: lo que la pregunta le dice al vendedor ANTES de mover nada -- cuantas
+// oportunidades y cotizaciones pasan al numero nuevo y si el numero viejo tiene
+// oportunidades o cotizaciones de OTRAS personas --, sin escribir nada.
+test('F10: el resumen del cambio cuenta las oportunidades y cotizaciones del numero viejo, sin escribir nada', async () => {
+  const historica = { ...COTIZACION_100, id: 101, contactoCelular: null, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Lucia' } } };
+  const ajena = { ...COTIZACION_100, id: 102, contactoCelular: '5599990000', data: { cliente: { telefono: VIEJO, nombreEntrega: 'Otra Persona' } } };
+  const mem = fusionContactosEnMemoria({ contactos: [LUCIA_VIEJO, LUCIA_NUEVO], oportunidades: [OPORTUNIDAD_30], cotizaciones: [COTIZACION_100, historica, ajena] });
+  const r = await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, mem.deps);
+  assert.deepEqual(r, { contactoViejo: true, oportunidades: 1, cotizaciones: 2, otrasPersonas: [] });
+  assert.deepEqual(mem.llamadas.map(([n]) => n).filter(n => !/buscarPorCelular|listar/.test(n)), []);
+});
+
+// La ficha que todavia ES su Oportunidad (#343) cuenta como una.
+test('F11: sin Oportunidades propias, la que la ficha sintetiza cuenta como una; sin Contacto viejo no hay nada que mover', async () => {
+  const sintetiza = fusionContactosEnMemoria({ contactos: [{ ...LUCIA_VIEJO, etapa: 'por_cotizar', data: {} }] });
+  assert.deepEqual(await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, sintetiza.deps),
+    { contactoViejo: true, oportunidades: 1, cotizaciones: 0, otrasPersonas: [] });
+  const nadie = fusionContactosEnMemoria({ contactos: [LUCIA_NUEVO], cotizaciones: [COTIZACION_100] });
+  assert.deepEqual(await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe'] }, nadie.deps),
+    { contactoViejo: false, oportunidades: 0, cotizaciones: 0, otrasPersonas: [] });
+});
+
+// Telefono compartido (D4): "otras personas" son los nombres, normalizados (sin acentos
+// ni mayusculas ni espacios de mas), de la ficha del Contacto viejo y del Contacto de
+// entrega de sus cotizaciones que no son el de la persona: ni iguales, ni el mismo nombre
+// sin apellido (uno es el comienzo, palabra por palabra, del otro). Las Oportunidades
+// no guardan nombre propio: su persona es la ficha.
+test('F12: el numero viejo con oportunidades de otras personas las nombra una vez cada una; las de la misma persona, con o sin apellido, no cuentan', async () => {
+  const pedro = { ...LUCIA_VIEJO, nombre: 'Pedro Lopez' };
+  const deMaria = { ...COTIZACION_100, id: 103, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Mar\u00eda  Ruiz' } } };
+  const deMaria2 = { ...COTIZACION_100, id: 104, data: { cliente: { telefono: VIEJO, nombreEntrega: 'maria ruiz' } } };
+  const deLucia = { ...COTIZACION_100, id: 105, data: { cliente: { telefono: VIEJO, nombreEntrega: 'Lucia' } } };
+  const mem = fusionContactosEnMemoria({ contactos: [pedro], cotizaciones: [deMaria, deMaria2, deLucia] });
+  const r = await resumenDelCambioDeNumero({ celularViejo: VIEJO, nombres: ['Lucia Recibe Almacen', 'Lucia Recibe'] }, mem.deps);
+  assert.deepEqual(r.otrasPersonas, ['Pedro Lopez', 'Mar\u00eda  Ruiz']);
+  assert.equal(r.cotizaciones, 3);
 });

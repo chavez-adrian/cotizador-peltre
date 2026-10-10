@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
 import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
+import { fijarInterruptorContactos } from './helpers/interruptor-contactos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COTS_PATH = join(__dirname, '..', 'data', 'cotizaciones.json');
@@ -59,9 +60,14 @@ const respuestaRateMoneda = () => jsonResponse({ result: false, messages: ['Debe
 
 function readCots() { return existsSync(COTS_PATH) ? JSON.parse(leerArchivoSync(COTS_PATH)) : []; }
 
+// D6: la escritura de Contactos en Operam encendida para la suite (ausente = apagado).
 let restaurarDatos;
-before(() => { restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]); });
-after(() => { restaurarDatos(); globalThis.fetch = originalFetch; });
+let restaurarInterruptor;
+before(() => {
+  restaurarInterruptor = fijarInterruptorContactos('todos');
+  restaurarDatos = fotoDatos([COTS_PATH, PROSPECTOS_PATH, COLA_POSTFIX_PATH]);
+});
+after(() => { restaurarDatos(); restaurarInterruptor(); globalThis.fetch = originalFetch; });
 beforeEach(() => {
   globalThis.fetch = fetchBloqueado;
   fijarDatos(PROSPECTOS_PATH, []);
@@ -78,7 +84,7 @@ function agregarCotizacion({ folioOperam = null, tier = 'M100', cliente = {}, it
     totalPiezas: 100, total: 11600, tier, folioOperam,
     data: {
       fecha: '2026-07-06', vigencia: '2026-08-05',
-      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', celEntrega: '+52 5588776655', calle: 'Av. Juarez 45', cpEntrega: '56530', pais: 'MX', ...cliente },
+      cliente: { razonSocial: 'Hotel Azul Centro', nombreCorto: 'Hotel Azul', telefono: '+52 5588776655', celEntrega: '+52 5588776655', calle: 'Av. Juarez 45', cpEntrega: '56530', nombreEntrega: 'Lucia Recibe', pais: 'MX', ...cliente },
       items: items ?? [{ codigo: 'PV08', descripcion: 'Plato', cantidad: 100, precio: 100, descuento: 0 }],
     },
   });
@@ -415,8 +421,8 @@ test('#558 crear sin telefono del Contacto de entrega responde 422 con codigo, c
   assert.equal(readCots().find(c => c.id === id).folioOperam, null);
 });
 
-test('#558 Editar sin domicilio de entrega: la entrada unica responde 422 con operacion actualizar', async () => {
-  const id = agregarCotizacion({ folioOperam: '1200', cliente: { calle: '' } });
+test('#558 Editar sin domicilio de entrega (sin CP): la entrada unica responde 422 con operacion actualizar', async () => {
+  const id = agregarCotizacion({ folioOperam: '1200', cliente: { cpEntrega: '' } });
   const cots = readCots();
   cots.find(c => c.id === id).data.quoteDesactualizado = { fecha: '2026-10-04T10:00:00.000Z', pendiente: true };
   escribirArchivoSync(COTS_PATH, JSON.stringify(cots, null, 2));
@@ -424,8 +430,17 @@ test('#558 Editar sin domicilio de entrega: la entrada unica responde 422 con op
   assert.equal(res.status, 422);
   assert.equal(res.body.operacion, 'actualizar');
   assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
-  assert.equal(res.body.campo, 'cl-calle');
+  assert.equal(res.body.campo, 'cl-cp-entrega');
   assert.match(res.body.error, /domicilio de entrega/);
+});
+
+test('#557 D3 crear sin el nombre del Contacto de entrega responde 422 con el campo "Entregar a"', async () => {
+  const id = agregarCotizacion({ cliente: { nombreEntrega: '' } });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 422);
+  assert.equal(res.body.codigo, 'CONTACTO_ENTREGA_INCOMPLETO');
+  assert.equal(res.body.campo, 'cl-nombre-entrega');
+  assert.deepEqual(res.body.faltan, ['sin-nombre-entrega']);
 });
 
 test('#558 /actualizar sin telefono del Contacto de entrega responde 422 con codigo', async () => {
@@ -452,7 +467,8 @@ test('#558 la Pre-cotizacion no se bloquea: guardar sin telefono ni domicilio de
 // --- Contacto de entrega pendiente (#562) --------------------------------------
 // La pregunta del General del domicilio viaja en una respuesta 200 (el quote YA esta
 // subido) junto al folio, y el cuerpo con el que se reintenta lo dicta el SERVIDOR,
-// como en CONFIRMAR_OTRA_RAZON_SOCIAL: una salida para confirmar y otra para conservar.
+// como en CONFIRMAR_OTRA_RAZON_SOCIAL. D1 (decisiones de Adrian 2026-10-09): una sola
+// salida, confirmar; "conservar" se quito.
 
 const MARCA_562 = {
   fecha: '2026-10-09T18:00:00.000Z', clienteId: 15, domicilioId: 564, motivo: 'general-existente',
@@ -468,7 +484,7 @@ function conContactoPendiente() {
   return id;
 }
 
-test('#562 con el Contacto de entrega pendiente, la ruta de crear responde yaSubida con la pregunta y los dos cuerpos de reintento, sin tocar Operam', async () => {
+test('#562 con el Contacto de entrega pendiente, la ruta de crear responde yaSubida con la pregunta y el cuerpo de confirmar, sin tocar Operam', async () => {
   const id = conContactoPendiente();
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
   assert.equal(res.status, 200);
@@ -479,22 +495,19 @@ test('#562 con el Contacto de entrega pendiente, la ruta de crear responde yaSub
       nuevo: 'Lucia Recibe', desplazados: [{ nombre: 'MEDICION556b General Prueba', roles: ['general'] }],
       reintentar: {
         confirmar: { contactoEntrega: { desplazar: ['1289'] } },
-        conservar: { contactoEntrega: { conservar: true } },
       },
     },
   });
 });
 
-test('#562 conservar al General: 200 con el paso omitido y la marca fuera, sin tocar Operam', async () => {
+test('#557 D1 un cuerpo con conservar (pestana con el app.js anterior) no es decision: yaSubida con la pregunta y la marca sigue, sin tocar Operam', async () => {
   const id = conContactoPendiente();
   const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({ contactoEntrega: { conservar: true } });
   assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.folio, '1330');
-  assert.equal(res.body.contactoEntrega, true);
-  assert.equal(res.body.preguntaContacto, undefined);
-  assert.deepEqual(res.body.steps.map(s => [s.name, s.status]), [['contacto de entrega', 'omitido']]);
-  assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
+  assert.equal(res.body.yaSubida, true);
+  assert.equal(res.body.contactoEntrega, undefined);
+  assert.equal(res.body.preguntaContacto.codigo, 'CONFIRMAR_DESPLAZAR_GENERAL');
+  assert.deepEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente, MARCA_562);
 });
 
 // De punta a punta con el adaptador REAL de la web legacy (paginas medidas del
@@ -515,6 +528,29 @@ test('#562 confirmar: el reintento escribe el Contacto de entrega como unico Gen
   assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
   assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
 });
+
+// D6 (decisiones de Adrian 2026-10-09): con el interruptor CONTACTOS_OPERAM_ESCRITURA
+// ausente (= apagado) o sin el Cliente Operam de la marca (el 15) en su lista, la
+// pregunta pendiente no se sirve ni se atiende: yaSubida a secas, sin tocar la web
+// legacy, y la marca se queda para cuando se encienda.
+for (const [caso, valor] of [['ausente', undefined], ['con otra lista (376)', '376']]) {
+  test(`#557 D6 interruptor ${caso}: yaSubida sin la pregunta, la confirmacion se ignora y la marca se queda`, async () => {
+    const restaurar = fijarInterruptorContactos(valor);
+    try {
+      const id = conContactoPendiente();
+      const fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
+      globalThis.fetch = fa.fetch;
+      const sinDecision = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+      assert.deepEqual(sinDecision.body, { ok: true, folio: '1330', yaSubida: true, customer_id: 15 });
+      const confirmada = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({ contactoEntrega: { desplazar: ['1289'] } });
+      assert.deepEqual(confirmada.body, { ok: true, folio: '1330', yaSubida: true, customer_id: 15 });
+      assert.deepEqual(fa.pedidos, [], 'no se abrio la web legacy');
+      assert.deepEqual(readCots().find(c => c.id === id).data.contactoEntregaPendiente, MARCA_562);
+    } finally {
+      restaurar();
+    }
+  });
+}
 
 // --- #563: la pregunta por los datos de la persona elegida ---------------------
 // Mismo canal que #562: la marca, la pregunta junto al folio y los cuerpos de
@@ -545,9 +581,43 @@ test('#563 con casillas que se pisarian, yaSubida trae cada una con su valor vie
     ],
     reintentar: {
       confirmar: { contactoEntrega: { desplazar: ['1289'], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }, { personId: '1249', campo: 'secundario', viejo: '55 7777 0000' }] } },
-      conservar: { contactoEntrega: { conservar: true } },
     },
   });
+});
+
+// D4 (decisiones de Adrian 2026-10-09): la pregunta del cambio de celular lleva `numero`
+// (lo que se moveria en el cotizador) y el servidor dicta la confirmacion con el numero
+// viejo; con telefono compartido dicta ademas la otra salida, que confirma Operam sin
+// mover nada en el cotizador (`mover: false`).
+const NUMERO_565 = {
+  viejo: '55 8888 0000', nuevo: '5512345678', contactoViejo: true, oportunidades: 3, cotizaciones: 2,
+  otrasPersonas: ['Pedro Lopez'], compartido: true, mover: true,
+};
+const MARCA_NUMERO = {
+  ...MARCA_563, desplazados: [], numero: NUMERO_565,
+  pisa: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000', nuevo: '5512345678' }],
+};
+
+test('#557 D4 telefono compartido: la pregunta trae el numero y el servidor dicta las dos confirmaciones, una sin mover nada en el cotizador', async () => {
+  const id = agregarCotizacion({ folioOperam: '1330', cliente: { customerId: 15, nombreEntrega: 'Lucia Recibe' } });
+  marcar(id, { contactoEntregaPendiente: MARCA_NUMERO });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.equal(res.status, 200);
+  const p = res.body.preguntaContacto;
+  assert.deepEqual(p.numero, NUMERO_565);
+  const pisar = [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }];
+  assert.deepEqual(p.reintentar, {
+    confirmar: { contactoEntrega: { desplazar: [], pisar, numero: { viejo: '55 8888 0000', mover: true } } },
+    soloOperam: { contactoEntrega: { desplazar: [], pisar, numero: { viejo: '55 8888 0000', mover: false } } },
+  });
+});
+
+test('#557 D4 caso simple: una sola confirmacion, con el numero viejo y lo que dice la Subida que hace (mover)', async () => {
+  const id = agregarCotizacion({ folioOperam: '1330', cliente: { customerId: 15, nombreEntrega: 'Lucia Recibe' } });
+  marcar(id, { contactoEntregaPendiente: { ...MARCA_NUMERO, numero: { ...NUMERO_565, otrasPersonas: [], compartido: false, mover: false } } });
+  const res = await supertest(app).post(`/api/cotizacion/operam/${id}`).set('Authorization', TOKEN).send({});
+  assert.deepEqual(Object.keys(res.body.preguntaContacto.reintentar), ['confirmar']);
+  assert.deepEqual(res.body.preguntaContacto.reintentar.confirmar.contactoEntrega.numero, { viejo: '55 8888 0000', mover: false });
 });
 
 // La persona elegida en el selector viaja con la cotizacion: el guardado la conserva y

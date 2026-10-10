@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import supertest from 'supertest';
 import { webDeMentiras, CONTACTOS_GENERAL_564 } from './helpers/domicilios-web-mentira.js';
+import { fijarInterruptorContactos } from './helpers/interruptor-contactos.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
@@ -67,14 +68,18 @@ function mockOperam() {
   };
 }
 
+// D6: la escritura de Contactos en Operam encendida para la suite (ausente = apagado).
 let restaurarDatos;
+let restaurarInterruptor;
 before(() => {
+  restaurarInterruptor = fijarInterruptorContactos('todos');
   restaurarDatos = fotoDatos([PROSPECTOS_PATH, VENDEDORES_PATH]);
   fijarDatos(VENDEDORES_PATH, REGISTRO);
   fijarDatos(PROSPECTOS_PATH, []);
 });
 after(() => {
   restaurarDatos();
+  restaurarInterruptor();
   globalThis.fetch = originalFetch;
 });
 beforeEach(() => {
@@ -106,4 +111,82 @@ test('el alta completa deja a la persona que creo Operam con el Telefono y el co
   );
   assert.deepEqual(update.params.getAll('assgn[]'), ['1', '4']);
   assert.equal(fa.pedidos.some(p => p.params.has('contactsADD')), false, 'no nace otra persona');
+});
+
+// D2 (decisiones de Adrian 2026-10-09): el formulario no captura quien recibe, pero el
+// alta trae el celular del Contacto (`celular_nota`). La persona que crea Operam toma
+// el nombre del Contacto del cotizador con ese celular (ultimos 10 digitos); sin
+// Contacto con ese celular conserva el suyo (la prueba de arriba).
+test('#557 D2 con un Contacto del cotizador con el celular del alta, la persona que creo Operam toma su nombre', async () => {
+  fijarDatos(PROSPECTOS_PATH, [{
+    id: 41, fecha: '2026-10-01T16:00:00.000Z', vendedor: 'Jaime Abaroa', celular: '+52 55 1111 2222', celular10: '5511112222',
+    nombre: 'Lucia Recibe', ciudad: 'CDMX', canal: 'expo', etapa: 'por_cotizar', eventos: [], data: {},
+  }]);
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({
+        tax_id: 'HAZ010203AB1', CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Hoteles Azules',
+        cfdi_regimen_fiscal: '601', postal_code: '06000', sales_type: '15', salesman: 7, celular_nota: '5511112222',
+        entrega: {
+          br_name: 'Almacen Central', br_ref: 'ALMCEN', addr_street: 'Av. Reforma 100', addr_colony: 'Juarez',
+          addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', phone: '5544332211', email: 'lucia@example.com',
+        },
+      });
+    assert.equal(res.status, 200);
+    const paso = res.body.steps.find(s => s.name === 'contacto de entrega');
+    assert.equal(paso.status, 'ok', paso.detalle);
+    const update = fa.pedidos.find(p => p.params.has('contactsUPDATE[1289]'));
+    assert.equal(update.params.get('name'), 'Lucia Recibe');
+  } finally {
+    fijarDatos(PROSPECTOS_PATH, []);
+  }
+});
+
+// D6 (decisiones de Adrian 2026-10-09): con el interruptor CONTACTOS_OPERAM_ESCRITURA
+// ausente (= apagado) o con una lista que no trae al Cliente Operam recien creado (el
+// 15), el alta se queda como antes de la spec: lograda, sin paso de contacto en el
+// reporte y sin tocar la pagina de domicilios de la web legacy.
+for (const [caso, valor] of [['ausente', undefined], ['con otra lista (376)', '376']]) {
+  test(`#557 D6 interruptor ${caso}: el alta completa no escribe contactos ni deja paso de contacto`, async () => {
+    const restaurar = fijarInterruptorContactos(valor);
+    try {
+      const res = await supertest(app).post('/api/crear-cliente')
+        .set('Authorization', `Bearer ${TOKEN}`)
+        .send({
+        tax_id: 'HAZ010203AB1', CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Hoteles Azules',
+        cfdi_regimen_fiscal: '601', postal_code: '06000', sales_type: '15', salesman: 7, celular_nota: '5511112222',
+        entrega: {
+          br_name: 'Almacen Central', br_ref: 'ALMCEN', addr_street: 'Av. Reforma 100', addr_colony: 'Juarez',
+          addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', phone: '5544332211', email: 'lucia@example.com',
+        },
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.steps.some(s => s.name === 'contacto de entrega'), false);
+      assert.deepEqual(fa.pedidos, [], 'no se abrio la web legacy');
+    } finally {
+      restaurar();
+    }
+  });
+}
+
+test('#557 D6 interruptor con la lista del Cliente Operam recien creado (15): el alta si deja al Contacto de entrega', async () => {
+  const restaurar = fijarInterruptorContactos('15');
+  try {
+    const res = await supertest(app).post('/api/crear-cliente')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({
+        tax_id: 'HAZ010203AB1', CustName: 'HOTELES AZULES SA DE CV', cust_ref: 'Hoteles Azules',
+        cfdi_regimen_fiscal: '601', postal_code: '06000', sales_type: '15', salesman: 7, celular_nota: '5511112222',
+        entrega: {
+          br_name: 'Almacen Central', br_ref: 'ALMCEN', addr_street: 'Av. Reforma 100', addr_colony: 'Juarez',
+          addr_city: 'CDMX', addr_state: 'CDMX', addr_zip: '06600', phone: '5544332211', email: 'lucia@example.com',
+        },
+      });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.steps.find(s => s.name === 'contacto de entrega').status, 'ok');
+    assert.ok(fa.pedidos.some(p => p.params.has('contactsUPDATE[1289]')));
+  } finally {
+    restaurar();
+  }
 });

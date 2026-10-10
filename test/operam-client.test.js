@@ -2152,7 +2152,11 @@ test('#505 huellaContenidoQuote: regenerar otro dia con la misma vigencia NO cue
 // La huella que dejaba la subida ANTES de #505 para cotizacionBase() con lista 9:
 // sin `vigencia` y con la linea de comments normalizada al plazo en dias. Es un
 // literal de esa version, no algo que se recalcule aqui.
-const HUELLA_ANTES_DE_505 = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio\\nValido hasta: +30d","subtotal":1000,"iva":160,"total":1160,"listaId":"9","branchId":null,"shipVia":null}';
+// D3b (decisiones de Adrian 2026-10-09): cotizacionBase() no trae calle, asi que su
+// domicilio de entrega hoy empieza con "Por definir"; la huella de abajo lo lleva asi
+// porque lo que esta prueba mide es la exencion de la vigencia, no el domicilio (el
+// cambio del domicilio sin calle se prueba en test/huella-quote-literal.test.js).
+const HUELLA_ANTES_DE_505 = '{"items":[{"stock_id":"CR20-PLATO","qty":10,"price":100,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":376,"deliverTo":"El Pendulo","deliveryAddress":"Por definir, 56530","contactPhone":"","contactEmail":"","comments":"- Precio sujeto a cambio\\nValido hasta: +30d","subtotal":1000,"iva":160,"total":1160,"listaId":"9","branchId":null,"shipVia":null}';
 
 test('#505 contenidoQuoteCambio: una huella guardada antes de #505 no declara cambio por vigencia', () => {
   const opciones = { listaId: 9, shipVia: null };
@@ -2828,12 +2832,14 @@ test('#332 armarContenidoQuote: sin numero interior el domicilio queda como lo d
 
 // Sin calle el interior sigue siendo el primer elemento y no se pega a la colonia: un
 // domicilio a medias es un dato incompleto, no un domicilio con la colonia de calle.
-test('#332 armarContenidoQuote: sin calle el interior queda como primer elemento', async () => {
+// D3b (decisiones de Adrian 2026-10-09): sin calle su lugar es "Por definir", con el
+// interior pegado como a cualquier calle (antes el interior quedaba solo al frente).
+test('#332 armarContenidoQuote: sin calle el interior va pegado a "Por definir"', async () => {
   const { armarContenidoQuote } = await import('../lib/operam-client.js');
   const { deliveryAddress } = armarContenidoQuote({
     cliente: { calle: '', numInt: '27', colonia: 'Bosque de las Lomas', cpEntrega: '11700' },
   });
-  assert.equal(deliveryAddress, 'Int. 27, Bosque de las Lomas, 11700');
+  assert.equal(deliveryAddress, 'Por definir Int. 27, Bosque de las Lomas, 11700');
 });
 
 // El "Int." solo se antepone a un interior DESNUDO (empieza con digito o es corto). Los

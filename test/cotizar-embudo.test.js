@@ -373,7 +373,7 @@ test('O1: subir una cotizacion a Operam le guarda el folio devuelto (deja de ser
   const id = await cotStore.crear({
     fecha: '2026-06-10T00:00:00Z', vendedor: 'Memo', cliente: 'HOTELERA DEL SUR',
     totalPiezas: 10, total: 1160, tier: 'Mayoreo',
-    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA', calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5512345678' }, items: [] },
+    data: { cliente: { razonSocial: 'HOTELERA DEL SUR SA DE CV', rfc: 'HSU010101AAA', calle: 'Av. Juarez 45', cpEntrega: '56530', nombreEntrega: 'HOTELERA DEL SUR SA DE CV', celEntrega: '+52 5512345678' }, items: [] },
   });
   // Pre-condicion: nace sin folio (pre-cotizacion).
   assert.equal((await cotStore.obtener(id)).folioOperam, null);
@@ -422,7 +422,7 @@ test('F1: formalizar una pre-cotizacion da de alta el cliente y registra la coti
   const id = await cotStore.crear({
     fecha: '2026-06-16T00:00:00Z', vendedor: 'Memo', cliente: 'LAURA SA DE CV',
     totalPiezas: 10, total: 1160, tier: 'Mayoreo',
-    data: { cliente: { razonSocial: 'LAURA SA DE CV', rfc: 'LAU010101AAA', calle: 'Av. Juarez 45', cpEntrega: '56530', celEntrega: '+52 5512345678' }, items: [] },
+    data: { cliente: { razonSocial: 'LAURA SA DE CV', rfc: 'LAU010101AAA', calle: 'Av. Juarez 45', cpEntrega: '56530', nombreEntrega: 'LAURA SA DE CV', celEntrega: '+52 5512345678' }, items: [] },
   });
   assert.equal(esPreCotizacion(await cotStore.obtener(id)), true);
 

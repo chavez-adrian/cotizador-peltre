@@ -43,6 +43,19 @@ test('el respaldo llena SOLO los huecos del domicilio, nunca pisa lo que trae', 
   });
 });
 
+// D3b (decisiones de Adrian 2026-10-09): "Por definir" es lo que el cotizador escribe en
+// Operam cuando no hay calle. Al leer el domicilio de regreso cuenta como calle VACIA:
+// nunca llena el campo Calle ni cuenta como capturada (el respaldo llena el hueco).
+test('#557 D3b la calle "Por definir" de un domicilio de Operam no llena el campo Calle', () => {
+  const domicilio = { ...DOM_A, calle: 'Por definir' };
+  assert.equal(valoresDeDomicilio(domicilio).calle, '');
+  assert.equal(valoresDeDomicilio(domicilio, { calle: 'Calle fiscal 1' }).calle, 'Calle fiscal 1');
+  assert.equal(valoresDeDomicilio(DOM_A, { calle: 'Por definir' }).calle, 'Bosques de Europa 12');
+  assert.equal(valoresDeDomicilio({ ...DOM_A, calle: '' }, { calle: 'Por definir' }).calle, '');
+  const plan = planDomicilioAsistido(camposDomicilioVacios(), camposDomicilioVacios(), valoresDeDomicilio(domicilio));
+  assert.equal(plan.valores.calle, '');
+});
+
 // --- planDomicilioAsistido ---
 
 test('un campo vacio recibe lo del domicilio y el selector lo recuerda', () => {

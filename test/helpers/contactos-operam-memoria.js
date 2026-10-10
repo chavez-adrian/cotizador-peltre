@@ -89,6 +89,8 @@ export function contactosOperamEnMemoria({
   };
 
   const deps = {
+    // D6: el interruptor de la escritura, encendido para las pruebas del modulo.
+    escrituraActiva: () => true,
     async buscarCopia(domicilioId, origenPersonId) {
       registrar('buscarCopia', domicilioId, origenPersonId);
       return estado.copias.get(`${domicilioId}:${origenPersonId}`) || null;

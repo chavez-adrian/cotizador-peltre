@@ -238,11 +238,18 @@ test('buildBranchGenerico: sin celular de entrega cae al telefono del contacto',
 // `pais`) no dependen del domicilio, asi que buildBranchGenerico nunca devuelve null,
 // solo omite los campos addr_*. `pais` siempre es el del CLIENTE (inferencia decidida
 // para el caso sin domicilio, ver comentario de la funcion).
-test('buildBranchGenerico: sin calle o sin CP no manda campos addr_* pero SI manda pais (issue #189)', () => {
+// D3b (decisiones de Adrian 2026-10-09): con CP basta. Sin calle, la del domicilio es
+// "Por definir" -- como en el documento y el quote -- y el resto del domicilio viaja.
+test('#557 D3b buildBranchGenerico: sin calle y con CP escribe el domicilio con la calle "Por definir"', () => {
   const sinCalle = buildBranchGenerico({ ...CLIENTE_ENTREGA, calle: '' }, {});
-  assert.ok(!('addr_street' in sinCalle) && !('addr_zip' in sinCalle));
+  assert.equal(sinCalle.addr_street, 'Por definir');
+  assert.equal(sinCalle.addr_zip, '06600');
+  assert.equal(sinCalle.addr_colony, 'Juarez');
+  assert.equal(sinCalle.phone, '+52 5511223344');
   assert.equal(sinCalle.pais, 'MX');
+});
 
+test('buildBranchGenerico: sin CP no manda campos addr_* pero SI manda pais (issue #189)', () => {
   const sinCp = buildBranchGenerico({ ...CLIENTE_ENTREGA, cpEntrega: '  ' }, {});
   assert.ok(!('addr_street' in sinCp) && !('addr_zip' in sinCp));
   assert.equal(sinCp.pais, 'MX');

@@ -65,7 +65,7 @@ const RFC = 'CSL010101AAA';
 function cotizacion() {
   return {
     fecha: '2026-01-01', vigencia: '2026-02-01', tier: 'Menudeo', _compress: false,
-    cliente: { razonSocial: 'HOTEL SIN LISTA SA DE CV', nombreCorto: 'Hotel Sin Lista', telefono: '+52 55 1234 5678', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: RFC },
+    cliente: { razonSocial: 'HOTEL SIN LISTA SA DE CV', nombreCorto: 'Hotel Sin Lista', telefono: '+52 55 1234 5678', nombreEntrega: 'HOTEL SIN LISTA SA DE CV', celEntrega: '+52 55 1234 5678', calle: 'Av. Juarez 45', cpEntrega: '56530', rfc: RFC },
     items: [{ codigo: 'AB12', descripcion: 'Olla', cantidad: 10, unidad: 'pza', precio: 100, descuento: 0 }],
     subtotal: 1000, iva: 160, total: 1160, notas: [],
   };

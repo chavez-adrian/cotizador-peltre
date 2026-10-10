@@ -1,9 +1,10 @@
 'use strict';
 // #562: el domicilio de entrega ya tenia un contacto General. La subida queda lograda
-// con su folio y trae la pregunta al vendedor con los dos cuerpos de reintento que
-// dicta el servidor (`reintentar.confirmar` y `reintentar.conservar`). La vista la
-// pinta junto al folio y cada boton reenvia SU cuerpo tal cual, como la pregunta de la
-// otra razon social (#345). Sin DOM: se lee el HTML que arman las funciones puras.
+// con su folio y trae la pregunta al vendedor con el cuerpo de reintento que dicta el
+// servidor (`reintentar.confirmar`). La vista la pinta junto al folio y el boton reenvia
+// ese cuerpo tal cual, como la pregunta de la otra razon social (#345). D1 (decisiones de
+// Adrian 2026-10-09): un solo boton, "Confirmar"; la salida "conservar" se quito. Sin DOM:
+// se lee el HTML que arman las funciones puras.
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -20,10 +21,14 @@ const PREGUNTA = {
   desplazados: [{ nombre: 'Alfa G Prueba', roles: ['general'] }],
   reintentar: {
     confirmar: { contactoEntrega: { desplazar: ['1294'] } },
-    conservar: { contactoEntrega: { conservar: true } },
   },
 };
 const PASO_PENDIENTE = { name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes si Alfa G Prueba deja de ser el contacto General del domicilio de entrega.', detalle: 'pendiente' };
+
+// El texto de cada boton de la pregunta.
+function textosDeLosBotones(html) {
+  return [...html.matchAll(/responderContactoEntregaOperam\(21, [^)]*\)">([^<]*)<\/button>/g)].map((m) => m[1]);
+}
 
 // Lo que el navegador reenviaria al apretar cada boton: el objeto serializado en su onclick.
 function cuerposDeLosBotones(html) {
@@ -39,12 +44,14 @@ test('PCE1: la subida lograda con la pregunta conserva el folio y lleva la pregu
   assert.deepEqual(vista.pasos, []);
 });
 
-test('PCE2: el estado pinta el folio, la pregunta con el nombre del desplazado y un boton por salida con el cuerpo que dicto el servidor', () => {
+test('PCE2: el estado pinta el folio, la pregunta con el nombre del desplazado y un solo boton, Confirmar, con el cuerpo que dicto el servidor', () => {
   const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, status: 200, folio: '1330', steps: [PASO_PENDIENTE], preguntaContacto: PREGUNTA }));
   assert.match(html, /Cotizaci/);
   assert.match(html, /1330/);
   assert.match(html, /Alfa G Prueba deja de ser el contacto General de este domicilio y queda como contacto de Entrega/);
-  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA.reintentar.confirmar, PREGUNTA.reintentar.conservar]);
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA.reintentar.confirmar]);
+  assert.deepEqual(textosDeLosBotones(html), ['Confirmar']);
+  assert.match(html, /hasta que confirmes/);
   assert.match(html, /Ver detalle t&eacute;cnico/);
 });
 
@@ -81,18 +88,15 @@ const PREGUNTA_PISA = {
   pisa: [{ campo: 'telefono', viejo: '55 8888 0000', nuevo: '5512345678' }],
   reintentar: {
     confirmar: { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'telefono', viejo: '55 8888 0000' }] } },
-    conservar: { contactoEntrega: { conservar: true } },
   },
 };
 const PASO_PISA = { name: 'contacto de entrega', status: 'warn', mensaje: 'El Contacto de entrega todavia no se escribio en Operam: falta que confirmes los cambios a los datos de Adrian Bosques Nombre.', detalle: 'pendiente' };
 
-test('PCE6: con casillas que se pisarian los botones confirman o conservan sus datos, sin hablar de un General, y reenvian el cuerpo del servidor', () => {
+test('PCE6: con casillas que se pisarian hay un solo boton, Confirmar, que reenvia el cuerpo del servidor', () => {
   const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', yaSubida: true, steps: [], preguntaContacto: PREGUNTA_PISA }));
   assert.match(html, /el Telefono pasa de 55 8888 0000 a 5512345678/);
-  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar, PREGUNTA_PISA.reintentar.conservar]);
-  assert.doesNotMatch(html, /queda como General|sigue como General/);
-  assert.match(html, /actualiza sus datos en Operam/);
-  assert.match(html, /deja sus datos en Operam como est/);
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar]);
+  assert.deepEqual(textosDeLosBotones(html), ['Confirmar']);
 });
 
 let interpretarActualizacionOperam, buildActualizacionStatusHtml;
@@ -107,5 +111,38 @@ test('PCE7: la actualizacion lograda trae la pregunta del contacto junto al foli
   assert.deepEqual(vista.pasos, []);
   const html = buildActualizacionStatusHtml(21, vista);
   assert.match(html, /actualizada en Operam/);
-  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar, PREGUNTA_PISA.reintentar.conservar]);
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_PISA.reintentar.confirmar]);
+});
+
+// D4 (decisiones de Adrian 2026-10-09): la pregunta del cambio de celular. En el caso
+// simple, un solo boton "Confirmar"; con telefono compartido, dos botones con las
+// palabras de la decision, y cada uno reenvia SU cuerpo (el segundo no mueve nada en el
+// cotizador).
+const PREGUNTA_NUMERO = {
+  codigo: 'CONFIRMAR_PISAR_CONTACTO',
+  mensaje: 'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a 5512345678.',
+  detalle: 'persona 1249', nuevo: 'Adrian Bosques Nombre', desplazados: [],
+  pisa: [{ campo: 'cel', viejo: '55 8888 0000', nuevo: '5512345678' }],
+  numero: { viejo: '55 8888 0000', nuevo: '5512345678', contactoViejo: true, oportunidades: 3, cotizaciones: 1, otrasPersonas: ['Pedro Lopez'], compartido: true, mover: true },
+  reintentar: {
+    confirmar: { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }], numero: { viejo: '55 8888 0000', mover: true } } },
+    soloOperam: { contactoEntrega: { desplazar: [], pisar: [{ personId: '1249', campo: 'cel', viejo: '55 8888 0000' }], numero: { viejo: '55 8888 0000', mover: false } } },
+  },
+};
+
+test('PCE8: telefono compartido: dos botones con las palabras de la decision, cada uno con su cuerpo', () => {
+  const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', yaSubida: true, steps: [], preguntaContacto: PREGUNTA_NUMERO }));
+  assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_NUMERO.reintentar.confirmar, PREGUNTA_NUMERO.reintentar.soloOperam]);
+  assert.deepEqual(textosDeLosBotones(html), [
+    'Es el celular de Adrian Bosques Nombre: pasar sus 3 oportunidades y 1 cotizaci\u00f3n al n\u00famero nuevo',
+    'Es un tel\u00e9fono compartido: solo actualizar el celular de Adrian Bosques Nombre en Operam; el 55 8888 0000 se queda como est\u00e1 en el cotizador',
+  ]);
+  assert.doesNotMatch(html, /fund|fusi/i);
+});
+
+test('PCE9: cambio de celular sin telefono compartido: un solo boton, Confirmar', () => {
+  const simple = { ...PREGUNTA_NUMERO, numero: { ...PREGUNTA_NUMERO.numero, otrasPersonas: [], compartido: false }, reintentar: { confirmar: PREGUNTA_NUMERO.reintentar.confirmar } };
+  const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', yaSubida: true, steps: [], preguntaContacto: simple }));
+  assert.deepEqual(cuerposDeLosBotones(html), [simple.reintentar.confirmar]);
+  assert.deepEqual(textosDeLosBotones(html), ['Confirmar']);
 });

@@ -13,7 +13,9 @@
 // El Contacto de entrega (#566) lo escribe el modulo Contactos en Operam, que aqui
 // entra SUSTITUIDO: `contactoEntregaDelAlta` registra la solicitud y contesta
 // `contactoEntrega` (un valor del modulo, o una funcion). Una prueba que quiera el
-// modulo real lo compone sobre test/helpers/contactos-operam-memoria.js.
+// modulo real lo compone sobre test/helpers/contactos-operam-memoria.js. El
+// interruptor de esa escritura (D6) entra como `escrituraContactos`, la funcion
+// `(clienteId) => boolean` de `escrituraContactosActiva`; por defecto encendido.
 //
 // El POST de cliente auto-crea su domicilio de entrega copiando el nombre en
 // MAYUSCULAS, como Operam (#170), y el POST de domicilio no lo hace: asi la
@@ -59,6 +61,7 @@ export function operamEnMemoria({
   siguienteBranchId = 800,
   siguientePersonaId = 1501,
   contactoEntrega = null,
+  escrituraContactos = () => true,
 } = {}) {
   const estado = {
     clientes: clientes.map(c => ({ ...c, branches: (c.branches || []).map(b => ({ ...b })) })),
@@ -193,6 +196,9 @@ export function operamEnMemoria({
     logCliente(...args) {
       registrar('logCliente', ...args);
       estado.auditoria.push(args);
+    },
+    escrituraContactosActiva(clienteId) {
+      return escrituraContactos(clienteId);
     },
     async contactoEntregaDelAlta(solicitud) {
       registrar('contactoEntregaDelAlta', solicitud);
