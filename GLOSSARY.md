@@ -1,4 +1,8 @@
-# Glosario de dominio — Cotizador Peltre Nacional
+# Glosario de dominio — Alabeo (Peltre Nacional)
+
+## Alabeo
+
+La aplicación comercial de Peltre Nacional: cotizar, pipeline, alta de clientes en Operam, contactos y seguimiento post-venta (decisión 2026-10-10). **Cotizador** es su nombre histórico y el de su módulo de cotizar; en este glosario, en los ADRs y en el código "el cotizador" sigue nombrando al sistema, y no se renombra.
 
 ## Pipeline
 
