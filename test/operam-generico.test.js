@@ -77,12 +77,20 @@ const VISTA_QUOTE = readFileSync(join(__dirname, 'fixtures', 'operam-quote-vista
 // formulario real del fixture, o sea la del cliente antes de corregir.
 const LISTA_DEL_FORMULARIO = '16';
 let listaEscritaWeb = LISTA_DEL_FORMULARIO;
+// #556: el telefono y el correo del Contacto de entrega viajan en el mismo ProcessOrder
+// y se releen por la API (`contact_phone` / `contact_email`); los del fixture son los
+// que FA prellena antes de corregir.
+const CONTACTO_DEL_FORMULARIO = { phone: '+52 1 55 0000 0000', email: 'demo@example.com' };
+let contactoEscritoWeb = { ...CONTACTO_DEL_FORMULARIO };
+const quoteLeidoWeb = () => ({ order_type: listaEscritaWeb, contact_phone: contactoEscritoWeb.phone, contact_email: contactoEscritoWeb.email });
 function mockWebLegacy({ validoHasta = '2026-08-05', onPost = () => {} } = {}) {
   return {
     'sales_order_entry.php': (u, opts) => {
       if (opts?.method === 'POST') {
         const posteado = new URLSearchParams(String(opts.body));
         if (posteado.has('sales_type')) listaEscritaWeb = posteado.get('sales_type');
+        if (posteado.has('phone')) contactoEscritoWeb.phone = posteado.get('phone');
+        if (posteado.has('email')) contactoEscritoWeb.email = posteado.get('email');
         onPost(String(opts.body));
         return htmlResponse('<html>ok</html>');
       }
@@ -105,6 +113,7 @@ after(() => {
 beforeEach(() => {
   globalThis.fetch = fetchBloqueado;
   listaEscritaWeb = LISTA_DEL_FORMULARIO;
+  contactoEscritoWeb = { ...CONTACTO_DEL_FORMULARIO };
   resetSession();
   _resetSesionWeb();
   // La dedup por cust_ref (#242) lee el padron cacheado de indice-telefonos, que
@@ -173,7 +182,7 @@ test('G1: cotizacion sin cliente crea el generico y sube la cotizacion a su nomb
       return jsonResponse({ data: [{ br_name: 'Hotel Azul' }] });
     },
     '/api/v3/sales/quote': (u, opts) => {
-      if (opts?.method !== 'POST') return jsonResponse({ data: [{ order_type: listaEscritaWeb }] });
+      if (opts?.method !== 'POST') return jsonResponse({ data: [quoteLeidoWeb()] });
       llamadas.push('POST quote'); quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1701 });
     },
     ...mockWebLegacy(),
@@ -995,7 +1004,7 @@ test('SUC1: { sucursalDe } crea UNA sucursal nueva, sube el quote al cliente exi
       return jsonResponse({ total: 0, data: [] });
     },
     '/api/v3/sales/quote': (u, opts) => {
-      if (opts?.method !== 'POST') return jsonResponse({ data: [{ order_type: listaEscritaWeb }] });
+      if (opts?.method !== 'POST') return jsonResponse({ data: [quoteLeidoWeb()] });
       quoteBody = JSON.parse(opts.body); return jsonResponse({ result: true, added_trans_no: 1901 });
     },
     ...mockWebLegacy(),
@@ -1130,7 +1139,7 @@ function mockSubidaBase(extra = {}) {
     // encabezado (#403): se distinguen por metodo, como en Operam.
     '/api/v3/sales/quote': (u, opts) => (opts?.method === 'POST'
       ? jsonResponse({ result: true, added_trans_no: 1801 })
-      : jsonResponse({ data: [{ order_type: listaEscritaWeb }] })),
+      : jsonResponse({ data: [quoteLeidoWeb()] })),
     ...extra,
   };
 }

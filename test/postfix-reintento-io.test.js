@@ -135,7 +135,9 @@ test('procesarColaPostFix: reintenta con la MISMA escritura del post-fix y, veri
   const corregir = corregirFalso(R_VERIFICADO);
   const { deps, correos } = depsBase({ store: storeEnMemoria([pendiente()]), corregirVigenciaQuote: corregir });
   const r = await procesarColaPostFix(deps);
-  assert.deepEqual(corregir.llamadas, [{ folio: '1263', vigencia: '2026-10-04', opciones: { lista: '9', transportista: null } }]);
+  // La fila no trae telefono ni correo (#556: encolada antes de que viajaran): van en
+  // null y el post-fix no los toca.
+  assert.deepEqual(corregir.llamadas, [{ folio: '1263', vigencia: '2026-10-04', opciones: { lista: '9', transportista: null, telefono: null, correo: null } }]);
   assert.deepEqual(await deps.store.listar(), []);
   assert.equal(r.verificados, 1);
   assert.equal(correos.length, 0);
@@ -603,4 +605,86 @@ test('procesarColaPostFix: sin poder leer el registro no se escribe (transitorio
   const [fila] = await deps.store.listar();
   assert.equal(fila.intentos, 1);
   assert.match(fila.motivo, /Neon caido/);
+});
+
+// --- #556: el telefono y el correo del Contacto de entrega en la cola ---
+
+// El post-fix los escribio y la relectura no casa: el quote quedo con el del contacto
+// General. Entra a la cola con los DOS valores que se intentaron, el vacio incluido.
+const TELEFONO_SIN_CASAR = { aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null };
+const CORREO_OK = { aplica: true, esperado: 'recibe@cliente.mx', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: 'recibe@cliente.mx', motivo: null };
+
+test('#556 encolarPostFix: el telefono que no casa queda en la cola con el telefono y el correo intentados', async () => {
+  const { deps, correos } = depsBase();
+  const resultado = { ...R_VERIFICADO, telefono: TELEFONO_SIN_CASAR, correo: CORREO_OK };
+  await encolarPostFix({ ...FALLO_1263, telefono: '', correo: 'recibe@cliente.mx', resultado }, deps);
+  const [fila] = await deps.store.listar();
+  assert.equal(fila.estado, 'pendiente');
+  assert.equal(fila.telefono, '');
+  assert.equal(fila.correo, 'recibe@cliente.mx');
+  assert.equal(fila.motivo, 'telefono: se esperaba (vacio) y se leyo +52 55 3466 7682');
+  assert.equal(correos.length, 0);
+});
+
+// El quote tiene bien vigencia y lista pero el telefono del General: el reintento NO
+// lo da por bueno -- relee los mismos campos que va a reintentar -- y repite la
+// escritura con los valores encolados.
+test('#556 procesarColaPostFix: reintenta con el telefono y el correo encolados aunque lo demas ya este bien', async () => {
+  const corregir = corregirFalso({ ...R_VERIFICADO, telefono: { ...TELEFONO_SIN_CASAR, ok: true, encontrado: '' }, correo: CORREO_OK });
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ telefono: '', correo: 'recibe@cliente.mx' })]), corregirVigenciaQuote: corregir,
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-10-04', order_type: '9', ship_via: '1', contact_phone: '+52 55 3466 7682', contact_email: 'recibe@cliente.mx' }),
+  });
+  const r = await procesarColaPostFix(deps);
+  assert.deepEqual(corregir.llamadas, [{ folio: '1263', vigencia: '2026-10-04', opciones: { lista: '9', transportista: null, telefono: '', correo: 'recibe@cliente.mx' } }]);
+  assert.deepEqual(await deps.store.listar(), []);
+  assert.equal(r.verificados, 1);
+});
+
+test('#556 procesarColaPostFix: con el telefono y el correo ya como se encolaron no se escribe nada', async () => {
+  const corregir = corregirFalso(R_VERIFICADO);
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ telefono: '', correo: 'recibe@cliente.mx' })]), corregirVigenciaQuote: corregir,
+    obtenerQuote: async () => ({ order_no: '1263', ord_date: '2026-09-02', delivery_date: '2026-10-04', order_type: '9', ship_via: '1', contact_phone: '', contact_email: 'recibe@cliente.mx' }),
+  });
+  await procesarColaPostFix(deps);
+  assert.equal(corregir.llamadas.length, 0);
+  assert.deepEqual(await deps.store.listar(), []);
+});
+
+// Como la lista y el transportista: si el vendedor actualizo la cotizacion con otro
+// Contacto de entrega despues de encolar, el reintento lo regresaria al viejo.
+test('#556 procesarColaPostFix: si el telefono de la huella ya no es el encolado, se descarta sin escribir', async () => {
+  const corregir = corregirFalso(R_VERIFICADO);
+  const { deps } = depsBase({
+    store: storeEnMemoria([pendiente({ telefono: '', correo: '' })]), corregirVigenciaQuote: corregir,
+    obtenerCotizacion: async () => registro41({}, { huellaQuote: JSON.stringify({ items: [], contactPhone: '+52 55 1111 2222', contactEmail: '', listaId: '9', branchId: null, shipVia: null }) }),
+  });
+  await procesarColaPostFix(deps);
+  assert.equal(corregir.llamadas.length, 0);
+  assert.deepEqual(await deps.store.listar(), []);
+});
+
+// Fuera de alcance de #556: el barrido no juzga el telefono de los quotes historicos.
+// Un quote con vigencia, lista y transportista bien no se encola por su telefono.
+test('#556 barrerQuotesPostFix: un telefono distinto del de la huella no encola el quote', async () => {
+  const { deps } = depsBarrido({
+    listarCotizaciones: async () => [cotizacion(42, '1264', { data: { fecha: '2026-09-02', huellaQuote: huella({ contactPhone: '', contactEmail: '', listaId: '9', vigencia: '2026-10-03' }) } })],
+    obtenerQuote: async () => ({ ...QUOTES[1264], contact_phone: '+52 55 3466 7682' }),
+  });
+  await barrerQuotesPostFix(deps);
+  assert.deepEqual(await deps.store.listar(), []);
+});
+
+// El que SI se encola (por la vigencia) lleva el telefono y el correo de su huella: el
+// reintento los escribe en el mismo ProcessOrder y el formulario no rellena el del General.
+test('#556 barrerQuotesPostFix: el desfasado se encola con el telefono y el correo de su huella', async () => {
+  const { deps } = depsBarrido({
+    listarCotizaciones: async () => [cotizacion(41, '1263', { data: { fecha: '2026-09-02', huellaQuote: huella({ contactPhone: '', contactEmail: 'recibe@cliente.mx', listaId: '9', vigencia: '2026-10-04' }) } })],
+  });
+  await barrerQuotesPostFix(deps);
+  const [p] = await deps.store.listar();
+  assert.equal(p.folio, '1263');
+  assert.equal(p.telefono, '');
+  assert.equal(p.correo, 'recibe@cliente.mx');
 });

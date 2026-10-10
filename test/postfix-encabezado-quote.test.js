@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { FILAS_ENCABEZADO_QUOTE, filaEncabezado, filasSelect, decidirCampoSelect, pasoEncabezadoQuote } from '../lib/postfix-encabezado-quote.js';
+import { FILAS_ENCABEZADO_QUOTE, FILAS_HUELLA, filaEncabezado, filasSelect, decidirCampoSelect, decidirCampoTexto, pasoEncabezadoQuote } from '../lib/postfix-encabezado-quote.js';
 import { opcionesEncabezado } from '../lib/operam-web.js';
 
 const DIR_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -138,6 +138,7 @@ for (const fila of filasSelect()) {
 test('#521 la vigencia es la fila fecha y el domicilio solo se escribe al actualizar', () => {
   assert.deepEqual(FILAS_ENCABEZADO_QUOTE.map(f => [f.campo, f.tipo]), [
     ['vigencia', 'fecha'], ['lista', 'select'], ['domicilio', 'select'], ['transportista', 'select'],
+    ['telefono', 'texto'], ['correo', 'texto'],
   ]);
   const domicilio = filaEncabezado('domicilio');
   assert.deepEqual(
@@ -159,4 +160,53 @@ test('#521 el aviso del transportista sin nombre de linea dice el id, nunca unde
   const paso = pasoEncabezadoQuote(filaEncabezado('transportista'), '1300', r, { shipVia: 3, linea: undefined, motivo: null });
   assert.equal(paso.mensaje, 'Revisa el transportista de la cotizacion en Operam: pudo quedar con el del domicilio en vez de 3');
   assert.equal(paso.detalle, 'quote 1300: se esperaba el transportista 3 y no se envio -- el post-fix fallo antes de escribir: sin red');
+});
+
+// #556 (ADR-0024): el telefono y el correo del Contacto de entrega son filas `texto`
+// con los momentos que pide el brief -- crear, actualizar, releer, reportar y
+// reintentar --, fuera del barrido (no se juzgan los quotes historicos) y del
+// veredicto (uno que no pego no tumba la actualizacion).
+test('#556 telefono y correo: crear, actualizar, releer, reportar y reintentar; ni barrido ni veredicto', () => {
+  for (const campo of ['telefono', 'correo']) {
+    assert.deepEqual(filaEncabezado(campo).momentos, {
+      crear: true, actualizar: true, releer: true, reportar: true, reintentar: true, barrido: false, veredicto: false,
+    }, campo);
+  }
+  assert.deepEqual([filaEncabezado('telefono').llaveFormulario, filaEncabezado('telefono').llaveApi], ['phone', 'contact_phone']);
+  assert.deepEqual([filaEncabezado('correo').llaveFormulario, filaEncabezado('correo').llaveApi], ['email', 'contact_email']);
+});
+
+// La huella no se mueve: su lugar es el de #329 y los campos TARDIOS siguen siendo los
+// cuatro de siempre, en su orden.
+test('#556 la huella no se mueve: los campos tardios siguen siendo lista, domicilio, transportista y vigencia', () => {
+  assert.deepEqual(FILAS_HUELLA.map(f => f.huella.llave), ['listaId', 'branchId', 'shipVia', 'vigencia']);
+});
+
+// El formulario prellena el vacio con el contacto General del Cliente Operam: lo que
+// muestra no decide nada. Con valor pedido -- tambien vacio -- se escribe siempre.
+test('#556 decidirCampoTexto: con valor pedido se escribe siempre, tambien vacio y tambien si el formulario ya lo muestra', () => {
+  const tel = filaEncabezado('telefono');
+  assert.deepEqual(decidirCampoTexto(tel, { esperado: '', actual: '+52 55 3466 7682' }), { escribir: true, contactPhone: '' });
+  assert.deepEqual(decidirCampoTexto(tel, { esperado: '+52 55 3466 7682', actual: '+52 55 3466 7682' }), { escribir: true, contactPhone: '+52 55 3466 7682' });
+  assert.deepEqual(decidirCampoTexto(filaEncabezado('correo'), { esperado: 'recibe@cliente.mx', actual: '' }), { escribir: true, contactEmail: 'recibe@cliente.mx' });
+});
+
+test('#556 decidirCampoTexto: sin valor pedido o sin el campo en el formulario no se escribe y se da el motivo', () => {
+  const tel = filaEncabezado('telefono');
+  const sin = decidirCampoTexto(tel, { esperado: null, actual: '+52 55 3466 7682' });
+  assert.equal(sin.escribir, false);
+  assert.match(sin.motivo, /telefono/);
+  const sinCampo = decidirCampoTexto(tel, { esperado: '', actual: undefined });
+  assert.equal(sinCampo.escribir, false);
+  assert.match(sinCampo.motivo, /phone/);
+});
+
+test('#556 el paso del telefono vacio que no pego dice vacio y lo que se leyo', () => {
+  const r = {
+    aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null,
+  };
+  const paso = pasoEncabezadoQuote(filaEncabezado('telefono'), '1330', r);
+  assert.equal(paso.name, 'telefono del Contacto de entrega');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.detalle, 'quote 1330: se esperaba el telefono (vacio) y se leyo +52 55 3466 7682');
 });

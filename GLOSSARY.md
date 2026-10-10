@@ -350,7 +350,7 @@ _Evitar_: sucursal, branch (en texto para el vendedor).
 
 ## Post-fix del encabezado del quote
 
-El encabezado del quote es lo que aplica al documento completo, frente a las partidas. Cuatro de sus datos (vigencia, lista de precios, domicilio de entrega y transportista) no los escribe la API v3 de Operam: viajan por la web legacy en el mismo ProcessOrder y se releen para confirmar que quedaron. El pedido que se derive del quote hereda ese encabezado, así que un dato que no quedó sobrevive al documento. Cada dato se declara una sola vez, como una fila de la tabla del post-fix (#521).
+El encabezado del quote es lo que aplica al documento completo, frente a las partidas. Seis de sus datos (vigencia, lista de precios, domicilio de entrega, transportista, y el teléfono y el correo del **Contacto de entrega**, #556) no los escribe la API v3 de Operam: viajan por la web legacy en el mismo ProcessOrder y se releen para confirmar que quedaron. El pedido que se derive del quote hereda ese encabezado, así que un dato que no quedó sobrevive al documento. Cada dato se declara una sola vez, como una fila de la tabla del post-fix (#521).
 _Evitar_: gemelos (para nombrar estos datos).
 
 ## Almacén predeterminado

@@ -4,7 +4,7 @@ import {
   actualizarQuote, subirQuote, clasificarErrorQuote, marcarMotivoPre, conCandadoSubida, OCUPADO,
 } from '../lib/subida-quote.js';
 import {
-  subidaQuoteEnMemoria, RESULTADOS_ACTUALIZAR, LISTA_ESCRITA, TRANSPORTISTA_ESCRITO,
+  subidaQuoteEnMemoria, RESULTADOS_ACTUALIZAR, LISTA_ESCRITA, TRANSPORTISTA_ESCRITO, TELEFONO_ESCRITO, CORREO_ESCRITO, POSTFIX_VERIFICADO,
 } from './helpers/subida-quote-memoria.js';
 import { ErrorClienteSinLista } from '../lib/lista-precios-cliente.js';
 import { ErrorClienteMonedaExtranjera } from '../public/js/moneda-cliente-logica.js';
@@ -158,6 +158,39 @@ test('exito: los pasos salen en orden -- actualizar quote, lista, transportista,
   assert.deepEqual(r.pasos[0], { name: 'actualizar quote', status: 'ok' });
   assert.equal(r.pasos[1].status, 'ok');
   assert.equal(r.pasos[2].status, 'ok');
+});
+
+// #556: el telefono y el correo del Contacto de entrega se releen y se reportan al
+// actualizar, despues del transportista y antes del almacen.
+test('#556 exito: el telefono y el correo del Contacto de entrega salen como pasos ok tras el transportista', async () => {
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion()],
+    actualizar: {
+      ...RESULTADOS_ACTUALIZAR.exito(), lista: LISTA_ESCRITA, transportista: TRANSPORTISTA_ESCRITO,
+      telefono: TELEFONO_ESCRITO, correo: CORREO_ESCRITO, almacen: { cambio: true, de: 'PT', a: 'Almacen MP' },
+    },
+  });
+  const r = await actualizarQuote(7, m.deps);
+  assert.deepEqual(r.pasos.map((p) => [p.name, p.status]), [
+    ['actualizar quote', 'ok'], ['lista del quote', 'ok'], ['transportista del quote', 'ok'],
+    ['telefono del Contacto de entrega', 'ok'], ['correo del Contacto de entrega', 'ok'], ['almacen de entrega', 'warn'],
+  ]);
+  assert.equal(r.pasos[3].detalle, 'quote 1200 contact_phone (vacio)');
+  assert.equal(r.pasos[4].detalle, 'quote 1200 contact_email recibe@cliente.mx');
+});
+
+test('#556 exito: un telefono releido que no casa sale como warn y la actualizacion sigue lograda', async () => {
+  const noCasa = { ...TELEFONO_ESCRITO, ok: false, encontrado: '+52 55 3466 7682' };
+  const m = subidaQuoteEnMemoria({
+    cotizaciones: [cotizacion({ quoteDesactualizado: { fecha: '2026-07-01T00:00:00Z', pendiente: true } })],
+    actualizar: { ...RESULTADOS_ACTUALIZAR.exito(), telefono: noCasa, correo: CORREO_ESCRITO },
+  });
+  const r = await actualizarQuote(7, m.deps);
+  assert.equal(r.tipo, 'actualizada');
+  assert.equal(m.registro(7).data.quoteDesactualizado, null);
+  const paso = r.pasos.find((p) => p.name === 'telefono del Contacto de entrega');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.detalle, 'quote 1200: se esperaba el telefono (vacio) y se leyo +52 55 3466 7682');
 });
 
 test('almacen: sin cambio de almacen no hay paso de almacen', async () => {
@@ -409,18 +442,45 @@ test('con folio: la huella guardada es literal, con listaId y shipVia en null pr
   assert.equal(m.registro(21).data.huellaQuote, '{"items":[{"stock_id":"SKU-NUEVO","qty":3,"price":99.5,"Disc":0,"text":"Plato","editarDescripcion":false}],"custRef":"Pendulo","customerId":null,"deliverTo":"El Pendulo","deliveryAddress":"56530","contactPhone":"","contactEmail":"","comments":"","subtotal":0,"iva":0,"total":0,"listaId":null,"branchId":null,"shipVia":null,"vigencia":"2026-11-14"}');
 });
 
-test('post-fix: escribe vigencia, lista y transportista del quote recien creado', async () => {
+// #556: el POST de la API ignora contact_phone / contact_email y el formulario web
+// prellena el vacio con el contacto General del Cliente Operam; el post-fix los
+// escribe EXPLICITOS -- vacios si el Contacto de entrega no los trae, nunca el
+// telefono del cliente (5512345678 en la cotizacion de ejemplo).
+test('post-fix: escribe vigencia, lista, transportista y el telefono y correo del Contacto de entrega vacios', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
   await subirQuote(21, {}, m.deps);
-  assert.deepEqual(m.llamadas.corregirVigenciaQuote[0], ['1330', '2026-11-14', { lista: '15', transportista: 3 }]);
+  assert.deepEqual(m.llamadas.corregirVigenciaQuote[0], ['1330', '2026-11-14', { lista: '15', transportista: 3, telefono: '', correo: '' }]);
 });
 
-test('post-fix verificado: lograda con los pasos de vigencia, lista y transportista en ok', async () => {
+test('#556 post-fix: escribe el telefono y el correo del Contacto de entrega', async () => {
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ celEntrega: '+52 55 1111 2222', emailEntrega: 'recibe@cliente.mx' })] });
+  await subirQuote(21, {}, m.deps);
+  assert.deepEqual(m.llamadas.corregirVigenciaQuote[0][2], { lista: '15', transportista: 3, telefono: '+52 55 1111 2222', correo: 'recibe@cliente.mx' });
+});
+
+test('post-fix verificado: lograda con los pasos de vigencia, lista, transportista, telefono y correo en ok', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()] });
   const r = await subirQuote(21, {}, m.deps);
   assert.deepEqual(r.pasos.map((p) => [p.name, p.status]), [
     ['post-fix vigencia', 'ok'], ['lista del quote', 'ok'], ['transportista del quote', 'ok'],
+    ['telefono del Contacto de entrega', 'ok'], ['correo del Contacto de entrega', 'ok'],
   ]);
+});
+
+// #556: una relectura que no casa se reporta al vendedor y entra a la cola de
+// reintento con los dos valores que se intentaron.
+test('#556 post-fix: el telefono releido que no casa sale como warn y se encola con el telefono y el correo', async () => {
+  const noCasa = { ...POSTFIX_VERIFICADO, telefono: { ...TELEFONO_ESCRITO, ok: false, encontrado: '+52 55 3466 7682' } };
+  const m = subidaQuoteEnMemoria({ cotizaciones: [nueva({ emailEntrega: 'recibe@cliente.mx' })], corregir: noCasa });
+  const r = await subirQuote(21, {}, m.deps);
+  assert.equal(r.tipo, 'lograda');
+  const paso = r.pasos.find((p) => p.name === 'telefono del Contacto de entrega');
+  assert.equal(paso.status, 'warn');
+  assert.equal(paso.detalle, 'quote 1330: se esperaba el telefono (vacio) y se leyo +52 55 3466 7682');
+  const [fila] = m.llamadas.encolarPostFix[0];
+  assert.equal(fila.telefono, '');
+  assert.equal(fila.correo, 'recibe@cliente.mx');
+  assert.deepEqual(fila.resultado, noCasa);
 });
 
 test('post-fix sin verificar: se encola con lo esperado y sale como paso warn sin tumbar la subida', async () => {
@@ -441,15 +501,21 @@ test('post-fix sin verificar: se encola con lo esperado y sale como paso warn si
   assert.deepEqual(fila.resultado, sinVerificar);
 });
 
-test('post-fix que lanza: paso error y la lista y el transportista "no enviado", encolado con el error', async () => {
+test('post-fix que lanza: paso error y la lista, el transportista, el telefono y el correo "no enviado", encolado con el error', async () => {
   const m = subidaQuoteEnMemoria({ cotizaciones: [nueva()], corregir: () => { throw new Error('sesion web caida'); } });
   const r = await subirQuote(21, {}, m.deps);
   assert.equal(r.tipo, 'lograda');
-  assert.deepEqual(r.pasos.map((p) => p.name), ['post-fix vigencia', 'lista del quote', 'transportista del quote']);
+  assert.deepEqual(r.pasos.map((p) => p.name), [
+    'post-fix vigencia', 'lista del quote', 'transportista del quote', 'telefono del Contacto de entrega', 'correo del Contacto de entrega',
+  ]);
   assert.equal(r.pasos[0].status, 'error');
   assert.match(JSON.stringify(r.pasos[1]), /el post-fix fallo antes de escribir: sesion web caida/);
   assert.match(JSON.stringify(r.pasos[2]), /el post-fix fallo antes de escribir: sesion web caida/);
+  assert.equal(r.pasos[3].status, 'warn');
+  assert.equal(r.pasos[3].detalle, 'quote 1330: se esperaba el telefono (vacio) y no se envio -- el post-fix fallo antes de escribir: sesion web caida');
   assert.equal(m.llamadas.encolarPostFix[0][0].error, 'sesion web caida');
+  assert.equal(m.llamadas.encolarPostFix[0][0].telefono, '');
+  assert.equal(m.llamadas.encolarPostFix[0][0].correo, '');
 });
 
 test('post-fix que lanza sin transportista que mandar: no se pinta el paso del transportista', async () => {
@@ -458,7 +524,7 @@ test('post-fix que lanza sin transportista que mandar: no se pinta el paso del t
     transportista: { shipVia: null, linea: null, motivo: 'sin envio' },
   });
   const r = await subirQuote(21, {}, m.deps);
-  assert.deepEqual(r.pasos.map((p) => p.name), ['post-fix vigencia', 'lista del quote']);
+  assert.deepEqual(r.pasos.map((p) => p.name), ['post-fix vigencia', 'lista del quote', 'telefono del Contacto de entrega', 'correo del Contacto de entrega']);
 });
 
 test('liga: un Contacto sin ligas recibe la liga despues del post-fix', async () => {

@@ -53,9 +53,19 @@ export const TRANSPORTISTA_ESCRITO = {
   aplica: true, esperado: '3', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: '3',
 };
 
+// #556: el telefono y el correo del Contacto de entrega, escritos y releidos. El de
+// ejemplo no trae telefono: se escribe vacio y se lee vacio.
+export const TELEFONO_ESCRITO = {
+  aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: '', motivo: null,
+};
+
+export const CORREO_ESCRITO = {
+  aplica: true, esperado: 'recibe@cliente.mx', escrita: true, yaCorrecto: false, ok: true, verificado: true, encontrado: 'recibe@cliente.mx', motivo: null,
+};
+
 export const POSTFIX_VERIFICADO = {
   ok: true, verificado: true, esperado: '2026-08-27', encontrado: '2026-08-27',
-  lista: LISTA_ESCRITA, transportista: TRANSPORTISTA_ESCRITO,
+  lista: LISTA_ESCRITA, transportista: TRANSPORTISTA_ESCRITO, telefono: TELEFONO_ESCRITO, correo: CORREO_ESCRITO,
 };
 
 const ultimos10 = (x) => String(x || '').replace(/\D/g, '').slice(-10);

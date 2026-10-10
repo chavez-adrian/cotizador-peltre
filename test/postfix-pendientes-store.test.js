@@ -59,3 +59,21 @@ test('guardar actualiza el estado y borrar lo saca de la cola', async () => {
   await store.borrar('1263');
   assert.deepEqual((await store.listar()).map(f => f.folio), ['1270']);
 });
+
+// #556: el telefono y el correo del Contacto de entrega viajan en la fila. El vacio es
+// un valor (se escribe vacio); null es la fila encolada antes de #556 (no se toca).
+test('#556 el telefono y el correo se guardan y se leen, el vacio como vacio y la fila vieja en null', async () => {
+  await store.encolar({ ...PENDIENTE, telefono: '', correo: 'recibe@cliente.mx' });
+  await store.encolar({ ...PENDIENTE, folio: '1270' });
+  const filas = await store.listar();
+  const f1263 = filas.find(f => f.folio === '1263');
+  const f1270 = filas.find(f => f.folio === '1270');
+  assert.equal(f1263.telefono, '');
+  assert.equal(f1263.correo, 'recibe@cliente.mx');
+  assert.equal(f1270.telefono, null);
+  assert.equal(f1270.correo, null);
+  await store.guardar({ ...f1263, intentos: 1 });
+  const guardada = (await store.listar()).find(f => f.folio === '1263');
+  assert.equal(guardada.telefono, '');
+  assert.equal(guardada.correo, 'recibe@cliente.mx');
+});

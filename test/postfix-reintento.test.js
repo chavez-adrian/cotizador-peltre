@@ -236,3 +236,36 @@ test('#528 motivoDescarteReintento: la fila de una cotizacion con marca pendient
   const registro = cot(1, { data: { items: [{ codigo: 'X' }], quoteDesactualizado: MARCA_PENDIENTE_528 } });
   assert.match(motivoDescarteReintento({ folio: '1301' }, registro), /desactualizado/);
 });
+
+// --- #556: el telefono y el correo del Contacto de entrega ---
+
+const TEL_SIN_CASAR = { aplica: true, esperado: '', escrita: true, yaCorrecto: false, ok: false, verificado: true, encontrado: '+52 55 3466 7682', motivo: null };
+
+test('#556 clasificarPostFix: el telefono escrito que la relectura no confirma es transitorio', () => {
+  const r = { ok: true, verificado: true, esperado: '2026-10-04', encontrado: '2026-10-04', lista: ESCRITA_OK, transportista: NO_APLICA, telefono: TEL_SIN_CASAR };
+  assert.deepEqual(clasificarPostFix(r), { estado: 'transitorio', motivo: 'telefono: se esperaba (vacio) y se leyo +52 55 3466 7682' });
+});
+
+test('#556 clasificarPostFix: un formulario sin el campo del correo (abstencion) NO es transitorio', () => {
+  const correo = { aplica: true, esperado: '', escrita: false, yaCorrecto: false, ok: false, verificado: false, encontrado: null, motivo: 'el formulario de Operam no trae email' };
+  const r = { ok: true, verificado: true, esperado: '2026-10-04', encontrado: '2026-10-04', lista: ESCRITA_OK, correo };
+  assert.equal(clasificarPostFix(r).estado, 'definitivo');
+});
+
+test('#556 esperadoDeHuella: el telefono y el correo salen de contactPhone y contactEmail, el vacio como vacio', () => {
+  const h = esperadoDeHuella(JSON.stringify({ items: [], contactPhone: '', contactEmail: 'recibe@cliente.mx', listaId: '9' }));
+  assert.equal(h.telefono, '');
+  assert.equal(h.correo, 'recibe@cliente.mx');
+  assert.equal(h.trae.telefono, true);
+  const vieja = esperadoDeHuella(JSON.stringify({ items: [], listaId: '9' }));
+  assert.equal(vieja.telefono, null);
+  assert.equal(vieja.trae.telefono, false);
+});
+
+test('#556 desfaseQuote: el barrido no compara el telefono; el reintento si, tambien el vacio', () => {
+  const quote = { ...QUOTE_1263, delivery_date: '2026-10-04', contact_phone: '+52 55 3466 7682', contact_email: 'Recibe@Cliente.mx' };
+  const esperado = { vigencia: '2026-10-04', lista: '9', transportista: null, telefono: '', correo: 'recibe@cliente.mx' };
+  assert.deepEqual(desfaseQuote(quote, esperado), []);
+  assert.deepEqual(desfaseQuote(quote, esperado, 'reintentar'), [{ campo: 'telefono', esperado: '', encontrado: '+52 55 3466 7682' }]);
+  assert.deepEqual(desfaseQuote(quote, { ...esperado, telefono: null }, 'reintentar'), [], 'sin telefono encolado (fila anterior a #556) no se juzga');
+});
