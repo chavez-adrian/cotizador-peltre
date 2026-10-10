@@ -6,7 +6,7 @@ Herramienta interna de Peltre Nacional SA de CV. Combina tres funciones:
 2. **Pipeline comercial (CRM)** — tablero unico de oportunidades en 7 etapas (de prospecto a producto entregado) con cola "Hoy", seguimiento por cadencia, y **sincronizacion post-venta automatica con Operam** (webhooks + reconciliacion): pagos, pedido liberado y entrega mueven la tarjeta sin captura doble. Ver `GLOSSARY.md` (glosario de dominio) y `PROGRESS.md` (PRD #52).
 3. **Cliente generico + alta fiscal diferida** — el paso Cliente ofrece dos caminos ("Ya lo conozco" / "Contacto nuevo"); el cliente nace en Operam con RFC generico (`XAXX010101000`/`XEXX010101000`) al generar la primera cotizacion, sin alta manual (PRD #79, ADR-0006). Cuando llega la CSF, el vendedor la sube desde el chip "Fiscal" de la tarjeta: el sistema actualiza (nunca re-crea) ese cliente generico en Operam ERP, con gate anti-fusion y verificacion post-PUT.
 
-**Produccion:** https://cotizador-peltre.onrender.com
+**Produccion:** https://alabeo.pppeltre.mx (la app se llama Alabeo desde 2026-10-10; `cotizador-peltre.onrender.com` sigue vivo para los links ya enviados y lo externo que aun apunte ahi)
 
 ## Stack
 
