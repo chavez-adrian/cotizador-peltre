@@ -67,3 +67,7 @@ Hasta aquí, en modo actualización el documento salía sin esperar la reescritu
 - **"No se entrega" es del botón, no del registro.** El registro del cotizador se guarda antes de ir a Operam y los GET del documento siguen respondiendo, así que la cotización se puede seguir abriendo desde el historial, como siempre.
 
 **La entrega se separa de la acción.** El botón del HTML pasa a ser la acción ("Crear cotización" / "Actualizar cotización") y, ya confirmada, se convierte en "Ver HTML"; "Descargar PDF" queda deshabilitado hasta entonces. Si la cotización cambia después, los dos regresan a su estado anterior. Los visores son un gesto nuevo del vendedor, así que la pestaña del HTML ya no se reserva en blanco antes de esperar a Operam (el bloqueador de ventanas emergentes se come un `window.open` tardío) y el vendedor se queda en el cotizador mientras espera. Esto **supera la decisión de #145** (wontfix 2026-09-25), que había rechazado el mismo split por el toque extra en la ruta de WhatsApp: Adrián volvió a pesarlo y prefiere no recibir nada antes de que Operam confirme.
+
+## Nota 2026-10-10 (ADR-0025): el link a la cotización
+
+El id interno tampoco aparece en el link que recibe el cliente: el link lleva el número de cotización y una terminación aleatoria, y vive en un dominio público propio. Ver ADR-0025.
