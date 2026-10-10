@@ -219,7 +219,9 @@ test('W12: editar con casillas manda phone, phone2, fax y email y deja nombre, a
 // pregunta (una sesion: navegar y leer la tabla) y, con la decision, la misma navegacion
 // mas el formulario de editar y su actualizacion, cuya respuesta YA es la tabla releida.
 // Es el paso del contacto que agrega la actualizacion del quote: 6 peticiones a la web
-// legacy si pregunta, 8 si escribe (con el login y la salida).
+// legacy si pregunta, 8 si escribe (con el login y la salida). Tras escribir, el modulo
+// pide ademas releer contact_list por la API v3 (HITL de #557): esas no son de la web
+// legacy y no cuentan.
 test('W13: editar a la persona elegida por la web legacy: la pregunta son 6 peticiones y la escritura confirmada 8, y la relectura trae las casillas nuevas', async () => {
   const { escribirContactoEntrega } = await import('../lib/contactos-operam.js');
   fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
@@ -239,10 +241,11 @@ test('W13: editar a la persona elegida por la web legacy: la pregunta son 6 peti
   const r = await escribirContactoEntrega({ ...solicitud, decision });
   assert.equal(r.tipo, 'lograda');
   assert.deepEqual(r.noAplicados, []);
-  assert.equal(fa.pedidos.length, 8);
+  const webLegacy = fa.pedidos.filter((p) => !p.url.includes('/api/v3/'));
+  assert.equal(webLegacy.length, 8);
   const update = posts().find((p) => p.params.has('contactsUPDATE[1289]'));
   assert.deepEqual(['name', 'fax', 'phone', 'email'].map((k) => update.params.get(k)), ['MEDICION556b General', '5512345678', '5512345678', 'g564@example.com']);
-  assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
+  assert.match(webLegacy.at(-1).url, /\/access\/logout\.php$/);
 });
 
 // #566 (antes CA9 de test/contactos-operam-alta.test.js): la persona del alta como

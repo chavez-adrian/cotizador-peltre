@@ -512,7 +512,8 @@ test('#557 D1 un cuerpo con conservar (pestana con el app.js anterior) no es dec
 
 // De punta a punta con el adaptador REAL de la web legacy (paginas medidas del
 // domicilio 564): la decision llega al modulo, que crea a la persona, desplaza a la
-// 1289 y relee. Una sola sesion web, que se cierra.
+// 1289 y relee. Una sola sesion web, que se cierra (la relectura de contact_list que
+// pide el modulo despues va por la API v3, no por la web legacy).
 test('#562 confirmar: el reintento escribe el Contacto de entrega como unico General y desplaza a la 1289 por la web legacy', async () => {
   const id = conContactoPendiente();
   const fa = webDeMentiras({ tabla: CONTACTOS_GENERAL_564 });
@@ -525,7 +526,7 @@ test('#562 confirmar: el reintento escribe el Contacto de entrega como unico Gen
   const update = fa.pedidos.find(p => p.params.has('contactsUPDATE[1289]'));
   assert.deepEqual(update.params.getAll('assgn[]'), ['4']);
   assert.match(update.params.get('notes'), /^medicion 556b, borrar\n\d{4}-\d{2}-\d{2}: deja de ser el contacto General de este domicilio; lo reemplaza Lucia Recibe desde la Cotizaci\u00f3n 1330\.$/);
-  assert.match(fa.pedidos.at(-1).url, /\/access\/logout\.php$/);
+  assert.match(fa.pedidos.filter(p => !p.url.includes('/api/v3/')).at(-1).url, /\/access\/logout\.php$/);
   assert.equal(readCots().find(c => c.id === id).data.contactoEntregaPendiente, null);
 });
 

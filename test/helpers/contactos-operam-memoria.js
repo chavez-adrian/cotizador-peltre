@@ -91,6 +91,12 @@ export function contactosOperamEnMemoria({
   const deps = {
     // D6: el interruptor de la escritura, encendido para las pruebas del modulo.
     escrituraActiva: () => true,
+    // La cache de contact_list que lee el selector del paso Envio: el modulo pide
+    // releerla tras mandar una escritura (HITL de #557, 2026-10-10).
+    releerContactosDomicilioTrasEscribir() {
+      registrar('releerContactosDomicilioTrasEscribir');
+      return Promise.resolve();
+    },
     async buscarCopia(domicilioId, origenPersonId) {
       registrar('buscarCopia', domicilioId, origenPersonId);
       return estado.copias.get(`${domicilioId}:${origenPersonId}`) || null;

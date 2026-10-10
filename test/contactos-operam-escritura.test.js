@@ -805,3 +805,33 @@ test('CE46: quien solo tenia Secundario y recibe el numero en Cel y Telefono (ca
   assert.equal(confirmada.tipo, 'lograda');
   assert.deepEqual([enOperam(op, '1249').cel, enOperam(op, '1249').secundario], ['+52 55 1234 5678', '55 7777 0000']);
 });
+
+// HITL de #557 (2026-10-10, Cotizacion 1358): la persona que la subida escribio en el
+// domicilio 564 no aparecia en el selector del paso Envio hasta que la cache de
+// contact_list caducaba (1 h). Tras mandar una escritura -- quede o no confirmada -- el
+// modulo pide releer esa cache; sin escritura no la pide.
+test('CE45: tras crear, editar o desplazar en el domicilio, el modulo pide releer los contactos que lee el selector', async () => {
+  const creada = operam();
+  await escribirContactoEntrega(solicitud(), creada.deps);
+  assert.equal(creada.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+  const editada = operam();
+  await escribirContactoEntrega(solicitud({ contacto: { ...LUCIA, nombre: 'Adrian Bosques Nombre', personId: '1249' } }), editada.deps);
+  assert.equal(editada.pedidos('editar').length > 0, true);
+  assert.equal(editada.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+  const sinConfirmar = operam({ falla: { releer: 'se cayo la red' } });
+  await escribirContactoEntrega(solicitud(), sinConfirmar.deps);
+  assert.equal(sinConfirmar.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+});
+
+test('CE46: si no se escribe nada (pregunta, omitido, web caida antes de escribir, interruptor apagado) no pide releer', async () => {
+  const conGeneralActual = operam({ renglones: [...RENGLONES, { id: '3593', personId: '61', tipo: 'cust_branch', entidad: '564', rol: 'general' }] });
+  const pregunta = await escribirContactoEntrega(solicitud(), conGeneralActual.deps);
+  assert.equal(pregunta.tipo, 'pregunta');
+  const sinDomicilio = operam();
+  await escribirContactoEntrega(solicitud({ domicilioId: null }), sinDomicilio.deps);
+  const caida = operam({ falla: { abrirDomicilioWeb: 'sin red' } });
+  await escribirContactoEntrega(solicitud(), caida.deps);
+  const apagada = operam();
+  await escribirContactoEntrega(solicitud(), { ...apagada.deps, escrituraActiva: () => false });
+  for (const op of [conGeneralActual, sinDomicilio, caida, apagada]) assert.equal(op.pedidos('releerContactosDomicilioTrasEscribir').length, 0);
+});

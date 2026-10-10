@@ -142,3 +142,15 @@ test('CA8: sin nada que dejar en la persona (sin nombre, numero ni correo) no ab
   assert.equal(r.pasos[0].status, 'omitido');
   assert.equal(op.pedidos('abrirDomicilioWeb').length, 0);
 });
+
+// HITL de #557 (2026-10-10): como en la subida (CE45), editar a la persona del alta
+// pide releer la cache de contact_list que lee el selector del paso Envio; sin
+// escritura, no.
+test('CA-releer: editar a la persona del alta pide releer los contactos del selector; sin cambios no', async () => {
+  const editada = operam();
+  await contactoEntregaDelAlta(solicitud(), editada.deps);
+  assert.equal(editada.pedidos('releerContactosDomicilioTrasEscribir').length, 1);
+  const sinContacto = operam();
+  await contactoEntregaDelAlta(solicitud({ contacto: {} }), sinContacto.deps);
+  assert.equal(sinContacto.pedidos('releerContactosDomicilioTrasEscribir').length, 0);
+});
