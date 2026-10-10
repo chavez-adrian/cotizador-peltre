@@ -422,12 +422,12 @@ function buildOtraRazonSocialHtml(id, vista) {
 // navegador no lo arma. El detalle tecnico va plegado (Mensaje en dos capas). Sin
 // pregunta no pinta nada.
 // D4 (decisiones de Adrian 2026-10-09): con cambio de celular y telefono compartido son
-// dos botones con las palabras de la decision (`botonesCambioDeNumero`), cada uno con
-// SU cuerpo; si no, uno solo, "Confirmar".
+// dos botones cortos (`botonesCambioDeNumero`; el mensaje explica cada uno), cada uno
+// con SU cuerpo; si no, uno solo, "Confirmar".
 function buildPreguntaContactoEntregaHtml(id, p) {
   if (!p || !p.reintentar) return '';
   const cuerpo = (x) => JSON.stringify(x || {}).replace(/"/g, '&quot;');
-  const botones = botonesCambioDeNumero(p.nuevo || 'el Contacto de entrega', p.numero)
+  const botones = botonesCambioDeNumero(p.numero)
     .filter(b => p.reintentar[b.salida])
     .map((b, i) => `
     <button class="btn btn-sm ${i === 0 ? 'btn-primary' : 'btn-secondary'}" onclick="responderContactoEntregaOperam(${id}, ${cuerpo(p.reintentar[b.salida])}, this)">${escapeHtml(b.texto)}</button>`)

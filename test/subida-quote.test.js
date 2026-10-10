@@ -1342,7 +1342,7 @@ test('#557 D4 telefono compartido: la pregunta nombra a las otras personas del n
     resumenNumero: { contactoViejo: true, oportunidades: 3, cotizaciones: 2, otrasPersonas: ['Pedro Lopez', 'Maria Ruiz'] },
   });
   const r = await subirQuote(21, {}, m.deps);
-  assert.match(r.preguntaContacto.mensaje, /2 cotizaciones\. El 55 8888 0000 deja de aparecer como Contacto\. Ojo: el 55 8888 0000 tambi\u00e9n tiene oportunidades de Pedro Lopez y Maria Ruiz\. Puede ser el tel\u00e9fono de una oficina que comparten varias personas\.$/);
+  assert.match(r.preguntaContacto.mensaje, /cambia de 55 8888 0000 a \+52 55 1234 5678\. En el cotizador, el 55 8888 0000 tiene 3 oportunidades y 2 cotizaciones, y tambi\u00e9n hay oportunidades de Pedro Lopez y Maria Ruiz: puede ser el tel\u00e9fono de una oficina que comparten varias personas\. Si era solo de Adrian Bosques Nombre, todo pasa al n\u00famero nuevo y el 55 8888 0000 deja de aparecer como Contacto\. Si es compartido, en el cotizador se queda como est\u00e1\. En los dos casos se actualiza Operam\.$/);
   assert.equal(r.preguntaContacto.numero.compartido, true);
 });
 

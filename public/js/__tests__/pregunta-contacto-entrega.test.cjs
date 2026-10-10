@@ -115,9 +115,11 @@ test('PCE7: la actualizacion lograda trae la pregunta del contacto junto al foli
 });
 
 // D4 (decisiones de Adrian 2026-10-09): la pregunta del cambio de celular. En el caso
-// simple, un solo boton "Confirmar"; con telefono compartido, dos botones con las
-// palabras de la decision, y cada uno reenvia SU cuerpo (el segundo no mueve nada en el
-// cotizador).
+// simple, un solo boton "Confirmar"; con telefono compartido, dos botones, y cada uno
+// reenvia SU cuerpo (el segundo no mueve nada en el cotizador). Los botones son cortos
+// y lo que hace cada uno lo explica el mensaje de arriba (Adrian 2026-10-10: en el
+// navegador los textos largos ocupaban varias lineas y la barra del total tapaba el
+// segundo).
 const PREGUNTA_NUMERO = {
   codigo: 'CONFIRMAR_PISAR_CONTACTO',
   mensaje: 'El celular de Adrian Bosques Nombre cambia de 55 8888 0000 a 5512345678.',
@@ -134,8 +136,8 @@ test('PCE8: telefono compartido: dos botones con las palabras de la decision, ca
   const html = buildOperamStatusHtml(21, interpretarSubidaOperam({ ok: true, folio: '1330', yaSubida: true, steps: [], preguntaContacto: PREGUNTA_NUMERO }));
   assert.deepEqual(cuerposDeLosBotones(html), [PREGUNTA_NUMERO.reintentar.confirmar, PREGUNTA_NUMERO.reintentar.soloOperam]);
   assert.deepEqual(textosDeLosBotones(html), [
-    'Es el celular de Adrian Bosques Nombre: pasar sus 3 oportunidades y 1 cotizaci\u00f3n al n\u00famero nuevo',
-    'Es un tel\u00e9fono compartido: solo actualizar el celular de Adrian Bosques Nombre en Operam; el 55 8888 0000 se queda como est\u00e1 en el cotizador',
+    'Era solo suyo: pasar todo al n\u00famero nuevo',
+    'Es compartido: dejarlo como est\u00e1',
   ]);
   assert.doesNotMatch(html, /fund|fusi/i);
 });

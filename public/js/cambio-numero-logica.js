@@ -30,13 +30,18 @@ export function textoCambioDeNumero(nombre, viejo, nuevo) {
 // Lo que pasa en el cotizador, con el resumen que lee la Fusion de Contactos
 // (`resumenDelCambioDeNumero`): `{ viejo, contactoViejo, oportunidades, cotizaciones,
 // otrasPersonas }`. Sin Contacto del numero viejo no hay nada que mover y no se dice
-// nada. Con otras personas en el numero viejo (telefono compartido) se avisa.
-export function textoEnElCotizador(numero) {
+// nada. Con otras personas en el numero viejo (telefono compartido) se avisa y se
+// explica lo que hace cada uno de los dos botones, que son cortos.
+export function textoEnElCotizador(numero, nombre) {
   if (!numero || !numero.contactoViejo) return '';
-  const base = `En el cotizador, todo lo del ${numero.viejo} pasa al n\u00famero nuevo: ${loQueSeMueve(numero.oportunidades, numero.cotizaciones)}. El ${numero.viejo} deja de aparecer como Contacto.`;
-  const otras = numero.otrasPersonas || [];
-  if (!otras.length) return base;
-  return `${base} Ojo: el ${numero.viejo} tambi\u00e9n tiene oportunidades de ${unir(otras)}. Puede ser el tel\u00e9fono de una oficina que comparten varias personas.`;
+  const { viejo } = numero;
+  const cuanto = loQueSeMueve(numero.oportunidades, numero.cotizaciones);
+  if (!esTelefonoCompartido(numero)) {
+    return `En el cotizador, todo lo del ${viejo} pasa al n\u00famero nuevo: ${cuanto}. El ${viejo} deja de aparecer como Contacto.`;
+  }
+  return `En el cotizador, el ${viejo} tiene ${cuanto}, y tambi\u00e9n hay oportunidades de ${unir(numero.otrasPersonas)}: puede ser el tel\u00e9fono de una oficina que comparten varias personas. ` +
+    `Si era solo de ${nombre}, todo pasa al n\u00famero nuevo y el ${viejo} deja de aparecer como Contacto. ` +
+    `Si es compartido, en el cotizador se queda como est\u00e1. En los dos casos se actualiza Operam.`;
 }
 
 // Telefono compartido: el numero viejo tiene oportunidades o cotizaciones de otras
@@ -47,11 +52,12 @@ export function esTelefonoCompartido(numero) {
 
 // Los botones de la pregunta, en el orden en que se pintan: `salida` es la llave del
 // cuerpo que dicto el servidor en `reintentar`. Las dos del telefono compartido
-// confirman la escritura en Operam; la segunda no mueve nada en el cotizador.
-export function botonesCambioDeNumero(nombre, numero) {
+// confirman la escritura en Operam; la segunda no mueve nada en el cotizador. Lo que
+// hace cada una lo explica `textoEnElCotizador`, en el mensaje de arriba.
+export function botonesCambioDeNumero(numero) {
   if (!esTelefonoCompartido(numero)) return [{ salida: 'confirmar', texto: 'Confirmar' }];
   return [
-    { salida: 'confirmar', texto: `Es el celular de ${nombre}: pasar sus ${loQueSeMueve(numero.oportunidades, numero.cotizaciones)} al n\u00famero nuevo` },
-    { salida: 'soloOperam', texto: `Es un tel\u00e9fono compartido: solo actualizar el celular de ${nombre} en Operam; el ${numero.viejo} se queda como est\u00e1 en el cotizador` },
+    { salida: 'confirmar', texto: 'Era solo suyo: pasar todo al n\u00famero nuevo' },
+    { salida: 'soloOperam', texto: 'Es compartido: dejarlo como est\u00e1' },
   ];
 }
